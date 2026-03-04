@@ -1,6 +1,6 @@
 use crate::ast::{RawBlock, RawItem, RawValue, Span, TypeRefinement};
-use crate::parser::schema::{SchemaBlock, SchemaField, SchemaItem};
-use crate::schema::Annotation;
+use crate::meta::Annotation;
+use crate::parser::meta::{MetaBlock, MetaField, MetaItem};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -27,27 +27,27 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
-/// Validates @source annotations on instance blocks against schema.
+/// Validates @source annotations on schema blocks against meta.
 /// For fields with @source [sources], validates that emitted event fields
 /// exist in the source blocks with matching types (unless marked generated).
-pub fn validate_sources(schema: &[SchemaBlock], instance: &[RawBlock]) -> Vec<ValidationError> {
+pub fn validate_sources(meta: &[MetaBlock], schema: &[RawBlock]) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
-    // Build lookup for schema blocks
-    let schema_map: HashMap<&str, &SchemaBlock> = schema
+    // Build lookup for meta blocks
+    let meta_map: HashMap<&str, &MetaBlock> = meta
         .iter()
         .map(|b| (b.kind.value().as_str(), b))
         .collect();
 
-    // Build lookup for instance blocks (for event definitions)
-    let instance_map: HashMap<&str, &RawBlock> = instance
+    // Build lookup for schema blocks (for event definitions)
+    let schema_map: HashMap<&str, &RawBlock> = schema
         .iter()
         .filter_map(|b| b.name.as_ref().map(|n| (n.value().as_str(), b)))
         .collect();
 
-    for block in instance {
-        if let Some(schema_def) = schema_map.get(block.kind.value().as_str()) {
-            validate_block(schema_def, block, &instance_map, &mut errors);
+    for block in schema {
+        if let Some(meta_def) = meta_map.get(block.kind.value().as_str()) {
+            validate_block(meta_def, block, &schema_map, &mut errors);
         }
     }
 
@@ -55,23 +55,23 @@ pub fn validate_sources(schema: &[SchemaBlock], instance: &[RawBlock]) -> Vec<Va
 }
 
 fn validate_block(
-    schema_def: &SchemaBlock,
+    meta_def: &MetaBlock,
     block: &RawBlock,
-    instance_map: &HashMap<&str, &RawBlock>,
+    schema_map: &HashMap<&str, &RawBlock>,
     errors: &mut Vec<ValidationError>,
 ) {
     // Collect source fields from this block
-    let source_fields = collect_source_fields(schema_def, block);
+    let source_fields = collect_source_fields(meta_def, block);
 
     for item in &block.body {
         if let RawItem::Field(field) = &item.0 {
-            // Check if this field has @source annotation in schema
-            if let Some(schema_field) = find_schema_field(schema_def, &field.name.0) {
-                if let Some(_sources) = get_source_annotation(&schema_field.annotations) {
+            // Check if this field has @source annotation in meta
+            if let Some(meta_field) = find_meta_field(meta_def, &field.name.0) {
+                if let Some(_sources) = get_source_annotation(&meta_field.annotations) {
                     // Field value should be a list of emitted events
                     if let RawValue::List(emits) = &field.value.0 {
                         for emit in emits {
-                            validate_emitted_event(emit, &source_fields, instance_map, errors);
+                            validate_emitted_event(emit, &source_fields, schema_map, errors);
                         }
                     }
                 }
@@ -80,9 +80,9 @@ fn validate_block(
     }
 }
 
-fn find_schema_field<'a>(schema_def: &'a SchemaBlock, name: &str) -> Option<&'a SchemaField> {
-    for item in &schema_def.body {
-        if let SchemaItem::Field(f) = &item.0 {
+fn find_meta_field<'a>(meta_def: &'a MetaBlock, name: &str) -> Option<&'a MetaField> {
+    for item in &meta_def.body {
+        if let MetaItem::Field(f) = &item.0 {
             // Match by name or wildcard
             if f.name.value() == name || f.name.value() == "_" {
                 return Some(f);
@@ -108,15 +108,15 @@ struct FieldInfo {
 }
 
 /// Collect all fields available from source blocks
-fn collect_source_fields(schema_def: &SchemaBlock, block: &RawBlock) -> HashMap<String, FieldInfo> {
+fn collect_source_fields(meta_def: &MetaBlock, block: &RawBlock) -> HashMap<String, FieldInfo> {
     let mut fields = HashMap::new();
 
-    // Find which nested blocks are sources from schema
-    let source_names: Vec<&str> = schema_def
+    // Find which nested blocks are sources from meta
+    let source_names: Vec<&str> = meta_def
         .body
         .iter()
         .filter_map(|item| {
-            if let SchemaItem::Field(f) = &item.0 {
+            if let MetaItem::Field(f) = &item.0 {
                 get_source_annotation(&f.annotations).map(|srcs| srcs.iter().map(|s| s.as_str()))
             } else {
                 None
@@ -125,7 +125,7 @@ fn collect_source_fields(schema_def: &SchemaBlock, block: &RawBlock) -> HashMap<
         .flatten()
         .collect();
 
-    // Find source data in instance - can be either:
+    // Find source data in schema - can be either:
     // 1. Nested Block with matching kind name
     // 2. Field with Object value and matching field name (parser ambiguity)
     for item in &block.body {
@@ -189,14 +189,14 @@ fn extract_type_name(value: &RawValue) -> Option<String> {
 fn validate_emitted_event(
     emit: &crate::ast::Spanned<RawValue>,
     source_fields: &HashMap<String, FieldInfo>,
-    instance_map: &HashMap<&str, &RawBlock>,
+    schema_map: &HashMap<&str, &RawBlock>,
     errors: &mut Vec<ValidationError>,
 ) {
     match &emit.0 {
         // Simple ref: emits [UserRegistered] - need all fields from event def
         RawValue::Ref(parts) => {
             let event_name = parts.join(".");
-            if let Some(event_block) = instance_map.get(event_name.as_str()) {
+            if let Some(event_block) = schema_map.get(event_name.as_str()) {
                 validate_event_fields_covered(
                     event_block,
                     None,
@@ -208,7 +208,7 @@ fn validate_emitted_event(
         }
         // TypeRefinement: emits [UserRegistered{timestamp int*}]
         RawValue::TypeRefinement(refinement) => {
-            if let Some(event_block) = instance_map.get(refinement.base.as_str()) {
+            if let Some(event_block) = schema_map.get(refinement.base.as_str()) {
                 validate_event_fields_covered(
                     event_block,
                     Some(refinement),
@@ -358,10 +358,10 @@ fn validate_event_fields_covered(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::instance::parse_instance;
+    use crate::parser::meta::parse_meta;
     use crate::parser::schema::parse_schema;
 
-    fn get_schema() -> Vec<SchemaBlock> {
+    fn get_meta() -> Vec<MetaBlock> {
         let input = r#"
 event {
     _ type
@@ -374,13 +374,13 @@ command {
     emits []event
 }
 "#;
-        parse_schema(input).unwrap()
+        parse_meta(input).unwrap()
     }
 
     #[test]
     fn test_valid_emits_with_generated() {
-        let schema = get_schema();
-        let instance = parse_instance(
+        let meta = get_meta();
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -399,14 +399,14 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
     }
 
     #[test]
     fn test_invalid_emits_missing_field() {
-        let schema = get_schema();
-        let instance = parse_instance(
+        let meta = get_meta();
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -425,16 +425,16 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(!errors.is_empty(), "expected validation error");
         assert!(errors[0].message.contains("timestamp"));
     }
 
     #[test]
     fn test_optional_field_without_source_ok() {
-        let schema = get_schema();
+        let meta = get_meta();
         // Optional field WITHOUT source should PASS (it's optional)
-        let instance = parse_instance(
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -453,7 +453,7 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(
             errors.is_empty(),
             "optional field without source should pass"
@@ -462,9 +462,9 @@ command RegisterUser {
 
     #[test]
     fn test_optional_field_with_source_ok() {
-        let schema = get_schema();
+        let meta = get_meta();
         // Optional field WITH matching source field should PASS
-        let instance = parse_instance(
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -484,15 +484,15 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
     }
 
     #[test]
     fn test_optional_field_with_generated_ok() {
-        let schema = get_schema();
+        let meta = get_meta();
         // Optional field marked as generated should PASS
-        let instance = parse_instance(
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -511,14 +511,14 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(errors.is_empty(), "unexpected errors: {:?}", errors);
     }
 
     #[test]
     fn test_type_mismatch() {
-        let schema = get_schema();
-        let instance = parse_instance(
+        let meta = get_meta();
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -536,16 +536,16 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(!errors.is_empty(), "expected type mismatch error");
         assert!(errors[0].message.contains("type mismatch"));
     }
 
     #[test]
     fn test_required_field_from_optional_source_fails() {
-        let schema = get_schema();
+        let meta = get_meta();
         // Required target field sourced from optional source field should FAIL
-        let instance = parse_instance(
+        let schema = parse_schema(
             r#"
 event UserRegistered {
     id string
@@ -563,7 +563,7 @@ command RegisterUser {
         )
         .unwrap();
 
-        let errors = validate_sources(&schema, &instance);
+        let errors = validate_sources(&meta, &schema);
         assert!(
             !errors.is_empty(),
             "expected error for required field from optional source"

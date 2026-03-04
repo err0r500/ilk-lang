@@ -1,4 +1,4 @@
-pub mod instance;
+pub mod meta;
 pub mod schema;
 
 use chumsky::prelude::*;

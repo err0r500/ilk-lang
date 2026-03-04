@@ -8,10 +8,10 @@ pub enum Annotation {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SchemaType {
+pub enum MetaType {
     Primitive(String),
     RefTo(String),
-    ListOf(Box<SchemaType>),
+    ListOf(Box<MetaType>),
     Object(FieldsDef),
 }
 
@@ -23,7 +23,7 @@ pub enum FieldsDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
-    pub typ: SchemaType,
+    pub typ: MetaType,
     pub optional: bool,
     pub generated: bool,
     pub annotations: Vec<Annotation>,
@@ -68,11 +68,11 @@ impl BlockDef {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Schema {
+pub struct Meta {
     pub block_defs: HashMap<String, BlockDef>,
 }
 
-impl Schema {
+impl Meta {
     pub fn new() -> Self {
         Self::default()
     }
@@ -100,7 +100,7 @@ impl Schema {
 }
 
 impl FieldDef {
-    pub fn new(typ: SchemaType) -> Self {
+    pub fn new(typ: MetaType) -> Self {
         Self {
             typ,
             optional: false,
@@ -130,32 +130,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_schema_builder() {
-        let mut schema = Schema::new();
+    fn test_meta_builder() {
+        let mut meta = Meta::new();
 
         let event = BlockDef::new("event")
             .with_field(
                 "name",
-                FieldDef::new(SchemaType::Primitive("string".into())),
+                FieldDef::new(MetaType::Primitive("string".into())),
             )
             .with_field(
                 "timestamp",
-                FieldDef::new(SchemaType::Primitive("int".into())),
+                FieldDef::new(MetaType::Primitive("int".into())),
             );
 
         let user_event = BlockDef::new("userEvent").with_extends("event").with_field(
             "userId",
-            FieldDef::new(SchemaType::Primitive("string".into()))
+            FieldDef::new(MetaType::Primitive("string".into()))
                 .with_annotation(Annotation::Required),
         );
 
-        schema.add_block(event);
-        schema.add_block(user_event);
+        meta.add_block(event);
+        meta.add_block(user_event);
 
-        assert!(schema.get_block("event").is_some());
-        assert!(schema.get_block("userEvent").is_some());
+        assert!(meta.get_block("event").is_some());
+        assert!(meta.get_block("userEvent").is_some());
 
-        let chain = schema.resolve_extends("userEvent");
+        let chain = meta.resolve_extends("userEvent");
         assert_eq!(chain.len(), 2);
         assert_eq!(chain[0].name, "userEvent");
         assert_eq!(chain[1].name, "event");

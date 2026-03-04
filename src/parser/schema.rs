@@ -1,36 +1,9 @@
 use crate::ast::*;
 use crate::parser::{ident, padded, string_literal, ws, ParserExtra, ParserInput};
-use crate::schema::model::Annotation;
 use chumsky::prelude::*;
 
-pub fn annotation<'a>() -> impl Parser<'a, ParserInput<'a>, Annotation, ParserExtra<'a>> + Clone {
-    let simple = just('@')
-        .ignore_then(ident())
-        .try_map(|s, span| match s.as_str() {
-            "unique" => Ok(Annotation::Unique),
-            "required" => Ok(Annotation::Required),
-            _ => Err(Rich::custom(span, format!("unknown annotation: @{}", s))),
-        });
-
-    let source = just('@')
-        .ignore_then(text::keyword("source"))
-        .ignore_then(ws())
-        .ignore_then(
-            ident()
-                .separated_by(padded(just(',')))
-                .collect::<Vec<_>>()
-                .delimited_by(just('['), just(']')),
-        )
-        .map(Annotation::Source);
-
-    choice((source, simple))
-}
-
-pub fn schema_value<'a>(
-) -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, ParserExtra<'a>> + Clone {
+pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, ParserExtra<'a>> + Clone {
     recursive(|value| {
-        let wildcard = just('_').to(RawValue::Wildcard);
-
         let bool_val = choice((
             text::keyword("true").to(true),
             text::keyword("false").to(false),
@@ -53,12 +26,52 @@ pub fn schema_value<'a>(
             .to_slice()
             .map(|s: &str| RawValue::Int(s.parse().unwrap()));
 
-        let type_val = ident().map(RawValue::Type);
+        // TypeRefinement: Ident { field: type*, ... }
+        // Override values support type with optional * suffix for generated
+        let refinement_value = ident()
+            .separated_by(just('.'))
+            .at_least(1)
+            .collect::<Vec<_>>()
+            .then(just('*').or_not())
+            .map_with(|(parts, star), e| {
+                let mut val = RawValue::Ref(parts);
+                if star.is_some() {
+                    // Wrap in Object with __generated marker
+                    val = RawValue::Object(vec![
+                        (
+                            Spanned::new("__type".to_string(), e.span().into_range()),
+                            Spanned::new(val, e.span().into_range()),
+                        ),
+                        (
+                            Spanned::new("__generated".to_string(), e.span().into_range()),
+                            Spanned::new(RawValue::Bool(true), e.span().into_range()),
+                        ),
+                    ]);
+                }
+                Spanned::new(val, e.span().into_range())
+            });
 
-        let list_type = just('[')
-            .ignore_then(just(']'))
-            .ignore_then(ident())
-            .map(|t| RawValue::List(vec![Spanned::new(RawValue::Type(t), 0..0)]));
+        let refinement_field = ident()
+            .map_with(|s, e| Spanned::new(s, e.span().into_range()))
+            .then_ignore(ws())
+            .then(refinement_value);
+
+        let type_refinement = ident()
+            .then_ignore(ws())
+            .then(
+                refinement_field
+                    .separated_by(padded(just(',')))
+                    .allow_trailing()
+                    .collect::<Vec<_>>()
+                    .delimited_by(padded(just('{')), padded(just('}'))),
+            )
+            .map(|(base, overrides)| RawValue::TypeRefinement(TypeRefinement { base, overrides }));
+
+        let ref_val = ident()
+            .separated_by(just('.'))
+            .at_least(1)
+            .collect::<Vec<_>>()
+            .map(RawValue::Ref);
 
         let list_val = value
             .clone()
@@ -67,15 +80,6 @@ pub fn schema_value<'a>(
             .collect::<Vec<_>>()
             .delimited_by(padded(just('[')), padded(just(']')))
             .map(RawValue::List);
-
-        let wildcard_object = just('{')
-            .ignore_then(ws())
-            .ignore_then(just('_'))
-            .ignore_then(ws())
-            .ignore_then(value.clone())
-            .then_ignore(ws())
-            .then_ignore(just('}'))
-            .map(|v| RawValue::Object(vec![(Spanned::new("_".to_string(), 0..0), v)]));
 
         let object_field = ident()
             .map_with(|s, e| Spanned::new(s, e.span().into_range()))
@@ -90,89 +94,46 @@ pub fn schema_value<'a>(
             .map(RawValue::Object);
 
         choice((
-            wildcard,
             bool_val,
             string_val,
             float_val,
             int_val,
-            list_type,
             list_val,
-            wildcard_object,
             object_val,
-            type_val,
+            type_refinement,
+            ref_val,
         ))
         .map_with(|v, e| Spanned::new(v, e.span().into_range()))
     })
 }
 
-pub fn schema_field<'a>() -> impl Parser<'a, ParserInput<'a>, SchemaField, ParserExtra<'a>> + Clone
-{
-    let annotations = annotation().separated_by(ws()).collect::<Vec<_>>();
-
-    let name_or_wildcard = choice((just('_').to("_".to_string()), ident()))
-        .map_with(|s, e| Spanned::new(s, e.span().into_range()));
-
+pub fn field<'a>() -> impl Parser<'a, ParserInput<'a>, RawField, ParserExtra<'a>> + Clone {
+    let name = ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
     let optional = just('?').or_not().map(|o| o.is_some());
     let generated = just('*').or_not().map(|g| g.is_some());
 
-    annotations
-        .then_ignore(ws())
-        .then(name_or_wildcard)
-        .then(optional)
+    name.then(optional)
         .then(generated)
-        .then(ws().ignore_then(schema_value()))
-        .map(
-            |((((annotations, name), optional), generated), value)| SchemaField {
-                annotations,
-                name,
-                optional,
-                generated,
-                value,
-            },
-        )
+        .then(ws().ignore_then(value()))
+        .map(|(((name, optional), generated), value)| RawField {
+            name,
+            optional,
+            generated,
+            value,
+        })
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct SchemaField {
-    pub annotations: Vec<Annotation>,
-    pub name: Spanned<String>,
-    pub optional: bool,
-    pub generated: bool,
-    pub value: Spanned<RawValue>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SchemaBlock {
-    pub kind: Spanned<String>,
-    pub name: Option<Spanned<String>>,
-    pub extends: Option<Spanned<String>>,
-    pub body: Vec<Spanned<SchemaItem>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SchemaItem {
-    Field(SchemaField),
-    Block(SchemaBlock),
-}
-
-pub fn schema_block<'a>() -> impl Parser<'a, ParserInput<'a>, SchemaBlock, ParserExtra<'a>> + Clone
-{
+pub fn block<'a>() -> impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>> + Clone {
     recursive(|block| {
         let kind = ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
-        let name = string_literal()
-            .map_with(|s, e| Spanned::new(s, e.span().into_range()))
-            .or_not();
-
-        let extends = text::keyword("extends")
-            .ignore_then(ws())
-            .ignore_then(ident().map_with(|s, e| Spanned::new(s, e.span().into_range())))
-            .or_not();
-
-        let item = choice((
-            block.map(SchemaItem::Block),
-            schema_field().map(SchemaItem::Field),
+        let name = choice((
+            ident().map_with(|s, e| Spanned::new(s, e.span().into_range())),
+            string_literal().map_with(|s, e| Spanned::new(s, e.span().into_range())),
         ))
-        .map_with(|item, e| Spanned::new(item, e.span().into_range()));
+        .or_not();
+
+        let item = choice((block.map(RawItem::Block), field().map(RawItem::Field)))
+            .map_with(|item, e| Spanned::new(item, e.span().into_range()));
 
         let body = item
             .separated_by(ws())
@@ -183,21 +144,14 @@ pub fn schema_block<'a>() -> impl Parser<'a, ParserInput<'a>, SchemaBlock, Parse
         kind.then_ignore(ws())
             .then(name)
             .then_ignore(ws())
-            .then(extends)
-            .then_ignore(ws())
             .then(body)
-            .map(|(((kind, name), extends), body)| SchemaBlock {
-                kind,
-                name,
-                extends,
-                body,
-            })
+            .map(|((kind, name), body)| RawBlock { kind, name, body })
     })
 }
 
-pub fn parse_schema(input: &str) -> Result<Vec<SchemaBlock>, Vec<crate::error::ParseError>> {
+pub fn parse_schema(input: &str) -> Result<Vec<RawBlock>, Vec<crate::error::ParseError>> {
     let parser = ws()
-        .ignore_then(schema_block().separated_by(ws()).collect::<Vec<_>>())
+        .ignore_then(block().separated_by(ws()).collect::<Vec<_>>())
         .then_ignore(ws())
         .then_ignore(end());
 
@@ -212,68 +166,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_schema_block() {
-        let input = r#"event {
-            name string
-            timestamp int
-        }"#;
-        let result = parse_schema(input);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_parse_extends() {
-        let input = r#"userEvent extends event {
-            userId string
+    fn test_parse_simple_block() {
+        let input = r#"event "hello" {
+            name "HelloEvent"
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
         let blocks = result.unwrap();
-        assert_eq!(blocks[0].extends.as_ref().unwrap().0, "event");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].kind.0, "event");
+        assert_eq!(blocks[0].name.as_ref().unwrap().0, "hello");
     }
 
     #[test]
-    fn test_parse_annotations() {
-        let input = r#"user {
-            @unique id string
-            @required name string
+    fn test_parse_nested_block() {
+        let input = r#"aggregate "user" {
+            event "created" {
+                userId string
+            }
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
-        let blocks = result.unwrap();
-        if let SchemaItem::Field(f) = &blocks[0].body[0].0 {
-            assert!(f.annotations.contains(&Annotation::Unique));
-        }
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
     }
 
     #[test]
-    fn test_parse_wildcard_field() {
-        let input = r#"metadata {
-            _ string
-        }"#;
-        let result = parse_schema(input);
-        assert!(result.is_ok());
-        let blocks = result.unwrap();
-        if let SchemaItem::Field(f) = &blocks[0].body[0].0 {
-            assert_eq!(f.name.0, "_");
-        }
-    }
-
-    #[test]
-    fn test_parse_list_type() {
-        let input = r#"aggregate {
-            events []event
-        }"#;
-        let result = parse_schema(input);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_parse_wildcard_object() {
+    fn test_parse_list_value() {
         let input = r#"config {
-            data { _ string }
+            items [1, 2, 3]
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_object_value() {
+        let input = r#"config {
+            meta { key "value", count 42 }
+        }"#;
+        let result = parse_schema(input);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_ref_value() {
+        let input = r#"command {
+            target user.created
+        }"#;
+        let result = parse_schema(input);
+        assert!(result.is_ok());
+        let blocks = result.unwrap();
+        if let RawItem::Field(f) = &blocks[0].body[0].0 {
+            assert!(matches!(&f.value.0, RawValue::Ref(parts) if parts == &["user", "created"]));
+        }
+    }
+
+    #[test]
+    fn test_parse_optional_generated() {
+        let input = r#"event {
+            id?* string
+        }"#;
+        let result = parse_schema(input);
+        assert!(result.is_ok());
+        let blocks = result.unwrap();
+        if let RawItem::Field(f) = &blocks[0].body[0].0 {
+            assert!(f.optional);
+            assert!(f.generated);
+        }
     }
 }
