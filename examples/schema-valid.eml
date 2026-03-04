@@ -1,0 +1,16 @@
+// THIS IS THE DOMAIN SCHEMA (VALID)
+
+event UserRegistered {
+    id: string
+    name: string
+    timestamp: int
+}
+
+command RegisterUser {
+    fields {
+         id: string
+         name: string
+    }
+
+    emits [UserRegistered {timestamp: string*}]
+}

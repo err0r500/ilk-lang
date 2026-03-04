@@ -1,0 +1,11 @@
+// THIS IS THE META SCHEMA
+event {
+    _: type
+}
+
+command {
+    fields {_: type}
+
+    @source [fields]
+    emits []event
+}

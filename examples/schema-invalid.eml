@@ -1,0 +1,17 @@
+// THIS IS THE DOMAIN SCHEMA (INVALID)
+// missing timestamp generated
+
+event UserRegistered {
+    id: string
+    name: string
+    timestamp: int
+}
+
+command RegisterUser {
+    fields {
+         id: string
+         name: string
+    }
+
+    emits [UserRegistered]
+}
