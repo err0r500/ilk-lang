@@ -107,7 +107,6 @@ fn get_source_annotation(annotations: &[Annotation]) -> Option<&Vec<String>> {
 #[derive(Debug, Clone)]
 struct FieldInfo {
     type_name: String,
-    #[allow(dead_code)]
     optional: bool,
     #[allow(dead_code)]
     generated: bool,
@@ -228,6 +227,33 @@ fn validate_emitted_event(
     }
 }
 
+struct OverrideInfo {
+    is_generated: bool,
+    type_name: Option<String>,
+}
+
+fn extract_override_info(value: &RawValue) -> OverrideInfo {
+    match value {
+        RawValue::Object(fields) => {
+            let is_generated = fields
+                .iter()
+                .any(|(k, v)| k.value() == "__generated" && matches!(v.value(), RawValue::Bool(true)));
+            let type_name = fields.iter().find_map(|(k, v)| {
+                if k.value() == "__type" {
+                    extract_type_name(v.value())
+                } else {
+                    None
+                }
+            });
+            OverrideInfo { is_generated, type_name }
+        }
+        _ => OverrideInfo {
+            is_generated: false,
+            type_name: extract_type_name(value),
+        },
+    }
+}
+
 fn validate_event_fields_covered(
     event_block: &RawBlock,
     refinement: Option<&TypeRefinement>,
@@ -235,14 +261,13 @@ fn validate_event_fields_covered(
     span: &Span,
     errors: &mut Vec<ValidationError>,
 ) {
-    // Get overrides from refinement (fields that are generated)
-    let overrides: HashMap<&str, bool> = refinement
+    // Get overrides from refinement
+    let overrides: HashMap<&str, OverrideInfo> = refinement
         .map(|r| {
             r.overrides
                 .iter()
                 .map(|(name, value)| {
-                    let is_generated = is_override_generated(value.value());
-                    (name.value().as_str(), is_generated)
+                    (name.value().as_str(), extract_override_info(value.value()))
                 })
                 .collect()
         })
@@ -265,14 +290,34 @@ fn validate_event_fields_covered(
                 continue;
             }
 
-            // Check if override exists and is generated
-            if let Some(&is_generated) = overrides.get(field_name.as_str()) {
-                if is_generated {
+            // Check if override exists
+            if let Some(override_info) = overrides.get(field_name.as_str()) {
+                // Validate override type matches event field type
+                if let Some(expected_type) = extract_type_name(&field.value.0) {
+                    if let Some(ref override_type) = override_info.type_name {
+                        if override_type != &expected_type {
+                            errors.push(ValidationError::new(
+                                span.clone(),
+                                format!(
+                                    "field '{}' override type mismatch: override has '{}', event expects '{}'",
+                                    field_name, override_type, expected_type
+                                ),
+                            ));
+                        }
+                    }
+                }
+                // Generated overrides don't need source validation
+                if override_info.is_generated {
                     continue;
                 }
             }
 
-            // Field must exist in source
+            // Optional target field: source not existing is OK
+            if field.optional && !source_fields.contains_key(field_name) {
+                continue;
+            }
+
+            // Field must exist in source for required fields
             if !source_fields.contains_key(field_name) {
                 errors.push(ValidationError::new(
                     span.clone(),
@@ -281,32 +326,36 @@ fn validate_event_fields_covered(
                         field_name, event_name
                     ),
                 ));
-            } else {
-                // Type check
-                let source_info = &source_fields[field_name];
-                if let Some(expected_type) = extract_type_name(&field.value.0) {
-                    if source_info.type_name != expected_type {
-                        errors.push(ValidationError::new(
-                            span.clone(),
-                            format!(
-                                "field '{}' type mismatch: source has '{}', event expects '{}'",
-                                field_name, source_info.type_name, expected_type
-                            ),
-                        ));
-                    }
+                continue;
+            }
+
+            let source_info = &source_fields[field_name];
+
+            // Required target cannot have optional source
+            if !field.optional && source_info.optional {
+                errors.push(ValidationError::new(
+                    span.clone(),
+                    format!(
+                        "required field '{}' in event '{}' cannot be sourced from optional field",
+                        field_name, event_name
+                    ),
+                ));
+                continue;
+            }
+
+            // Type check
+            if let Some(expected_type) = extract_type_name(&field.value.0) {
+                if source_info.type_name != expected_type {
+                    errors.push(ValidationError::new(
+                        span.clone(),
+                        format!(
+                            "field '{}' type mismatch: source has '{}', event expects '{}'",
+                            field_name, source_info.type_name, expected_type
+                        ),
+                    ));
                 }
             }
         }
-    }
-}
-
-fn is_override_generated(value: &RawValue) -> bool {
-    match value {
-        // Check for __generated marker in object
-        RawValue::Object(fields) => fields
-            .iter()
-            .any(|(k, v)| k.value() == "__generated" && matches!(v.value(), RawValue::Bool(true))),
-        _ => false,
     }
 }
 
@@ -386,9 +435,9 @@ command RegisterUser {
     }
 
     #[test]
-    fn test_optional_field_requires_source_or_generated() {
+    fn test_optional_field_without_source_ok() {
         let schema = get_schema();
-        // Optional field WITHOUT source or generated marker should FAIL
+        // Optional field WITHOUT source should PASS (it's optional)
         let instance = parse_instance(
             r#"
 event UserRegistered {
@@ -409,8 +458,7 @@ command RegisterUser {
         .unwrap();
 
         let errors = validate_sources(&schema, &instance);
-        assert!(!errors.is_empty(), "expected validation error for optional field without source");
-        assert!(errors[0].message.contains("timestamp"));
+        assert!(errors.is_empty(), "optional field without source should pass");
     }
 
     #[test]
@@ -492,5 +540,32 @@ command RegisterUser {
         let errors = validate_sources(&schema, &instance);
         assert!(!errors.is_empty(), "expected type mismatch error");
         assert!(errors[0].message.contains("type mismatch"));
+    }
+
+    #[test]
+    fn test_required_field_from_optional_source_fails() {
+        let schema = get_schema();
+        // Required target field sourced from optional source field should FAIL
+        let instance = parse_instance(
+            r#"
+event UserRegistered {
+    id: string
+    name: string
+}
+
+command RegisterUser {
+    fields {
+        id: string
+        name?: string
+    }
+    emits [UserRegistered]
+}
+"#,
+        )
+        .unwrap();
+
+        let errors = validate_sources(&schema, &instance);
+        assert!(!errors.is_empty(), "expected error for required field from optional source");
+        assert!(errors[0].message.contains("required field") && errors[0].message.contains("optional"));
     }
 }

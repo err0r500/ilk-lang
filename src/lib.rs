@@ -17,24 +17,24 @@ mod integration_tests {
 
     #[test]
     fn test_parse_example_schema() {
-        let input = include_str!("../examples/schema.eml");
+        let input = include_str!("../examples/meta.eml");
         let result = parse_schema(input);
         assert!(result.is_ok(), "schema parse failed: {:?}", result.err());
     }
 
     #[test]
     fn test_parse_example_instance() {
-        let input = include_str!("../examples/instance.eml");
+        let input = include_str!("../examples/schema-valid.eml");
         let result = parse_instance(input);
         assert!(result.is_ok(), "instance parse failed: {:?}", result.err());
     }
 
     #[test]
     fn test_validate_example_files() {
-        let schema = parse_schema(include_str!("../examples/schema.eml")).unwrap();
-        let instance = parse_instance(include_str!("../examples/instance.eml")).unwrap();
+        let schema = parse_schema(include_str!("../examples/meta.eml")).unwrap();
+        let instance = parse_instance(include_str!("../examples/schema-valid.eml")).unwrap();
         let errors = validate_sources(&schema, &instance);
-        assert!(errors.is_empty(), "validation errors: {:?}", errors);
+        assert_eq!(errors.len(), 0, "expected no error: {:?}", errors);
     }
 
     #[test]
