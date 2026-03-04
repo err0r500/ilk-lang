@@ -67,7 +67,10 @@ pub fn ws<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone
     let line_comment = just("//")
         .then(any().and_is(just('\n').not()).repeated())
         .ignored();
-    let block_comment = just("/*").then(any().and_is(just("*/").not()).repeated()).then(just("*/")).ignored();
+    let block_comment = just("/*")
+        .then(any().and_is(just("*/").not()).repeated())
+        .then(just("*/"))
+        .ignored();
 
     choice((
         text::whitespace().at_least(1).ignored(),

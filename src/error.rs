@@ -49,10 +49,7 @@ pub fn convert_errors(errs: Vec<chumsky::error::Rich<'_, char>>) -> Vec<ParseErr
     errs.into_iter()
         .map(|e| {
             let span = e.span().start..e.span().end;
-            let expected: Vec<String> = e
-                .expected()
-                .map(|exp| format!("{:?}", exp))
-                .collect();
+            let expected: Vec<String> = e.expected().map(|exp| format!("{:?}", exp)).collect();
             let found = e.found().map(|c| c.to_string());
             ParseError::new(span, e.reason().to_string())
                 .with_expected(expected)

@@ -134,19 +134,20 @@ mod tests {
         let mut schema = Schema::new();
 
         let event = BlockDef::new("event")
-            .with_field("name", FieldDef::new(SchemaType::Primitive("string".into())))
+            .with_field(
+                "name",
+                FieldDef::new(SchemaType::Primitive("string".into())),
+            )
             .with_field(
                 "timestamp",
                 FieldDef::new(SchemaType::Primitive("int".into())),
             );
 
-        let user_event = BlockDef::new("userEvent")
-            .with_extends("event")
-            .with_field(
-                "userId",
-                FieldDef::new(SchemaType::Primitive("string".into()))
-                    .with_annotation(Annotation::Required),
-            );
+        let user_event = BlockDef::new("userEvent").with_extends("event").with_field(
+            "userId",
+            FieldDef::new(SchemaType::Primitive("string".into()))
+                .with_annotation(Annotation::Required),
+        );
 
         schema.add_block(event);
         schema.add_block(user_event);

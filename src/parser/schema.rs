@@ -4,11 +4,13 @@ use crate::schema::model::Annotation;
 use chumsky::prelude::*;
 
 pub fn annotation<'a>() -> impl Parser<'a, ParserInput<'a>, Annotation, ParserExtra<'a>> + Clone {
-    let simple = just('@').ignore_then(ident()).try_map(|s, span| match s.as_str() {
-        "unique" => Ok(Annotation::Unique),
-        "required" => Ok(Annotation::Required),
-        _ => Err(Rich::custom(span, format!("unknown annotation: @{}", s))),
-    });
+    let simple = just('@')
+        .ignore_then(ident())
+        .try_map(|s, span| match s.as_str() {
+            "unique" => Ok(Annotation::Unique),
+            "required" => Ok(Annotation::Required),
+            _ => Err(Rich::custom(span, format!("unknown annotation: @{}", s))),
+        });
 
     let source = just('@')
         .ignore_then(text::keyword("source"))
@@ -66,16 +68,18 @@ pub fn schema_value<'a>(
             .delimited_by(padded(just('[')), padded(just(']')))
             .map(RawValue::List);
 
-        let wildcard_object =
-            just('{').ignore_then(ws()).ignore_then(just('_')).ignore_then(padded(just(':')))
-                .ignore_then(value.clone())
-                .then_ignore(ws())
-                .then_ignore(just('}'))
-                .map(|v| RawValue::Object(vec![(Spanned::new("_".to_string(), 0..0), v)]));
+        let wildcard_object = just('{')
+            .ignore_then(ws())
+            .ignore_then(just('_'))
+            .ignore_then(ws())
+            .ignore_then(value.clone())
+            .then_ignore(ws())
+            .then_ignore(just('}'))
+            .map(|v| RawValue::Object(vec![(Spanned::new("_".to_string(), 0..0), v)]));
 
         let object_field = ident()
             .map_with(|s, e| Spanned::new(s, e.span().into_range()))
-            .then_ignore(padded(just(':')))
+            .then_ignore(ws())
             .then(value.clone());
 
         let object_val = object_field
@@ -105,45 +109,27 @@ pub fn schema_field<'a>() -> impl Parser<'a, ParserInput<'a>, SchemaField, Parse
 {
     let annotations = annotation().separated_by(ws()).collect::<Vec<_>>();
 
-    let name_or_wildcard = choice((
-        just('_').to("_".to_string()),
-        ident(),
-    ))
-    .map_with(|s, e| Spanned::new(s, e.span().into_range()));
+    let name_or_wildcard = choice((just('_').to("_".to_string()), ident()))
+        .map_with(|s, e| Spanned::new(s, e.span().into_range()));
 
     let optional = just('?').or_not().map(|o| o.is_some());
     let generated = just('*').or_not().map(|g| g.is_some());
-
-    let value_with_colon = padded(just(':'))
-        .ignore_then(schema_value())
-        .try_map(|v, span| match &v.0 {
-            RawValue::Object(_) | RawValue::List(_) => {
-                Err(Rich::custom(span, "unexpected ':' before object/list"))
-            }
-            _ => Ok(v),
-        });
-    let value_without_colon = ws().ignore_then(
-        schema_value().try_map(|v, span| match &v.0 {
-            RawValue::Object(_) | RawValue::List(_) => Ok(v),
-            _ => Err(Rich::custom(span, "expected ':' before value")),
-        }),
-    );
 
     annotations
         .then_ignore(ws())
         .then(name_or_wildcard)
         .then(optional)
         .then(generated)
-        .then(choice((value_with_colon, value_without_colon)))
-        .map(|((((annotations, name), optional), generated), value)| {
-            SchemaField {
+        .then(ws().ignore_then(schema_value()))
+        .map(
+            |((((annotations, name), optional), generated), value)| SchemaField {
                 annotations,
                 name,
                 optional,
                 generated,
                 value,
-            }
-        })
+            },
+        )
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -169,8 +155,8 @@ pub enum SchemaItem {
     Block(SchemaBlock),
 }
 
-pub fn schema_block<'a>(
-) -> impl Parser<'a, ParserInput<'a>, SchemaBlock, ParserExtra<'a>> + Clone {
+pub fn schema_block<'a>() -> impl Parser<'a, ParserInput<'a>, SchemaBlock, ParserExtra<'a>> + Clone
+{
     recursive(|block| {
         let kind = ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
         let name = string_literal()
@@ -183,8 +169,8 @@ pub fn schema_block<'a>(
             .or_not();
 
         let item = choice((
-            schema_field().map(SchemaItem::Field),
             block.map(SchemaItem::Block),
+            schema_field().map(SchemaItem::Field),
         ))
         .map_with(|item, e| Spanned::new(item, e.span().into_range()));
 
@@ -228,8 +214,8 @@ mod tests {
     #[test]
     fn test_parse_schema_block() {
         let input = r#"event {
-            name: string
-            timestamp: int
+            name string
+            timestamp int
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
@@ -238,7 +224,7 @@ mod tests {
     #[test]
     fn test_parse_extends() {
         let input = r#"userEvent extends event {
-            userId: string
+            userId string
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
@@ -249,8 +235,8 @@ mod tests {
     #[test]
     fn test_parse_annotations() {
         let input = r#"user {
-            @unique id: string
-            @required name: string
+            @unique id string
+            @required name string
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
@@ -263,7 +249,7 @@ mod tests {
     #[test]
     fn test_parse_wildcard_field() {
         let input = r#"metadata {
-            _: string
+            _ string
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());
@@ -285,7 +271,7 @@ mod tests {
     #[test]
     fn test_parse_wildcard_object() {
         let input = r#"config {
-            data { _: string }
+            data { _ string }
         }"#;
         let result = parse_schema(input);
         assert!(result.is_ok());

@@ -1,11 +1,19 @@
 // THIS IS THE META SCHEMA
+
 event {
-    _: type
+    _ type
+}
+
+queryItem {
+   event_types []event
+   tags []string
 }
 
 command {
-    fields {_: type}
+    fields {_ type}
 
     @source [fields]
     emits []event
+
+    query []queryItem
 }

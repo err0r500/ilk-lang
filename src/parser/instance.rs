@@ -53,7 +53,7 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
 
         let refinement_field = ident()
             .map_with(|s, e| Spanned::new(s, e.span().into_range()))
-            .then_ignore(padded(just(':')))
+            .then_ignore(ws())
             .then(refinement_value);
 
         let type_refinement = ident()
@@ -83,7 +83,7 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
 
         let object_field = ident()
             .map_with(|s, e| Spanned::new(s, e.span().into_range()))
-            .then_ignore(padded(just(':')))
+            .then_ignore(ws())
             .then(value.clone());
 
         let object_val = object_field
@@ -93,8 +93,17 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
             .delimited_by(padded(just('{')), padded(just('}')))
             .map(RawValue::Object);
 
-        choice((bool_val, string_val, float_val, int_val, list_val, object_val, type_refinement, ref_val))
-            .map_with(|v, e| Spanned::new(v, e.span().into_range()))
+        choice((
+            bool_val,
+            string_val,
+            float_val,
+            int_val,
+            list_val,
+            object_val,
+            type_refinement,
+            ref_val,
+        ))
+        .map_with(|v, e| Spanned::new(v, e.span().into_range()))
     })
 }
 
@@ -103,24 +112,9 @@ pub fn field<'a>() -> impl Parser<'a, ParserInput<'a>, RawField, ParserExtra<'a>
     let optional = just('?').or_not().map(|o| o.is_some());
     let generated = just('*').or_not().map(|g| g.is_some());
 
-    let value_with_colon = padded(just(':'))
-        .ignore_then(value())
-        .try_map(|v, span| match &v.0 {
-            RawValue::Object(_) | RawValue::List(_) => {
-                Err(Rich::custom(span, "unexpected ':' before object/list"))
-            }
-            _ => Ok(v),
-        });
-    let value_without_colon = ws().ignore_then(
-        value().try_map(|v, span| match &v.0 {
-            RawValue::Object(_) | RawValue::List(_) => Ok(v),
-            _ => Err(Rich::custom(span, "expected ':' before value")),
-        }),
-    );
-
     name.then(optional)
         .then(generated)
-        .then(choice((value_with_colon, value_without_colon)))
+        .then(ws().ignore_then(value()))
         .map(|(((name, optional), generated), value)| RawField {
             name,
             optional,
@@ -138,11 +132,8 @@ pub fn block<'a>() -> impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>
         ))
         .or_not();
 
-        let item = choice((
-            field().map(RawItem::Field),
-            block.map(RawItem::Block),
-        ))
-        .map_with(|item, e| Spanned::new(item, e.span().into_range()));
+        let item = choice((block.map(RawItem::Block), field().map(RawItem::Field)))
+            .map_with(|item, e| Spanned::new(item, e.span().into_range()));
 
         let body = item
             .separated_by(ws())
@@ -177,7 +168,7 @@ mod tests {
     #[test]
     fn test_parse_simple_block() {
         let input = r#"event "hello" {
-            name: "HelloEvent"
+            name "HelloEvent"
         }"#;
         let result = parse_instance(input);
         assert!(result.is_ok());
@@ -191,11 +182,11 @@ mod tests {
     fn test_parse_nested_block() {
         let input = r#"aggregate "user" {
             event "created" {
-                userId: string
+                userId string
             }
         }"#;
         let result = parse_instance(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
     }
 
     #[test]
@@ -210,7 +201,7 @@ mod tests {
     #[test]
     fn test_parse_object_value() {
         let input = r#"config {
-            meta { key: "value", count: 42 }
+            meta { key "value", count 42 }
         }"#;
         let result = parse_instance(input);
         assert!(result.is_ok());
@@ -219,7 +210,7 @@ mod tests {
     #[test]
     fn test_parse_ref_value() {
         let input = r#"command {
-            target: user.created
+            target user.created
         }"#;
         let result = parse_instance(input);
         assert!(result.is_ok());
@@ -232,7 +223,7 @@ mod tests {
     #[test]
     fn test_parse_optional_generated() {
         let input = r#"event {
-            id?*: string
+            id?* string
         }"#;
         let result = parse_instance(input);
         assert!(result.is_ok());

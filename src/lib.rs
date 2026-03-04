@@ -41,9 +41,9 @@ mod integration_tests {
     fn test_source_validation_pass() {
         let schema = parse_schema(
             r#"
-event { _: type }
+event { _ type }
 command {
-    fields {_: type}
+    fields {_ type}
     @source [fields]
     emits []event
 }
@@ -54,13 +54,13 @@ command {
         let instance = parse_instance(
             r#"
 event UserCreated {
-    id: string
-    name: string
+    id string
+    name string
 }
 command CreateUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
     emits [UserCreated]
 }
@@ -76,9 +76,9 @@ command CreateUser {
     fn test_source_validation_fail_missing() {
         let schema = parse_schema(
             r#"
-event { _: type }
+event { _ type }
 command {
-    fields {_: type}
+    fields {_ type}
     @source [fields]
     emits []event
 }
@@ -89,14 +89,14 @@ command {
         let instance = parse_instance(
             r#"
 event UserCreated {
-    id: string
-    name: string
-    timestamp: int
+    id string
+    name string
+    timestamp int
 }
 command CreateUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
     emits [UserCreated]
 }
@@ -113,9 +113,9 @@ command CreateUser {
     fn test_source_validation_generated_ok() {
         let schema = parse_schema(
             r#"
-event { _: type }
+event { _ type }
 command {
-    fields {_: type}
+    fields {_ type}
     @source [fields]
     emits []event
 }
@@ -126,14 +126,14 @@ command {
         let instance = parse_instance(
             r#"
 event UserCreated {
-    id: string
-    timestamp: int
+    id string
+    timestamp int
 }
 command CreateUser {
     fields {
-        id: string
+        id string
     }
-    emits [UserCreated{timestamp: int*}]
+    emits [UserCreated{timestamp int*}]
 }
 "#,
         )

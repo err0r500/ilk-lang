@@ -71,12 +71,7 @@ fn validate_block(
                     // Field value should be a list of emitted events
                     if let RawValue::List(emits) = &field.value.0 {
                         for emit in emits {
-                            validate_emitted_event(
-                                emit,
-                                &source_fields,
-                                instance_map,
-                                errors,
-                            );
+                            validate_emitted_event(emit, &source_fields, instance_map, errors);
                         }
                     }
                 }
@@ -211,7 +206,7 @@ fn validate_emitted_event(
                 );
             }
         }
-        // TypeRefinement: emits [UserRegistered{timestamp: int*}]
+        // TypeRefinement: emits [UserRegistered{timestamp int*}]
         RawValue::TypeRefinement(refinement) => {
             if let Some(event_block) = instance_map.get(refinement.base.as_str()) {
                 validate_event_fields_covered(
@@ -235,9 +230,9 @@ struct OverrideInfo {
 fn extract_override_info(value: &RawValue) -> OverrideInfo {
     match value {
         RawValue::Object(fields) => {
-            let is_generated = fields
-                .iter()
-                .any(|(k, v)| k.value() == "__generated" && matches!(v.value(), RawValue::Bool(true)));
+            let is_generated = fields.iter().any(|(k, v)| {
+                k.value() == "__generated" && matches!(v.value(), RawValue::Bool(true))
+            });
             let type_name = fields.iter().find_map(|(k, v)| {
                 if k.value() == "__type" {
                     extract_type_name(v.value())
@@ -245,7 +240,10 @@ fn extract_override_info(value: &RawValue) -> OverrideInfo {
                     None
                 }
             });
-            OverrideInfo { is_generated, type_name }
+            OverrideInfo {
+                is_generated,
+                type_name,
+            }
         }
         _ => OverrideInfo {
             is_generated: false,
@@ -266,9 +264,7 @@ fn validate_event_fields_covered(
         .map(|r| {
             r.overrides
                 .iter()
-                .map(|(name, value)| {
-                    (name.value().as_str(), extract_override_info(value.value()))
-                })
+                .map(|(name, value)| (name.value().as_str(), extract_override_info(value.value())))
                 .collect()
         })
         .unwrap_or_default();
@@ -368,11 +364,11 @@ mod tests {
     fn get_schema() -> Vec<SchemaBlock> {
         let input = r#"
 event {
-    _: type
+    _ type
 }
 
 command {
-    fields {_: type}
+    fields {_ type}
 
     @source [fields]
     emits []event
@@ -387,17 +383,17 @@ command {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
-    timestamp: int
+    id string
+    name string
+    timestamp int
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
-    emits [UserRegistered{timestamp: int*}]
+    emits [UserRegistered{timestamp int*}]
 }
 "#,
         )
@@ -413,15 +409,15 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
-    timestamp: int
+    id string
+    name string
+    timestamp int
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
     emits [UserRegistered]
 }
@@ -441,15 +437,15 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
-    timestamp?: int
+    id string
+    name string
+    timestamp? int
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
     emits [UserRegistered]
 }
@@ -458,7 +454,10 @@ command RegisterUser {
         .unwrap();
 
         let errors = validate_sources(&schema, &instance);
-        assert!(errors.is_empty(), "optional field without source should pass");
+        assert!(
+            errors.is_empty(),
+            "optional field without source should pass"
+        );
     }
 
     #[test]
@@ -468,16 +467,16 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
-    timestamp?: int
+    id string
+    name string
+    timestamp? int
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name: string
-        timestamp: int
+        id string
+        name string
+        timestamp int
     }
     emits [UserRegistered]
 }
@@ -496,17 +495,17 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
-    timestamp?: int
+    id string
+    name string
+    timestamp? int
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name: string
+        id string
+        name string
     }
-    emits [UserRegistered{timestamp: int*}]
+    emits [UserRegistered{timestamp int*}]
 }
 "#,
         )
@@ -522,14 +521,14 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
+    id string
+    name string
 }
 
 command RegisterUser {
     fields {
-        id: int
-        name: string
+        id int
+        name string
     }
     emits [UserRegistered]
 }
@@ -549,14 +548,14 @@ command RegisterUser {
         let instance = parse_instance(
             r#"
 event UserRegistered {
-    id: string
-    name: string
+    id string
+    name string
 }
 
 command RegisterUser {
     fields {
-        id: string
-        name?: string
+        id string
+        name? string
     }
     emits [UserRegistered]
 }
@@ -565,7 +564,12 @@ command RegisterUser {
         .unwrap();
 
         let errors = validate_sources(&schema, &instance);
-        assert!(!errors.is_empty(), "expected error for required field from optional source");
-        assert!(errors[0].message.contains("required field") && errors[0].message.contains("optional"));
+        assert!(
+            !errors.is_empty(),
+            "expected error for required field from optional source"
+        );
+        assert!(
+            errors[0].message.contains("required field") && errors[0].message.contains("optional")
+        );
     }
 }
