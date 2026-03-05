@@ -1,4 +1,4 @@
-// THIS IS THE DOMAIN SCHEMA (VALID)
+// THIS IS A DOMAIN SCHEMA
 
 userIdTag = Tag {userId String}
 userNameTag = Tag {name String}
