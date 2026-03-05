@@ -7,9 +7,9 @@ pub mod validation;
 pub use ast::*;
 pub use error::ParseError;
 pub use meta::*;
-pub use parser::meta::{extract_blocks, parse_meta, MetaTopLevel};
+pub use parser::meta::{extract_blocks, extract_type_defs, parse_meta, MetaTopLevel, MetaTypeDef};
 pub use parser::schema::parse_schema;
-pub use validation::{validate_sources, ValidationError};
+pub use validation::{validate_sources, validate_sources_with_type_defs, ValidationError};
 
 #[cfg(test)]
 mod integration_tests {

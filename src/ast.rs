@@ -104,6 +104,8 @@ pub enum RawValue {
     },
     Union(Vec<Spanned<RawValue>>),
     Intersection(Vec<Spanned<RawValue>>),
+    /// Concrete<T> - expects a concrete value of type T in schema
+    Concrete(Box<Spanned<RawValue>>),
 }
 
 /// Constraint expression for @constraint annotations

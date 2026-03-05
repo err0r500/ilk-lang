@@ -1,19 +1,20 @@
 // THIS IS THE DOMAIN SCHEMA (VALID)
 
-userIdTag = Tag{userId String}
-userNameTag = Tag{name String}
-commonTag = Tag{x String}
+userIdTag = Tag {userId String}
+userNameTag = Tag {name String}
+commonTag = Tag {x String}
+simpleTag = Tag "simple-tag"
 
-userRegistered = Event<userIdTag, userNameTag, commonTag>{
+userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id String
     name String
 }
 
-other = Event<commonTag, "simple-tag">{
+other = Event<commonTag, simpleTag> {
     hello String
 }
 
-registerUser = Command{
+registerUser = Command {
     fields {
          id String
          name String

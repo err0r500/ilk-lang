@@ -223,7 +223,10 @@ pub fn block<'a>() -> impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>
             .delimited_by(just('['), just(']'))
             .map_with(|v, e| BlockBody::Value(Spanned::new(RawValue::List(v), e.span().into_range())));
 
-        let body = choice((items_body, list_body));
+        // Single value body (no braces): Tag "hello"
+        let value_body = ws().ignore_then(value()).map(BlockBody::Value);
+
+        let body = choice((items_body, list_body, value_body));
 
         // Top-level: name = Type<assoc>?{body}
         name.then_ignore(padded(just('=')))

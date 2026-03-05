@@ -146,7 +146,7 @@ pub fn annotation<'a>() -> impl Parser<'a, ParserInput<'a>, Annotation, ParserEx
         .ignore_then(text::keyword("assoc"))
         .ignore_then(ws())
         .ignore_then(
-            ident()
+            type_ident()
                 .separated_by(padded(just(',')))
                 .collect::<Vec<_>>()
                 .delimited_by(just('['), just(']')),
@@ -190,6 +190,15 @@ pub fn meta_value<'a>(
             .map(|s: &str| RawValue::Int(s.parse().unwrap()));
 
         let type_val = type_ident().map(RawValue::Type);
+
+        // Concrete<T> - expects concrete value of type T in schema
+        let concrete_type = text::keyword("Concrete")
+            .ignore_then(just('<'))
+            .ignore_then(ws())
+            .ignore_then(type_ident())
+            .then_ignore(ws())
+            .then_ignore(just('>'))
+            .map_with(|t, e| RawValue::Concrete(Box::new(Spanned::new(RawValue::Type(t), e.span().into_range()))));
 
         let list_type = just('[')
             .ignore_then(just(']'))
@@ -243,6 +252,7 @@ pub fn meta_value<'a>(
             string_val,
             float_val,
             int_val,
+            concrete_type,
             list_type,
             list_val,
             wildcard_object,
@@ -424,6 +434,16 @@ pub fn extract_blocks(items: &[MetaTopLevel]) -> Vec<MetaBlock> {
     items
         .iter()
         .filter_map(|i| i.as_block().cloned())
+        .collect()
+}
+
+pub fn extract_type_defs(items: &[MetaTopLevel]) -> Vec<MetaTypeDef> {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            MetaTopLevel::TypeDef(t) => Some(t.clone()),
+            _ => None,
+        })
         .collect()
 }
 

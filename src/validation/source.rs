@@ -1,6 +1,6 @@
 use crate::ast::{ConstraintExpr, RawBlock, RawItem, RawValue, Span, Spanned, TagRef, TypeRefinement};
 use crate::meta::{Annotation, SourceAnnotation};
-use crate::parser::meta::{MetaBlock, MetaConstraint, MetaField, MetaItem};
+use crate::parser::meta::{MetaBlock, MetaConstraint, MetaField, MetaItem, MetaTypeDef};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -27,16 +27,246 @@ impl fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
+/// Built-in type names
+const BUILTIN_TYPES: &[&str] = &["String", "Int", "Float", "Bool", "Type"];
+
+/// Check if a type name is a built-in type
+fn is_builtin_type(name: &str) -> bool {
+    BUILTIN_TYPES.iter().any(|&t| t.eq_ignore_ascii_case(name))
+}
+
+/// Check if a string starts with uppercase (PascalCase)
+fn is_pascal_case(s: &str) -> bool {
+    s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+}
+
+/// Validate a schema value against a meta type
+fn validate_type(
+    meta_type: &RawValue,
+    schema_value: &Spanned<RawValue>,
+    meta_map: &HashMap<String, &MetaBlock>,
+    type_defs_map: &HashMap<String, &MetaTypeDef>,
+    errors: &mut Vec<ValidationError>,
+) {
+    match meta_type {
+        // Type - expects any PascalCase type reference
+        RawValue::Type(t) if t == "Type" => {
+            match &schema_value.0 {
+                RawValue::Ref(parts) => {
+                    if let Some(first) = parts.first() {
+                        if !is_pascal_case(first) {
+                            errors.push(ValidationError::new(
+                                schema_value.span().clone(),
+                                format!("expected Type (PascalCase), found '{}'", first),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    errors.push(ValidationError::new(
+                        schema_value.span().clone(),
+                        "expected Type reference".to_string(),
+                    ));
+                }
+            }
+        }
+        // Built-in types (String, Int, Float, Bool) - expects type reference
+        RawValue::Type(t) if is_builtin_type(t) => {
+            match &schema_value.0 {
+                RawValue::Ref(parts) if parts.len() == 1 => {
+                    if !parts[0].eq_ignore_ascii_case(t) {
+                        errors.push(ValidationError::new(
+                            schema_value.span().clone(),
+                            format!("expected {} type, found '{}'", t, parts[0]),
+                        ));
+                    }
+                }
+                _ => {
+                    errors.push(ValidationError::new(
+                        schema_value.span().clone(),
+                        format!("expected {} type reference", t),
+                    ));
+                }
+            }
+        }
+        // User-defined type - look up in blocks or type defs
+        RawValue::Type(t) => {
+            // If schema value is a Ref, it's a reference to a block - accept it
+            // (The block's type should match, but we trust schema parser to enforce that)
+            if matches!(&schema_value.0, RawValue::Ref(_) | RawValue::TypeRefinement(_)) {
+                return;
+            }
+
+            let key = t.to_ascii_lowercase();
+            if let Some(meta_def) = meta_map.get(&key) {
+                validate_schema_against_meta_block(meta_def, schema_value, meta_map, type_defs_map, errors);
+            } else if let Some(type_def) = type_defs_map.get(&key) {
+                // Type def: validate against its value
+                validate_type(&type_def.value.0, schema_value, meta_map, type_defs_map, errors);
+            }
+            // If not found, assume it's valid (could be external type)
+        }
+        // Concrete<T> - expects concrete value
+        RawValue::Concrete(inner) => {
+            if let RawValue::Type(t) = &inner.0 {
+                match t.as_str() {
+                    "String" => {
+                        if !matches!(&schema_value.0, RawValue::String(_)) {
+                            errors.push(ValidationError::new(
+                                schema_value.span().clone(),
+                                "expected concrete string value".to_string(),
+                            ));
+                        }
+                    }
+                    "Int" => {
+                        if !matches!(&schema_value.0, RawValue::Int(_)) {
+                            errors.push(ValidationError::new(
+                                schema_value.span().clone(),
+                                "expected concrete int value".to_string(),
+                            ));
+                        }
+                    }
+                    "Float" => {
+                        if !matches!(&schema_value.0, RawValue::Float(_)) {
+                            errors.push(ValidationError::new(
+                                schema_value.span().clone(),
+                                "expected concrete float value".to_string(),
+                            ));
+                        }
+                    }
+                    "Bool" => {
+                        if !matches!(&schema_value.0, RawValue::Bool(_)) {
+                            errors.push(ValidationError::new(
+                                schema_value.span().clone(),
+                                "expected concrete bool value".to_string(),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Union - schema value must match one of the variants
+        RawValue::Union(variants) => {
+            let mut variant_errors: Vec<Vec<ValidationError>> = Vec::new();
+            for variant in variants {
+                let mut errs = Vec::new();
+                validate_type(&variant.0, schema_value, meta_map, type_defs_map, &mut errs);
+                if errs.is_empty() {
+                    return; // Found matching variant
+                }
+                variant_errors.push(errs);
+            }
+            // None matched
+            errors.push(ValidationError::new(
+                schema_value.span().clone(),
+                "value doesn't match any variant of union type".to_string(),
+            ));
+        }
+        // Intersection - schema value must match all parts
+        RawValue::Intersection(parts) => {
+            for part in parts {
+                validate_type(&part.0, schema_value, meta_map, type_defs_map, errors);
+            }
+        }
+        // WildcardObject {* _ Type} or {1 _ Type}
+        RawValue::WildcardObject { value, .. } => {
+            if let RawValue::Object(fields) = &schema_value.0 {
+                for (_, field_value) in fields {
+                    validate_type(&value.0, field_value, meta_map, type_defs_map, errors);
+                }
+            } else {
+                errors.push(ValidationError::new(
+                    schema_value.span().clone(),
+                    "expected object".to_string(),
+                ));
+            }
+        }
+        // List []T
+        RawValue::List(items) if items.len() == 1 => {
+            if let RawValue::List(schema_items) = &schema_value.0 {
+                for item in schema_items {
+                    validate_type(&items[0].0, item, meta_map, type_defs_map, errors);
+                }
+            } else {
+                errors.push(ValidationError::new(
+                    schema_value.span().clone(),
+                    "expected list".to_string(),
+                ));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Validate schema value against a meta block definition
+fn validate_schema_against_meta_block(
+    meta_def: &MetaBlock,
+    schema_value: &Spanned<RawValue>,
+    meta_map: &HashMap<String, &MetaBlock>,
+    type_defs_map: &HashMap<String, &MetaTypeDef>,
+    errors: &mut Vec<ValidationError>,
+) {
+    match &schema_value.0 {
+        RawValue::Object(fields) => {
+            // Find wildcard field if any
+            let wildcard_field = meta_def.body.iter().find_map(|item| {
+                if let MetaItem::Field(f) = &item.0 {
+                    if f.name.value() == "_" {
+                        return Some(f);
+                    }
+                }
+                None
+            });
+
+            for (name, value) in fields {
+                // Find matching meta field
+                let meta_field = meta_def.body.iter().find_map(|item| {
+                    if let MetaItem::Field(f) = &item.0 {
+                        if f.name.value() == name.value() {
+                            return Some(f);
+                        }
+                    }
+                    None
+                });
+
+                if let Some(mf) = meta_field.or(wildcard_field) {
+                    validate_type(&mf.value.0, value, meta_map, type_defs_map, errors);
+                }
+            }
+        }
+        RawValue::Ref(_) => {
+            // Reference to another block - accept refs
+        }
+        _ => {}
+    }
+}
+
 /// Validates @source annotations on schema blocks against meta.
 /// For fields with @source [sources], validates that emitted event fields
 /// exist in the source blocks with matching types (unless marked generated).
 pub fn validate_sources(meta: &[MetaBlock], schema: &[RawBlock]) -> Vec<ValidationError> {
+    validate_sources_with_type_defs(meta, &[], schema)
+}
+
+/// Validates schema against meta blocks and type definitions.
+pub fn validate_sources_with_type_defs(
+    meta: &[MetaBlock],
+    type_defs: &[MetaTypeDef],
+    schema: &[RawBlock],
+) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
     // Build lookup for meta blocks (lowercase keys for case-insensitive matching)
     let meta_map: HashMap<String, &MetaBlock> = meta
         .iter()
         .map(|b| (b.kind.value().to_ascii_lowercase(), b))
+        .collect();
+
+    // Build lookup for type defs
+    let type_defs_map: HashMap<String, &MetaTypeDef> = type_defs
+        .iter()
+        .map(|t| (t.name.value().to_ascii_lowercase(), t))
         .collect();
 
     // Build lookup for schema blocks (for event definitions)
@@ -52,15 +282,49 @@ pub fn validate_sources(meta: &[MetaBlock], schema: &[RawBlock]) -> Vec<Validati
     validate_tag_associations_with_map(schema, &schema_map, &event_tags, &mut errors);
 
     for block in schema {
-        if let Some(meta_def) = meta_map.get(&block.kind.value().to_ascii_lowercase()) {
-            validate_block(meta_def, block, &meta_map, &schema_map, &mut errors);
+        let key = block.kind.value().to_ascii_lowercase();
+        if let Some(meta_def) = meta_map.get(&key) {
+            validate_block(meta_def, block, &meta_map, &type_defs_map, &schema_map, &mut errors);
             validate_constraints(meta_def, block, &schema_map, &event_tags, &mut errors);
             // Also validate constraints on nested values (like QueryItem objects)
-            validate_nested_constraints(meta_def, block, &meta_map, &schema_map, &event_tags, &mut errors);
+            validate_nested_constraints(meta_def, block, &meta_map, &type_defs_map, &schema_map, &event_tags, &mut errors);
+        } else if let Some(type_def) = type_defs_map.get(&key) {
+            // Block kind matches a type def - validate block body against type def value
+            validate_block_against_type_def(type_def, block, &meta_map, &type_defs_map, &mut errors);
         }
     }
 
     errors
+}
+
+/// Validate a block against a type definition
+fn validate_block_against_type_def(
+    type_def: &MetaTypeDef,
+    block: &RawBlock,
+    meta_map: &HashMap<String, &MetaBlock>,
+    type_defs_map: &HashMap<String, &MetaTypeDef>,
+    errors: &mut Vec<ValidationError>,
+) {
+    // Convert block body to a schema value for validation
+    let schema_value = match &block.body {
+        crate::ast::BlockBody::Items(items) => {
+            // Convert items to Object
+            let fields: Vec<(Spanned<String>, Spanned<RawValue>)> = items
+                .iter()
+                .filter_map(|item| {
+                    if let RawItem::Field(f) = &item.0 {
+                        Some((f.name.clone(), f.value.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            Spanned::new(RawValue::Object(fields), block.kind.span().clone())
+        }
+        crate::ast::BlockBody::Value(v) => v.clone(),
+    };
+
+    validate_type(&type_def.value.0, &schema_value, meta_map, type_defs_map, errors);
 }
 
 /// Build event -> tags association map
@@ -223,6 +487,7 @@ fn validate_block(
     meta_def: &MetaBlock,
     block: &RawBlock,
     meta_map: &HashMap<String, &MetaBlock>,
+    type_defs_map: &HashMap<String, &MetaTypeDef>,
     schema_map: &HashMap<&str, &RawBlock>,
     errors: &mut Vec<ValidationError>,
 ) {
@@ -251,8 +516,27 @@ fn validate_block(
                     continue;
                 }
 
-                // Check @source annotation validation
-                if let Some(mf) = meta_field {
+                // Get the meta field (either named or wildcard)
+                let mf = meta_field.or_else(|| {
+                    if has_wildcard {
+                        meta_def.body.iter().find_map(|item| {
+                            if let MetaItem::Field(f) = &item.0 {
+                                if f.name.value() == "_" {
+                                    return Some(f);
+                                }
+                            }
+                            None
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(mf) = mf {
+                    // Validate type
+                    validate_type(&mf.value.0, &field.value, meta_map, type_defs_map, errors);
+
+                    // Check @source annotation validation
                     if let Some(src_ann) = get_source_annotation(&mf.annotations) {
                         let for_paths = src_ann.for_paths.as_ref();
                         match &field.value.0 {
@@ -268,7 +552,7 @@ fn validate_block(
                     // Validate nested type references (e.g., []queryItem)
                     if let Some(ref_type) = get_referenced_meta_type(&mf.value.0) {
                         if let Some(ref_meta) = meta_map.get(&ref_type.to_ascii_lowercase()) {
-                            validate_value_against_meta(ref_meta, &field.value, meta_map, errors);
+                            validate_value_against_meta(ref_meta, &field.value, meta_map, type_defs_map, errors);
                         }
                     }
                 }
@@ -326,12 +610,13 @@ fn validate_value_against_meta(
     meta_def: &MetaBlock,
     value: &Spanned<RawValue>,
     meta_map: &HashMap<String, &MetaBlock>,
+    type_defs_map: &HashMap<String, &MetaTypeDef>,
     errors: &mut Vec<ValidationError>,
 ) {
     match &value.0 {
         RawValue::List(items) => {
             for item in items {
-                validate_value_against_meta(meta_def, item, meta_map, errors);
+                validate_value_against_meta(meta_def, item, meta_map, type_defs_map, errors);
             }
         }
         RawValue::Object(fields) => {
@@ -357,7 +642,7 @@ fn validate_value_against_meta(
                 if let Some(mf) = meta_field {
                     if let Some(ref_type) = get_referenced_meta_type(&mf.value.0) {
                         if let Some(ref_meta) = meta_map.get(&ref_type.to_ascii_lowercase()) {
-                            validate_value_against_meta(ref_meta, field_value, meta_map, errors);
+                            validate_value_against_meta(ref_meta, field_value, meta_map, type_defs_map, errors);
                         }
                     }
                 }
@@ -799,6 +1084,7 @@ fn validate_nested_constraints(
     meta_def: &MetaBlock,
     block: &RawBlock,
     meta_map: &HashMap<String, &MetaBlock>,
+    _type_defs_map: &HashMap<String, &MetaTypeDef>,
     schema_map: &HashMap<&str, &RawBlock>,
     event_tags: &HashMap<&str, Vec<&str>>,
     errors: &mut Vec<ValidationError>,
@@ -951,7 +1237,7 @@ fn extract_field_refs<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::meta::{extract_blocks, parse_meta};
+    use crate::parser::meta::{extract_blocks, extract_type_defs, parse_meta};
     use crate::parser::schema::parse_schema;
 
     fn get_meta() -> Vec<MetaBlock> {
@@ -1670,5 +1956,125 @@ cmd = Command{
         let source_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("not found in source")).collect();
         // Should fail because 'a' and 'x' are not in fields
         assert!(!source_errors.is_empty(), "expected source errors for missing fields");
+    }
+
+    #[test]
+    fn test_type_expects_pascal_case() {
+        let input = r#"
+tag {1 _ Type}
+"#;
+        let parsed = parse_meta(input).unwrap();
+        let meta = extract_blocks(&parsed);
+        let type_defs = extract_type_defs(&parsed);
+
+        // lowercase 'string' should fail - Type expects PascalCase
+        let schema = parse_schema(
+            r#"
+badTag = Tag{userId string}
+"#,
+        )
+        .unwrap();
+
+        let errors = validate_sources_with_type_defs(&meta, &type_defs, &schema);
+        assert!(
+            errors.iter().any(|e| e.message.contains("PascalCase")),
+            "expected PascalCase error: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_type_accepts_pascal_case() {
+        let input = r#"
+tag {1 _ Type}
+"#;
+        let parsed = parse_meta(input).unwrap();
+        let meta = extract_blocks(&parsed);
+        let type_defs = extract_type_defs(&parsed);
+
+        // PascalCase should pass
+        let schema = parse_schema(
+            r#"
+goodTag = Tag{userId String}
+"#,
+        )
+        .unwrap();
+
+        let errors = validate_sources_with_type_defs(&meta, &type_defs, &schema);
+        let type_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("PascalCase")).collect();
+        assert!(type_errors.is_empty(), "unexpected type errors: {:?}", type_errors);
+    }
+
+    #[test]
+    fn test_concrete_string_expects_literal() {
+        let input = r#"
+tag {1 _ Type} | Concrete<String>
+"#;
+        let parsed = parse_meta(input).unwrap();
+        let meta = extract_blocks(&parsed);
+        let type_defs = extract_type_defs(&parsed);
+
+        // Object form with Type should pass
+        let schema1 = parse_schema(
+            r#"
+objectTag = Tag{userId String}
+"#,
+        )
+        .unwrap();
+
+        let errors1 = validate_sources_with_type_defs(&meta, &type_defs, &schema1);
+        let type_errors1: Vec<_> = errors1.iter().filter(|e| e.message.contains("concrete") || e.message.contains("union")).collect();
+        assert!(type_errors1.is_empty(), "object form should pass: {:?}", type_errors1);
+    }
+
+    #[test]
+    fn test_concrete_string_rejects_type_ref() {
+        let input = r#"
+config {
+    label Concrete<String>
+}
+"#;
+        let meta = extract_blocks(&parse_meta(input).unwrap());
+
+        // Type reference should fail for Concrete<String>
+        let schema = parse_schema(
+            r#"
+myConfig = Config{
+    label String
+}
+"#,
+        )
+        .unwrap();
+
+        let errors = validate_sources(&meta, &schema);
+        assert!(
+            errors.iter().any(|e| e.message.contains("concrete string")),
+            "expected concrete string error: {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_concrete_string_accepts_literal() {
+        let input = r#"
+config {
+    label Concrete<String>
+}
+"#;
+        let meta = extract_blocks(&parse_meta(input).unwrap());
+
+        // Literal string should pass
+        let schema = parse_schema(
+            r#"
+myConfig = Config{
+    label "My Label"
+}
+"#,
+        )
+        .unwrap();
+
+        let errors = validate_sources(&meta, &schema);
+        let type_errors: Vec<_> = errors.iter().filter(|e| e.message.contains("concrete")).collect();
+        assert!(type_errors.is_empty(), "literal string should pass: {:?}", type_errors);
     }
 }

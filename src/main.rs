@@ -1,5 +1,5 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use eml2::{extract_blocks, parse_meta, parse_schema, validate_sources};
+use eml2::{extract_blocks, extract_type_defs, parse_meta, parse_schema, validate_sources_with_type_defs};
 use std::{env, fs, process};
 
 fn main() {
@@ -62,7 +62,8 @@ fn main() {
     };
 
     let blocks = extract_blocks(&meta);
-    let errors = validate_sources(&blocks, &schema);
+    let type_defs = extract_type_defs(&meta);
+    let errors = validate_sources_with_type_defs(&blocks, &type_defs, &schema);
 
     if errors.is_empty() {
         println!("OK");
