@@ -1,17 +1,34 @@
 // THIS IS THE DOMAIN SCHEMA (INVALID)
-// missing timestamp generated
+// 1. missing timestamp generated
+// 2. undeclared tag in association
+// 3. query tag not associated with all events
 
-event UserRegistered {
-    id string
-    name string
-    timestamp int
+userIdTag = Tag{userId String}
+
+// undeclaredTag doesn't exist - should error
+userRegistered = Event<userIdTag, undeclaredTag>{
+    id String
+    name String
+    timestamp Int
 }
 
-command RegisterUser {
+other = Event{
+    hello String
+}
+
+registerUser = Command{
     fields {
-         id string
-         name string
+         id String
+         name String
     }
 
-    emits [UserRegistered]
+    emits [userRegistered]
+
+    // userIdTag is only on userRegistered, not other - should error
+    query [
+        {
+            eventTypes [userRegistered, other],
+            tags [userIdTag]
+        }
+    ]
 }

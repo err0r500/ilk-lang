@@ -7,7 +7,7 @@ pub mod validation;
 pub use ast::*;
 pub use error::ParseError;
 pub use meta::*;
-pub use parser::meta::parse_meta;
+pub use parser::meta::{extract_blocks, parse_meta, MetaTopLevel};
 pub use parser::schema::parse_schema;
 pub use validation::{validate_sources, ValidationError};
 
@@ -32,8 +32,9 @@ mod integration_tests {
     #[test]
     fn test_validate_example_files() {
         let meta = parse_meta(include_str!("../examples/meta.eml")).unwrap();
+        let blocks = extract_blocks(&meta);
         let schema = parse_schema(include_str!("../examples/schema-valid.eml")).unwrap();
-        let errors = validate_sources(&meta, &schema);
+        let errors = validate_sources(&blocks, &schema);
         assert_eq!(errors.len(), 0, "expected no error: {:?}", errors);
     }
 
@@ -41,34 +42,35 @@ mod integration_tests {
     fn test_source_validation_pass() {
         let meta = parse_meta(
             r#"
-event { _ type }
+event {* _ Type}
 command {
-    fields {_ type}
+    fields {* _ Type}
     @source [fields]
     emits []event
 }
 "#,
         )
         .unwrap();
+        let blocks = extract_blocks(&meta);
 
         let schema = parse_schema(
             r#"
-event UserCreated {
-    id string
-    name string
+userCreated = Event{
+    id String
+    name String
 }
-command CreateUser {
+createUser = Command{
     fields {
-        id string
-        name string
+        id String
+        name String
     }
-    emits [UserCreated]
+    emits [userCreated]
 }
 "#,
         )
         .unwrap();
 
-        let errors = validate_sources(&meta, &schema);
+        let errors = validate_sources(&blocks, &schema);
         assert!(errors.is_empty());
     }
 
@@ -76,35 +78,36 @@ command CreateUser {
     fn test_source_validation_fail_missing() {
         let meta = parse_meta(
             r#"
-event { _ type }
+event {* _ Type}
 command {
-    fields {_ type}
+    fields {* _ Type}
     @source [fields]
     emits []event
 }
 "#,
         )
         .unwrap();
+        let blocks = extract_blocks(&meta);
 
         let schema = parse_schema(
             r#"
-event UserCreated {
-    id string
-    name string
-    timestamp int
+userCreated = Event{
+    id String
+    name String
+    timestamp Int
 }
-command CreateUser {
+createUser = Command{
     fields {
-        id string
-        name string
+        id String
+        name String
     }
-    emits [UserCreated]
+    emits [userCreated]
 }
 "#,
         )
         .unwrap();
 
-        let errors = validate_sources(&meta, &schema);
+        let errors = validate_sources(&blocks, &schema);
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("timestamp"));
     }
@@ -113,33 +116,34 @@ command CreateUser {
     fn test_source_validation_generated_ok() {
         let meta = parse_meta(
             r#"
-event { _ type }
+event {* _ Type}
 command {
-    fields {_ type}
+    fields {* _ Type}
     @source [fields]
     emits []event
 }
 "#,
         )
         .unwrap();
+        let blocks = extract_blocks(&meta);
 
         let schema = parse_schema(
             r#"
-event UserCreated {
-    id string
-    timestamp int
+userCreated = Event{
+    id String
+    timestamp Int
 }
-command CreateUser {
+createUser = Command{
     fields {
-        id string
+        id String
     }
-    emits [UserCreated{timestamp int*}]
+    emits [userCreated{timestamp Int*}]
 }
 "#,
         )
         .unwrap();
 
-        let errors = validate_sources(&meta, &schema);
+        let errors = validate_sources(&blocks, &schema);
         assert!(errors.is_empty(), "errors: {:?}", errors);
     }
 }

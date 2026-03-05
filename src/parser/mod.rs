@@ -10,6 +10,12 @@ pub fn ident<'a>() -> impl Parser<'a, ParserInput<'a>, String, ParserExtra<'a>> 
     text::ident().map(|s: &str| s.to_string())
 }
 
+pub fn type_ident<'a>() -> impl Parser<'a, ParserInput<'a>, String, ParserExtra<'a>> + Clone {
+    any().filter(|c: &char| c.is_ascii_uppercase())
+        .then(any().filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_').repeated().collect::<String>())
+        .map(|(first, rest)| format!("{}{}", first, rest))
+}
+
 pub fn string_literal<'a>() -> impl Parser<'a, ParserInput<'a>, String, ParserExtra<'a>> + Clone {
     let escape = just('\\').ignore_then(
         just('\\')

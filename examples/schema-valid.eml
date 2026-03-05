@@ -1,22 +1,31 @@
 // THIS IS THE DOMAIN SCHEMA (VALID)
 
-event UserRegistered {
-    id string
-    name string
-    timestamp? int
+userIdTag = Tag{userId String}
+userNameTag = Tag{name String}
+commonTag = Tag{x String}
+
+userRegistered = Event<userIdTag, userNameTag, commonTag>{
+    id String
+    name String
 }
 
-command RegisterUser {
+other = Event<commonTag, "simple-tag">{
+    hello String
+}
+
+registerUser = Command{
     fields {
-         id string
-         name string
+         id String
+         name String
+         x String
     }
 
-    emits [UserRegistered {timestamp int*}]
+    emits [userRegistered {timestamp Int*}]
 
     query [
         {
-            event_types [UserRegistered]
+            eventTypes [userRegistered, other],
+            tags [commonTag]
         }
     ]
 }

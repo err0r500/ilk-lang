@@ -1,5 +1,5 @@
-use crate::ast::*;
-use crate::parser::{ident, padded, string_literal, ws, ParserExtra, ParserInput};
+use crate::ast::{BlockBody, RawBlock, RawField, RawItem, RawValue, Spanned, TagRef, TypeRefinement};
+use crate::parser::{ident, padded, string_literal, type_ident, ws, ParserExtra, ParserInput};
 use chumsky::prelude::*;
 
 pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, ParserExtra<'a>> + Clone {
@@ -28,7 +28,7 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
 
         // TypeRefinement: Ident { field: type*, ... }
         // Override values support type with optional * suffix for generated
-        let refinement_value = ident()
+        let refinement_value = type_ident()
             .separated_by(just('.'))
             .at_least(1)
             .collect::<Vec<_>>()
@@ -56,7 +56,8 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
             .then_ignore(ws())
             .then(refinement_value);
 
-        let type_refinement = ident()
+        // Refinement: ident {field Type*, ...} - supports both camelCase and PascalCase
+        let type_refinement = choice((ident(), type_ident()))
             .then_ignore(ws())
             .then(
                 refinement_field
@@ -67,7 +68,8 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, Spanned<RawValue>, Parser
             )
             .map(|(base, overrides)| RawValue::TypeRefinement(TypeRefinement { base, overrides }));
 
-        let ref_val = ident()
+        // Ref: supports both camelCase and PascalCase idents
+        let ref_val = choice((ident(), type_ident()))
             .separated_by(just('.'))
             .at_least(1)
             .collect::<Vec<_>>()
@@ -123,29 +125,117 @@ pub fn field<'a>() -> impl Parser<'a, ParserInput<'a>, RawField, ParserExtra<'a>
         })
 }
 
+// Nested block: name <assoc>? {body} or name <assoc>? [body]
+// No Type - kind is the name, type is inferred from meta
+fn nested_block<'a>(
+    block: impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>> + Clone,
+) -> impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>> + Clone {
+    let kind = ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
+
+    let tag_ref = choice((
+        ident().map(TagRef::Ident),
+        string_literal().map(TagRef::String),
+    ))
+    .map_with(|t, e| Spanned::new(t, e.span().into_range()));
+
+    let associations = tag_ref
+        .separated_by(padded(just(',')))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('<'), just('>'))
+        .or_not()
+        .map(|o| o.unwrap_or_default());
+
+    let item = choice((
+        field().map(RawItem::Field),
+        block.map(RawItem::Block),
+    ))
+    .map_with(|item, e| Spanned::new(item, e.span().into_range()));
+
+    let items_body = item
+        .separated_by(ws())
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(padded(just('{')), padded(just('}')))
+        .map(BlockBody::Items);
+
+    let list_body = value()
+        .separated_by(padded(just(',')))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just('['), just(']'))
+        .map_with(|v, e| BlockBody::Value(Spanned::new(RawValue::List(v), e.span().into_range())));
+
+    let body = choice((items_body, list_body));
+
+    // kind <assoc>? body - kind is ident, no separate name
+    kind.then_ignore(ws())
+        .then(associations)
+        .then(body)
+        .map(|((kind, associations), body)| RawBlock {
+            kind,
+            name: None,
+            associations,
+            body,
+        })
+}
+
+// Top-level block: name = Type<assoc>?{body}
 pub fn block<'a>() -> impl Parser<'a, ParserInput<'a>, RawBlock, ParserExtra<'a>> + Clone {
     recursive(|block| {
-        let kind = ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
         let name = choice((
             ident().map_with(|s, e| Spanned::new(s, e.span().into_range())),
             string_literal().map_with(|s, e| Spanned::new(s, e.span().into_range())),
+        ));
+        let kind = type_ident().map_with(|s, e| Spanned::new(s, e.span().into_range()));
+
+        let tag_ref = choice((
+            ident().map(TagRef::Ident),
+            string_literal().map(TagRef::String),
         ))
-        .or_not();
+        .map_with(|t, e| Spanned::new(t, e.span().into_range()));
 
-        let item = choice((block.map(RawItem::Block), field().map(RawItem::Field)))
-            .map_with(|item, e| Spanned::new(item, e.span().into_range()));
+        let associations = tag_ref
+            .separated_by(padded(just(',')))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(just('<'), just('>'))
+            .or_not()
+            .map(|o| o.unwrap_or_default());
 
-        let body = item
+        let item = choice((
+            field().map(RawItem::Field),
+            nested_block(block.clone()).map(RawItem::Block),
+        ))
+        .map_with(|item, e| Spanned::new(item, e.span().into_range()));
+
+        let items_body = item
             .separated_by(ws())
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(padded(just('{')), padded(just('}')));
+            .delimited_by(padded(just('{')), padded(just('}')))
+            .map(BlockBody::Items);
 
-        kind.then_ignore(ws())
-            .then(name)
-            .then_ignore(ws())
+        let list_body = value()
+            .separated_by(padded(just(',')))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(just('['), just(']'))
+            .map_with(|v, e| BlockBody::Value(Spanned::new(RawValue::List(v), e.span().into_range())));
+
+        let body = choice((items_body, list_body));
+
+        // Top-level: name = Type<assoc>?{body}
+        name.then_ignore(padded(just('=')))
+            .then(kind)
+            .then(associations)
             .then(body)
-            .map(|((kind, name), body)| RawBlock { kind, name, body })
+            .map(|(((name, kind), associations), body)| RawBlock {
+                kind,
+                name: Some(name),
+                associations,
+                body,
+            })
     })
 }
 
@@ -167,22 +257,22 @@ mod tests {
 
     #[test]
     fn test_parse_simple_block() {
-        let input = r#"event "hello" {
+        let input = r#"hello = Event{
             name "HelloEvent"
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let blocks = result.unwrap();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].kind.0, "event");
+        assert_eq!(blocks[0].kind.0, "Event");
         assert_eq!(blocks[0].name.as_ref().unwrap().0, "hello");
     }
 
     #[test]
     fn test_parse_nested_block() {
-        let input = r#"aggregate "user" {
-            event "created" {
-                userId string
+        let input = r#"user = Aggregate{
+            created Event{
+                userId String
             }
         }"#;
         let result = parse_schema(input);
@@ -191,44 +281,44 @@ mod tests {
 
     #[test]
     fn test_parse_list_value() {
-        let input = r#"config {
+        let input = r#"myConfig = Config{
             items [1, 2, 3]
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
     }
 
     #[test]
     fn test_parse_object_value() {
-        let input = r#"config {
+        let input = r#"myConfig = Config{
             meta { key "value", count 42 }
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
     }
 
     #[test]
     fn test_parse_ref_value() {
-        let input = r#"command {
-            target user.created
+        let input = r#"myCommand = Command{
+            target User.Created
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let blocks = result.unwrap();
-        if let RawItem::Field(f) = &blocks[0].body[0].0 {
-            assert!(matches!(&f.value.0, RawValue::Ref(parts) if parts == &["user", "created"]));
+        if let RawItem::Field(f) = &blocks[0].body.items()[0].0 {
+            assert!(matches!(&f.value.0, RawValue::Ref(parts) if parts == &["User", "Created"]));
         }
     }
 
     #[test]
     fn test_parse_optional_generated() {
-        let input = r#"event {
-            id?* string
+        let input = r#"myEvent = Event{
+            id?* String
         }"#;
         let result = parse_schema(input);
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
         let blocks = result.unwrap();
-        if let RawItem::Field(f) = &blocks[0].body[0].0 {
+        if let RawItem::Field(f) = &blocks[0].body.items()[0].0 {
             assert!(f.optional);
             assert!(f.generated);
         }

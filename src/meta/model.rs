@@ -1,10 +1,21 @@
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use crate::ast::ConstraintExpr;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceAnnotation {
+    pub sources: Vec<String>,
+    /// If Some, only these paths need sourcing. If None, all paths need sourcing.
+    pub for_paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Annotation {
     Unique,
     Required,
-    Source(Vec<String>),
+    Source(SourceAnnotation),
+    Assoc(Vec<String>),
+    Constraint(ConstraintExpr),
 }
 
 #[derive(Debug, Clone, PartialEq)]

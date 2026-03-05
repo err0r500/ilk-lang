@@ -24,10 +24,39 @@ impl<T> Spanned<T> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum TagRef {
+    Ident(String),
+    String(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BlockBody {
+    Items(Vec<Spanned<RawItem>>),
+    Value(Spanned<RawValue>),
+}
+
+impl BlockBody {
+    pub fn items(&self) -> &[Spanned<RawItem>] {
+        match self {
+            BlockBody::Items(items) => items,
+            BlockBody::Value(_) => &[],
+        }
+    }
+
+    pub fn value(&self) -> Option<&Spanned<RawValue>> {
+        match self {
+            BlockBody::Items(_) => None,
+            BlockBody::Value(v) => Some(v),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RawBlock {
     pub kind: Spanned<String>,
     pub name: Option<Spanned<String>>,
-    pub body: Vec<Spanned<RawItem>>,
+    pub associations: Vec<Spanned<TagRef>>,
+    pub body: BlockBody,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +80,12 @@ pub struct TypeRefinement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Cardinality {
+    ZeroOrMore,
+    Exactly(u32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum RawValue {
     Type(String),
     Ident(String),
@@ -63,4 +98,32 @@ pub enum RawValue {
     Ref(Vec<String>),
     Wildcard,
     TypeRefinement(TypeRefinement),
+    WildcardObject {
+        cardinality: Cardinality,
+        value: Box<Spanned<RawValue>>,
+    },
+    Union(Vec<Spanned<RawValue>>),
+    Intersection(Vec<Spanned<RawValue>>),
+}
+
+/// Constraint expression for @constraint annotations
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstraintExpr {
+    ForAll {
+        field: String,
+        var: String,
+        body: Box<ConstraintExpr>,
+    },
+    Exists {
+        field: String,
+        var: String,
+        body: Box<ConstraintExpr>,
+    },
+    Assoc {
+        subject: String,
+        target: String,
+    },
+    And(Box<ConstraintExpr>, Box<ConstraintExpr>),
+    Or(Box<ConstraintExpr>, Box<ConstraintExpr>),
+    Not(Box<ConstraintExpr>),
 }

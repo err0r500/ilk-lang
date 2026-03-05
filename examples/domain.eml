@@ -1,17 +1,17 @@
 // THIS IS THE DOMAIN SCHEMA (VALID)
 
 event UserRegistered {
-    id string
-    name string
-    timestamp? int
+    id String
+    name String
+    timestamp? Int
 }
 
 // should pass
 command RegisterUser {
     fields {
-         id string
-         name string
+         id String
+         name String
     }
 
-    emits [UserRegistered {timestamp int*}]
+    emits [UserRegistered {timestamp Int*}]
 }

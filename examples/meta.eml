@@ -1,9 +1,23 @@
 // THIS IS THE META SCHEMA
-event {_ type}
 
-command {
-    fields {_ type}
+@assoc [tag]
+Event {* _ Type} & {timestamp Int}
+
+Tag {1 _ Type} | String
+
+QueryItem {
+    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
+
+    eventTypes []Event
+    tags []Tag
+}
+
+Command {
+    fields {* _ Type}
 
     @source [fields]
-    emits []event
+    emits []Event
+
+    @source [fields] //for [tags]
+    query []QueryItem
 }
