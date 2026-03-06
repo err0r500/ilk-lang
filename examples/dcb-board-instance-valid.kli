@@ -1,5 +1,3 @@
-// THIS IS A DOMAIN SCHEMA
-
 userIdTag = Tag {userId String}
 userNameTag = Tag {name String}
 commonTag = Tag {x String}

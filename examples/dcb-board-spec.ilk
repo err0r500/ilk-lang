@@ -21,3 +21,8 @@ Command {
     @source [fields] for [tags] // only tags fields in query must be sourced from Command fields
     query []QueryItem
 }
+
+@root
+Board {
+    commands []Command
+}
