@@ -1,9 +1,9 @@
 // THIS IS THE META SCHEMA
 
-Tag {1 _ Type} | Concrete<String> // a tag is {key (any) Type} or a concrete string
+Tag {1 Type} | Concrete<String> // a tag is {key (any) Type} or a concrete string
 
 @assoc [Tag]
-Event {* _ Type} & {timestamp Int} // an Event is a set of fields and an optional timestamp field, and can be associated with tags type
+Event {* Type} & {timestamp Int} // an Event is a set of fields and an optional timestamp field, and can be associated with tags type
 
 QueryItem {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
@@ -13,7 +13,7 @@ QueryItem {
 }
 
 Command {
-    fields {* _ Type}
+    fields {* Type}
 
     @source [fields] // all Event fields in emits must be sourced from Command fields
     emits []Event
