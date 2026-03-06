@@ -1,6 +1,6 @@
 # EML
 
-## example of DBC event-modeling board schema and validation rules
+## example of DBC event-modeling board schema and validation rules (would be encoded in .ilk file) and the board itself would be a .kli file
 
 ### Board Structure
 
