@@ -254,7 +254,7 @@ Bad {id Uuid} & {id String}
 ## Union types
 
 `A | B` means a value must satisfy **exactly one** of the alternatives. Branches may be:
-- **Named blocks** — user-defined block types
+- **Named blocks** — user-defined block types, including identifier-only variants (empty named blocks: `Get`, `Post`, …)
 - **Built-in scalar types** — `String`, `Int`, `Concrete<T>`, etc.
 - **Literal types** — exact values like `"GET"`, `42`, `true`
 
