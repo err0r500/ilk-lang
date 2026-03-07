@@ -23,7 +23,7 @@ registerUser = Command {
     // @source [fields] is in effect on emits:
     // - timestamp is generated (not in fields)
     // - id and name are matched by name implicitly
-    emits [userRegistered {timestamp Int*}]
+    emits [userRegistered & {timestamp Int*}]
 
     // query has no @source — no provenance constraint
     // QueryItem type name omitted: anonymous struct matches structurally

@@ -427,10 +427,10 @@ Command {
 #### Inline binding refinements (kli side)
 
 When `@source` is in effect on a list, kli may refine an existing binding's field origins
-by appending a struct body immediately after the binding reference within the list:
+using `& { ... }` after the binding reference — mirroring ilk intersection syntax:
 
 ```kli
-emits [userRegistered {
+emits [userRegistered & {
     timestamp Int*               // Generated — exempt from source check
     id        String             // implicit: matched by name to fields.id
 }]

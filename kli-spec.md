@@ -210,11 +210,11 @@ When `@source` is in effect, the validator resolves each field in priority order
 ## Inline binding refinements
 
 When `@source` is in effect on a list, a list element may be written as a binding reference
-followed by a struct body. The struct body supplies **origin annotations** for specific
-fields of the referenced binding:
+followed by `& { ... }` — mirroring ilk intersection syntax. The struct body supplies
+**origin annotations** for specific fields of the referenced binding:
 
 ```kli
-emits [userRegistered {
+emits [userRegistered & {
     timestamp Int*               // Generated — exempt from source check
     id        String             // implicit: matched by name to fields.id
 }]
@@ -296,7 +296,7 @@ registerUser = Command {
     // - timestamp is generated (not in fields, so marked Int*)
     // - id is matched by name implicitly (fields.id)
     // - name is matched by name implicitly (fields.name)
-    emits [userRegistered {
+    emits [userRegistered & {
         timestamp Int*
         id        String         // implicit: matched by name to fields.id
     }]
