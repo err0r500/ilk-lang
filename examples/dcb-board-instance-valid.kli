@@ -25,7 +25,7 @@ registerUser = Command {
     // - id and name are matched by name implicitly
     emits [userRegistered {timestamp Int*}]
 
-    // query has @source [fields] for [tags] — only the tags field is source-constrained
+    // query has no @source — no provenance constraint
     // QueryItem type name omitted: anonymous struct matches structurally
     query [
         {

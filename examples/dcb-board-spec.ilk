@@ -21,7 +21,6 @@ Command {
     @source [fields] // all Event fields in emits must be sourced from Command fields
     emits []Event
 
-    @source [fields] for [tags] // only the tags field in each QueryItem must be sourced from Command fields
     query []QueryItem
 }
 

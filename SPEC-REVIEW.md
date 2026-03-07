@@ -62,16 +62,12 @@ Changes applied:
 
 ## Missing / under-specified features
 
-### 4. `@source [S] for [F]` qualifier — **Documented**
+### 4. `@source [S] for [F]` qualifier — **Removed**
 
 `examples/dcb-board-spec.ilk` contained `@source [fields] for [tags]` on the `query`
-list, restricting the source constraint to only the `tags` sub-field of each `QueryItem`.
-This qualifier did not appear anywhere in `ilk-spec.md`.
-
-**Fix:** Added a sub-section under `@source` in `ilk-spec.md` explaining:
-- Syntax: `@source [S] for [F]`
-- Semantics: the source constraint is applied only to the fields named in `F` within each
-  list element; all other fields are unconstrained.
+list. This qualifier did not appear anywhere in `ilk-spec.md` and was removed from the
+spec and all examples per author decision. The `query` field now carries no `@source`
+constraint.
 
 ---
 
@@ -188,7 +184,7 @@ leave extension hooks without breaking changes.
 
 | File | Changes |
 |---|---|
-| `examples/dcb-board-spec.ilk` | `@root` → `@main`; `{1 Type}` → `{_}`, `{* Type}` → `{...}`; introduced `TagField {_}` named block; updated `Tag`, `Event`, `fields` |
+| `examples/dcb-board-spec.ilk` | `@root` → `@main`; `{1 Type}` → `{_}`, `{* Type}` → `{...}`; introduced `TagField {_}` named block; updated `Tag`, `Event`, `fields`; removed `@source [fields] for [tags]` |
 | `examples/dcb-board-instance-valid.kli` | `Tag {…}` bindings → `TagField {…}`; improved inline comments |
 | `ilk-spec.md` | Comments section example updated; discriminated-unions section updated to named-block form; `@source` section: added `for [F]` qualifier docs and inline binding refinement docs; full example updated |
 | `kli-spec.md` | Bindings example updated; union-values section updated; added "Inline binding refinements" section; added "Anonymous struct instantiation" section; full example updated |

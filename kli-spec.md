@@ -301,8 +301,7 @@ registerUser = Command {
         id        String         // implicit: matched by name to fields.id
     }]
 
-    // @source [fields] for [tags] is in effect on query:
-    // only the tags field of each QueryItem is source-constrained.
+    // query has no @source — no provenance constraint.
     // QueryItem type name omitted — anonymous struct matches structurally.
     query [
         {

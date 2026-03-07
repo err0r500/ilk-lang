@@ -424,21 +424,6 @@ Command {
 }
 ```
 
-#### `@source [S] for [F]` — selective constraint
-
-The `for [F]` qualifier restricts the source constraint to a named subset of fields within
-each element of the annotated list. Fields not listed in `F` are unconstrained.
-
-```ilk
-// Only the `tags` field in each QueryItem must be traceable to `fields`.
-// The `eventTypes` field is not constrained.
-@source [fields] for [tags]
-query []QueryItem
-```
-
-Without `for`, `@source` applies to **all** fields in each element. With `for [F]`, only
-the fields named in `F` are checked; all others may be freely assigned in kli.
-
 #### Inline binding refinements (kli side)
 
 When `@source` is in effect on a list, kli may refine an existing binding's field origins
@@ -523,15 +508,13 @@ QueryItem {
     tags       []Tag
 }
 
-// Command: fields drive emits (timestamp auto-generated);
-// for query, only the tags field must be traceable to fields
+// Command: fields drive emits (timestamp auto-generated); query has no source constraint
 Command {
     fields {...}
 
     @source [fields]
     emits []Event
 
-    @source [fields] for [tags]
     query []QueryItem
 }
 
