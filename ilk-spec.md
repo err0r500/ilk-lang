@@ -201,6 +201,10 @@ Entity {* Type} & {id Uuid}
 
 `A | B` means a value must satisfy **exactly one** of the alternatives.
 
+When all branches are **named block types**, the union is *discriminated* and the kli
+variant must be named explicitly (see [Discriminated unions](#discriminated-unions)).
+When all branches are anonymous type expressions, the branch is selected by shape.
+
 ```ilk
 Response {success Bool} | {error String}
 ```
@@ -227,6 +231,66 @@ Status Pending | Active | Archived
 
 ```kli
 status Active
+```
+
+---
+
+## Discriminated unions
+
+When all branches of a union are **named block types**, the union is a **discriminated union**.
+The validator cannot pick a branch by shape alone — two named block types may have identical
+fields. The variant name is the discriminant.
+
+### Ilk rules
+
+- A union is discriminated when every branch is a named block type (declared elsewhere in the
+  same `.ilk` file).
+- A union is **structural** when every branch is an anonymous type expression
+  (`{N Type}`, `Concrete<T>`, primitive type, etc.).
+- **Mixed unions** — some branches named, some anonymous — are not valid.
+
+```ilk
+// discriminated: both branches are named block types
+Started  { at Timestamp }
+Finished { at Timestamp }
+Status   Started | Finished
+
+// structural: both branches are anonymous expressions (unchanged from current behaviour)
+Tag {1 Type} | Concrete<String>
+```
+
+### Kli rules
+
+**At a binding site**, a discriminated union value names both the union type and the variant:
+
+```
+name = UnionType VariantName body
+```
+
+```kli
+current = Status Started { at "2024-01-31T12:00:00Z" }
+//         ^^^^^^ union type (must match the expected schema type)
+//                ^^^^^^^ variant name (discriminant)
+//                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ variant body
+```
+
+**Inline inside a list or struct field**, the union type is inferred from schema context —
+only the variant name is needed:
+
+```kli
+// schema: history []Status
+history [
+    Started  { at "2024-01-01T00:00:00Z" }
+    Finished { at "2024-01-31T12:00:00Z" }
+]
+```
+
+Structural unions need no variant name in either position; shape determines the branch:
+
+```kli
+// Tag is structural — shape selects the branch, as before
+userIdTag = Tag {userId String}
+simpleTag = Tag "simple-tag"
 ```
 
 ---
