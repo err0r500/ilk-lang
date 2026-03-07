@@ -8,6 +8,8 @@ ilk is a two-level language system:
 A `.kli` file is validated against the block marked `@main` in its linked `.ilk` file.
 Type compatibility is checked **structurally** (by shape, not by name).
 
+This document specifies the **ilk schema language**. For the kli instance language see `kli-spec.md`.
+
 ---
 
 ## Comments
@@ -64,21 +66,6 @@ HttpVerb Get | Post | Put | Delete
 // kli — just write the chosen variant
 verb Get
 ```
-
----
-
-## Value literals
-
-| Type | kli literal example |
-|------|---------------------|
-| `String` | `"hello world"` |
-| `Int` | `42` |
-| `Float` | `3.14` |
-| `Bool` | `true` / `false` |
-| `Uuid` | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `Date` | `"2024-01-31"` (ISO 8601) |
-| `Timestamp` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
-| `Money` | `"19.99 USD"` (amount + ISO 4217 currency code) |
 
 ---
 
@@ -259,113 +246,41 @@ Status   Started | Finished
 Tag {1 Type} | Concrete<String>
 ```
 
-### Kli rules
-
-**At a binding site**, a discriminated union value names both the union type and the variant:
-
-```
-name = UnionType VariantName body
-```
-
-```kli
-current = Status Started { at "2024-01-31T12:00:00Z" }
-//         ^^^^^^ union type (must match the expected schema type)
-//                ^^^^^^^ variant name (discriminant)
-//                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ variant body
-```
-
-**Inline inside a list or struct field**, the union type is inferred from schema context —
-only the variant name is needed:
-
-```kli
-// schema: history []Status
-history [
-    Started  { at "2024-01-01T00:00:00Z" }
-    Finished { at "2024-01-31T12:00:00Z" }
-]
-```
-
-Structural unions need no variant name in either position; shape determines the branch:
-
-```kli
-// Tag is structural — shape selects the branch, as before
-userIdTag = Tag {userId String}
-simpleTag = Tag "simple-tag"
-```
+For kli syntax for discriminated and structural unions, see `kli-spec.md`.
 
 ---
 
-## Generated fields (`T*`)
+## Field origins (`T*`, `= path`, `= @computed_from`)
 
-Appending `*` to a type inside a struct marks that field as **generated** — its value
-is produced automatically and is not expected to come from any declared source.
+When `@source` is in effect on a list or field declaration, each field in a kli struct
+refinement must be provably traceable to the listed sources. By default the validator
+matches by structural name. Three optional **origin annotations** override that resolution:
 
-This is required when `@source` is in effect on the enclosing construct and a field
-cannot be traced back to the listed sources.
+| Form | Meaning |
+|---|---|
+| `fieldName Type*` | **Generated** — value is auto-produced; provenance not checked |
+| `fieldName Type = path` | **Mapped** — value copied from a dot-path in a source field |
+| `fieldName Type = @computed_from [path, ...]` | **Computed** — derived from multiple source fields |
 
-```ilk
-// emits declares userRegistered events; timestamp is generated (not sourced from fields)
-@source [fields]
-emits []Event
-```
-
-```kli
-emits [userRegistered {timestamp Int*}]
-```
-
-The `*` tells the validator: "do not check provenance for this field — it will be
-generated at runtime."
-
----
-
-## Bindings (kli only)
-
-A binding assigns a name to an instance. Bindings are:
-- **Top-level only** — not nested inside other constructs
-- **Unordered** — order does not matter for validation
-- **Unique** — each name may be declared at most once
-
-```
-name = TypeName body
-```
-
-```kli
-userIdTag      = Tag {userId String}
-userRegistered = Event<userIdTag, commonTag> {
-    id   String
-    name String
-}
-```
-
-Names follow standard identifier rules (may start with lowercase or uppercase).
+Origin annotations are kli-side only. They appear in struct refinements in `.kli` files.
+For full syntax and rules see `kli-spec.md`.
 
 ---
 
 ## Associated values (`@assoc`)
 
 `@assoc [T]` on a block declaration means that kli instances of that block may carry
-**associated values** — references to instances of type `T`.
-
-In kli, associated values are listed in angle brackets after the type name:
+**associated values** — references to other named kli instances of type `T`.
 
 ```ilk
-// ilk
 @assoc [Tag]
 Event {* Type} & {timestamp Int}
 ```
 
-```kli
-// kli — Event instance associated with two Tag instances
-userRegistered = Event<userIdTag, commonTag> {
-    id   String
-    name String
-}
-```
+Associated values are **not generic type parameters**. In kli, they are listed in angle
+brackets at the binding site: `Event<tag1, tag2> { ... }`. See `kli-spec.md`.
 
-These are **not generic type parameters**. They are runtime references to named kli
-bindings of the declared associated type.
-
-The `.assoc(t)` predicate is available in constraint expressions on any block that
+The `.assoc(t)` predicate is available in `@constraint` expressions on any block that
 carries `@assoc`.
 
 ---
@@ -379,7 +294,6 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@main` | block | Entry point — the kli file must satisfy this block |
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
 | `@source [fields]` | field / list decl | Values must originate from the named field list |
-| `@source [f] for [g]` | field / list decl | Only fields tagged by `g` must be sourced from `f` |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
 | `@AnnotationName` | field / list decl | User-defined annotation with declared validation effects (see [User-defined annotations](#user-defined-annotations)) |
 
@@ -398,11 +312,12 @@ Board {
 ### `@source`
 
 `@source [fields]` on a declaration means every value in that construct must be
-traceable to one of the fields listed. Fields that cannot be sourced must be
-marked as **generated** (`T*`).
+traceable to one of the fields listed.
 
-`@source [fields] for [tags]` narrows the sourcing requirement: only the tag-related
-subset (identified by `tags`) must come from `fields`.
+The validator resolves each field in a kli struct refinement in priority order:
+1. `Type*` — exempt (generated)
+2. `Type = path` / `Type = @computed_from [paths]` — explicit origin; path root must be in the source list
+3. No origin form — implicit; matched by structural name against the source fields
 
 ```ilk
 Command {
@@ -411,7 +326,6 @@ Command {
     @source [fields]
     emits []Event
 
-    @source [fields] for [tags]
     query []QueryItem
 }
 ```
@@ -475,13 +389,12 @@ Command {
     @source [fields]
     emits []Event
 
-    @source [fields] for [tags]
     query []QueryItem
 }
 
 QueryItem {
     @Output
-    eventTypes []Event   // source_check suppressed — no @source needed
+    eventTypes []Event   // source_check suppressed — not subject to @source
 
     tags []Tag
 }
@@ -525,7 +438,7 @@ as the language evolves; user-defined predicates are not currently supported.
 
 ---
 
-## Full example walk-through
+## Full example
 
 ### Schema (`dcb-board-spec.ilk`)
 
@@ -545,14 +458,13 @@ QueryItem {
     tags       []Tag
 }
 
-// Command: fields drive emits (with timestamp auto-generated) and tag-subset of query
+// Command: fields drive emits (timestamp auto-generated); query has no source constraint
 Command {
     fields {* Type}
 
     @source [fields]
     emits []Event
 
-    @source [fields] for [tags]
     query []QueryItem
 }
 
@@ -563,42 +475,4 @@ Board {
 }
 ```
 
-### Instance (`dcb-board-instance-valid.kli`)
-
-```kli
-// Tag bindings
-userIdTag  = Tag {userId String}
-userNameTag = Tag {name String}
-commonTag  = Tag {x String}
-simpleTag  = Tag "simple-tag"
-
-// Event bindings with their associated tags
-userRegistered = Event<userIdTag, userNameTag, commonTag> {
-    id   String
-    name String
-}
-
-other = Event<commonTag, simpleTag> {
-    hello String
-}
-
-// Command binding
-registerUser = Command {
-    fields {
-        id   String
-        name String
-        x    String
-    }
-
-    // timestamp is generated (Int*) because it is not in fields
-    emits [userRegistered {timestamp Int*}]
-
-    // tags subset of query must be sourced from fields; commonTag.x comes from fields.x
-    query [
-        {
-            eventTypes [userRegistered, other]
-            tags       [commonTag]
-        }
-    ]
-}
-```
+For the corresponding kli instance see `kli-spec.md`.
