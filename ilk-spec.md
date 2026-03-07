@@ -35,7 +35,7 @@ Tag {_} | Concrete<String> // inline comment
 
 | Token | Description |
 |-------|-------------|
-| `Type` | Meta-type: stands for any built-in or user-defined type. Used in struct cardinality notation. |
+| `Any` | Meta-type: stands for any built-in or user-defined type. Used in struct cardinality notation and type-level positions. |
 | `Uuid` | UUID value |
 | `String` | UTF-8 string |
 | `Int` | Integer |
@@ -45,8 +45,9 @@ Tag {_} | Concrete<String> // inline comment
 | `Timestamp` | Point in time |
 | `Money` | Monetary amount |
 
-`Type` is not a value type — it is a placeholder meaning "any type" and only appears in
-struct cardinality notation and schema-level declarations.
+`Any` is not a value type — it is a placeholder meaning "any type" and appears in
+struct cardinality notation, schema-level declarations, and any position where a
+specific type is intentionally left open.
 
 ---
 
