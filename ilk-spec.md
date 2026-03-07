@@ -1,14 +1,22 @@
 ## Overview
 
-ilk is a two-level language system:
+ilk is a **two-level data modeling system**:
 
-- **`.ilk` files** define schemas — the shapes, types, and constraints that instances must satisfy.
-- **`.kli` files** define instances — concrete values that conform to an `.ilk` schema.
+| Level | File | Purpose |
+|---|---|---|
+| Schema | `.ilk` | Declares the abstract vocabulary of a domain: which concepts exist, what shape they have, what constraints apply. |
+| Domain model | `.kli` | Instantiates that vocabulary for a specific domain: names the concrete entities (events, commands, tags…) and their exact shapes. |
 
 A `.kli` file is validated against the block marked `@main` in its linked `.ilk` file.
+
+Neither level describes runtime data records. A `.kli` file is not a JSON document or
+a database row — it is a domain model that says *which named entities exist* and *what
+they look like*. Runtime values (actual UUIDs, strings, timestamps) live outside both
+levels, in whatever system consumes the validated domain model.
+
 Type compatibility is checked **structurally** (by shape, not by name).
 
-This document specifies the **ilk schema language**. For the kli instance language see `kli-spec.md`.
+This document specifies the **ilk schema language**. For the kli domain-model language see `kli-spec.md`.
 
 ---
 
@@ -18,7 +26,7 @@ Single-line comments only, using `//`:
 
 ```ilk
 // this is a comment
-Tag {1 Type} | Concrete<String> // inline comment
+Tag {_} | Concrete<String> // inline comment
 ```
 
 ---
@@ -44,44 +52,56 @@ struct cardinality notation and schema-level declarations.
 
 ## Concrete types
 
-`Concrete<T>` constrains a field to a single fixed value of type `T`.
+`T` and `Concrete<T>` both accept values of type `T`, but carry different intent:
+
+| Form | Meaning |
+|---|---|
+| `String`, `Int`, … | A **runtime** value — determined dynamically by the system consuming the domain model |
+| `Concrete<String>`, `Concrete<Int>`, … | A **domain-model constant** — a specific value chosen in the kli file and fixed for all instances |
 
 ```ilk
-// ilk: field must be the string "hello"
+// label is a specific constant string chosen in kli
 label Concrete<String>
 ```
 
 ```kli
-label "hello"
+label "webhook"   // the constant string, pinned in the domain model
 ```
 
-Identifier-based enum variants (no quotes) can be expressed directly as union members:
+The validator does not enforce a particular literal; it records that the field holds
+a domain-constant. The distinction documents intent: `Concrete<T>` fields belong to
+the model definition, `T` fields belong to runtime data.
+
+Identifier-only union variants (no body, no quotes) are shorthand for named empty blocks:
 
 ```ilk
-// ilk
 HttpVerb Get | Post | Put | Delete
 ```
 
 ```kli
-// kli — just write the chosen variant
-verb Get
+verb Get   // write the variant name directly
 ```
 
 ---
 
 ## Struct types
 
-Format: `{cardinality Type}`
-
-`Type` here is the meta-type meaning "each field may be of any type".
+Structs have named fields. The schema can constrain how many fields are required using
+**anonymous-field shorthand** where `_` is a placeholder for "a field of any name":
 
 ```ilk
-{1 Type}   // exactly 1 field
-{2 Type}   // exactly 2 fields
-{* Type}   // zero or more fields (any number)
+{_}      // exactly 1 field of any name and type
+{_, _}   // exactly 2 fields of any names and types
+{...}    // zero or more fields of any names and types
 ```
 
-Fields are separated by **newlines**. Each field is a `name Type` pair:
+For structs with known field names, list them explicitly:
+
+```ilk
+{id Uuid, name String}   // exactly these two fields
+```
+
+Fields are separated by **newlines** (or commas inline):
 
 ```kli
 {hello Int}
@@ -90,19 +110,11 @@ Fields are separated by **newlines**. Each field is a `name Type` pair:
     hello Int
     goodbye String
 }
-
-{
-    hello Int
-    goodbye String
-    score Float
-    active Bool
-}
 ```
 
 **Constraints:**
-- `{0 Type}` is invalid — use the absence of a struct instead.
-- Mixed-cardinality structs (e.g. fixed fields alongside `{* Type}`) are not allowed;
-  use **intersection types** (`&`) for that pattern.
+- `{}` (zero fields) is invalid — use the absence of a struct instead.
+- Mixed anonymous/named structs are not allowed; use **intersection types** (`&`) for that pattern.
 
 ---
 
@@ -139,7 +151,7 @@ A block body is a set of named field declarations, separated by **newlines**:
 
 ```ilk
 Command {
-    fields {* Type}
+    fields {...}
     emits  []Event
 }
 ```
@@ -155,6 +167,21 @@ Command {
 }
 ```
 
+### Optional fields
+
+Appending `?` to a field name marks it as optional — the field may be absent in a kli
+binding without failing validation.
+
+```ilk
+User {
+    id     Uuid
+    name   String
+    email? String   // may be absent
+}
+```
+
+Required fields (no `?`) must be present in every kli instance of that block.
+
 ---
 
 ## Intersection types
@@ -163,7 +190,7 @@ Command {
 All fields from both sides are merged into a single struct.
 
 ```ilk
-Event {* Type} & {timestamp Int}
+Event {...} & {timestamp Int}
 ```
 
 ```kli
@@ -178,39 +205,59 @@ Event {
 Use intersection instead of mixed-cardinality structs:
 
 ```ilk
-// {* Type} plus a fixed "id" field
-Entity {* Type} & {id Uuid}
+// open struct plus a fixed "id" field
+Entity {...} & {id Uuid}
+```
+
+### Conflict rule
+
+When both sides of `&` name the same field, the **right side wins** — its type overrides
+the left side's declaration for that field. This makes intersection behave like a mixin:
+the right operand refines the left.
+
+```ilk
+// {...} may include a timestamp field of any type;
+// & {timestamp Int} pins it to Int — right side wins
+Event {...} & {timestamp Int}
+```
+
+If both sides are concrete (neither is `{...}`) and declare the same field name with
+**incompatible types**, it is a schema error.
+
+```ilk
+// error: both sides explicitly name "id" with different types
+Bad {id Uuid} & {id String}
 ```
 
 ---
 
 ## Union types
 
-`A | B` means a value must satisfy **exactly one** of the alternatives.
+`A | B` means a value must satisfy **exactly one** of the alternatives. Every branch must
+be a **named type** — either a user-defined block or a built-in scalar type
+(`String`, `Int`, `Concrete<T>`, etc.). Inline anonymous struct expressions (`{...}`) are
+not valid as union branches; declare a named block first.
 
-When all branches are **named block types**, the union is *discriminated* and the kli
-variant must be named explicitly (see [Discriminated unions](#discriminated-unions)).
-When all branches are anonymous type expressions, the branch is selected by shape.
+In kli, the right way to write a union value depends on whether the branch is a
+user-defined block or a built-in scalar:
+
+- **User-defined block branches** require writing the variant name (see [Discriminated unions](#discriminated-unions)).
+- **Built-in scalar branches** are matched by syntax (string literals, int literals, etc.).
 
 ```ilk
-Response {success Bool} | {error String}
+// named block branches — variant name required in kli
+Success { value Bool }
+Error   { message String }
+Response Success | Error
 ```
 
 ```kli
-// one valid instance
-Response {
-    success Bool
-}
+result = Success { value true }
+// or
+result = Error { message "not found" }
 ```
 
-```kli
-// another valid instance
-Response {
-    error String
-}
-```
-
-Union members may also be concrete identifier variants (enum-style):
+Identifier-only variants (no body) are named blocks with empty bodies:
 
 ```ilk
 Status Pending | Active | Archived
@@ -224,33 +271,31 @@ status Active
 
 ## Discriminated unions
 
-When all branches of a union are **named block types**, the union is a **discriminated union**.
-The validator cannot pick a branch by shape alone — two named block types may have identical
-fields. The variant name is the discriminant.
+Since all union branches are named types, every union is discriminated. When a field or
+binding expects a union type, the kli value identifies which variant it is by name.
 
-### Ilk rules
-
-- A union is discriminated when every branch is a named block type (declared elsewhere in the
-  same `.ilk` file).
-- A union is **structural** when every branch is an anonymous type expression
-  (`{N Type}`, `Concrete<T>`, primitive type, etc.).
-- **Mixed unions** — some branches named, some anonymous — are not valid.
+Named block branches have identical syntax in any position — the variant name is always
+sufficient; the schema context provides the union type.
 
 ```ilk
-// discriminated: both branches are named block types
 Started  { at Timestamp }
 Finished { at Timestamp }
-Status   Started | Finished
-
-// structural: both branches are anonymous expressions (unchanged from current behaviour)
-Tag {1 Type} | Concrete<String>
+Status   Started | Finished   // two named branches with the same shape — unambiguous by name
 ```
 
-For kli syntax for discriminated and structural unions, see `kli-spec.md`.
+Built-in scalar branches (`String`, `Concrete<T>`, `Int`, etc.) are matched by the
+syntax of the kli value itself (a string literal, int literal, etc.), so no variant name
+is written for those branches:
+
+```ilk
+Tag {_} | Concrete<String>   // {_} branch = TagField struct; Concrete<String> branch = string literal
+```
+
+See `kli-spec.md` for full kli syntax for each case.
 
 ---
 
-## Field origins (`T*`, `= path`, `= @computed_from`)
+## Field origins (`T*`, `= path`, `= compute(...)`)
 
 When `@source` is in effect on a list or field declaration, each field in a kli struct
 refinement must be provably traceable to the listed sources. By default the validator
@@ -260,7 +305,7 @@ matches by structural name. Three optional **origin annotations** override that 
 |---|---|
 | `fieldName Type*` | **Generated** — value is auto-produced; provenance not checked |
 | `fieldName Type = path` | **Mapped** — value copied from a dot-path in a source field |
-| `fieldName Type = @computed_from [path, ...]` | **Computed** — derived from multiple source fields |
+| `fieldName Type = compute(path, ...)` | **Computed** — derived from multiple source fields |
 
 Origin annotations are kli-side only. They appear in struct refinements in `.kli` files.
 For full syntax and rules see `kli-spec.md`.
@@ -269,19 +314,46 @@ For full syntax and rules see `kli-spec.md`.
 
 ## Associated values (`@assoc`)
 
-`@assoc [T]` on a block declaration means that kli instances of that block may carry
-**associated values** — references to other named kli instances of type `T`.
+Associations are an out-of-band relationship mechanism — they attach named references to
+an instance without making those references part of the instance's fields. They are used
+to express metadata relationships like "this event is tagged with these domain tags."
+
+The mechanism has three parts that work together:
+
+**1. Schema declaration** — `@assoc [T]` on a block means instances may carry references
+to bindings of type `T`:
 
 ```ilk
 @assoc [Tag]
-Event {* Type} & {timestamp Int}
+Event {...} & {timestamp Int}
 ```
 
-Associated values are **not generic type parameters**. In kli, they are listed in angle
-brackets at the binding site: `Event<tag1, tag2> { ... }`. See `kli-spec.md`.
+**2. Kli supply** — in kli, associated references are listed in angle brackets immediately
+after the type name at the binding site:
 
-The `.assoc(t)` predicate is available in `@constraint` expressions on any block that
-carries `@assoc`.
+```kli
+userRegistered = Event<userIdTag, commonTag> {
+    id   String
+    name String
+}
+```
+
+The angle brackets are **not** generics. They are a list of references to named kli
+bindings of the declared associated type.
+
+**3. Constraint access** — the `.assoc(t)` predicate in `@constraint` expressions tests
+whether a specific reference is in an instance's association set:
+
+```ilk
+QueryItem {
+    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
+    eventTypes []Event
+    tags       []Tag
+}
+```
+
+The predicate `e.assoc(t)` is only available on a variable whose type carries `@assoc [T]`,
+and `t` must be of type `T`.
 
 ---
 
@@ -316,12 +388,12 @@ traceable to one of the fields listed.
 
 The validator resolves each field in a kli struct refinement in priority order:
 1. `Type*` — exempt (generated)
-2. `Type = path` / `Type = @computed_from [paths]` — explicit origin; path root must be in the source list
+2. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
 3. No origin form — implicit; matched by structural name against the source fields
 
 ```ilk
 Command {
-    fields {* Type}
+    fields {...}
 
     @source [fields]
     emits []Event
@@ -384,7 +456,7 @@ annotation Output {
 }
 
 Command {
-    fields {* Type}
+    fields {...}
 
     @source [fields]
     emits []Event
@@ -429,12 +501,14 @@ as the language evolves; user-defined predicates are not currently supported.
 
 ## Separator rules (summary)
 
+One rule everywhere: **newlines, or commas where elements fit on one line**.
+
 | Context | Separator |
 |---|---|
-| Struct fields (`{ ... }`) | Newlines |
+| Struct fields (`{ ... }`) | Newlines (or commas inline) |
 | Block body entries | Newlines |
 | List values (`[ ... ]`) | Commas or newlines |
-| Annotation arguments (`[...]`) | Commas |
+| Annotation arguments (`[...]`) | Commas or newlines |
 
 ---
 
@@ -444,11 +518,11 @@ as the language evolves; user-defined predicates are not currently supported.
 
 ```ilk
 // Tag is either a single-field struct of any type, or a concrete string
-Tag {1 Type} | Concrete<String>
+Tag {_} | Concrete<String>
 
 // Event has any number of fields plus a timestamp; instances may carry Tag values
 @assoc [Tag]
-Event {* Type} & {timestamp Int}
+Event {...} & {timestamp Int}
 
 // QueryItem: every event in eventTypes must be associated with every tag in tags
 QueryItem {
@@ -460,7 +534,7 @@ QueryItem {
 
 // Command: fields drive emits (timestamp auto-generated); query has no source constraint
 Command {
-    fields {* Type}
+    fields {...}
 
     @source [fields]
     emits []Event

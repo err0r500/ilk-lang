@@ -1,10 +1,17 @@
 ## Overview
 
-A `.kli` file provides a **concrete instance** that is validated against the block marked
-`@main` in its linked `.ilk` schema file. Validation is structural: the instance must
-satisfy the shape and constraints declared in the schema.
+A `.kli` file is a **domain model** — it names the specific entities that exist in a
+domain (which events, which commands, which tags…) and declares their exact shapes.
+It is validated against the block marked `@main` in its linked `.ilk` schema file.
 
-This document specifies the **kli instance language**. For the ilk schema language see
+A `.kli` file is **not** a data file. It does not contain runtime values like actual
+UUIDs or timestamps. Think of it as a catalog: the `.ilk` defines what an *Event* is in
+the abstract; the `.kli` says "in *my* system, the specific events are `userRegistered`
+(with fields `id` and `name`) and `orderPlaced` (with field `orderId`)."
+
+Runtime records (actual field values) live downstream of both levels.
+
+This document specifies the **kli domain-model language**. For the ilk schema language see
 `ilk-spec.md`.
 
 ---
@@ -38,8 +45,9 @@ Bindings are:
 - **Unique** — each name may be declared at most once
 
 ```kli
-userIdTag      = Tag {userId String}
-userRegistered = Event<userIdTag, commonTag> {
+userIdTag      = Tag {userId String}      // satisfies {_} branch of Tag
+simpleTag      = Tag "simple-tag"         // satisfies Concrete<String> branch of Tag
+userRegistered = Event<userIdTag> {
     id   String
     name String
 }
@@ -121,43 +129,31 @@ tests membership in this set.
 
 ## Union values
 
-### Structural unions
+### Named block branches (discriminated)
 
-When a union's branches are all anonymous type expressions (e.g. `{1 Type} | Concrete<String>`),
-the branch is determined by shape — no extra syntax is needed:
-
-```kli
-userIdTag = Tag {userId String}   // satisfies {1 Type}
-simpleTag = Tag "simple-tag"      // satisfies Concrete<String>
-```
-
-### Discriminated unions
-
-When a union's branches are all **named block types**, the variant name must be written
-explicitly because shape alone cannot discriminate.
-
-**At a binding site**, write the union type followed by the variant name:
-
-```
-name = UnionType VariantName body
-```
+When union branches are user-defined block types, write the variant name — it is always
+sufficient; the schema context provides the union type:
 
 ```kli
-current = Status Started { at "2024-01-31T12:00:00Z" }
-//         ^^^^^^ union type (matches the schema field type)
-//                ^^^^^^^ variant name (discriminant)
-//                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^ variant body
-```
+// schema: Status = Started | Finished
+current = Started { at "2024-01-31T12:00:00Z" }
 
-**Inline inside a list or struct field**, the union type is inferred from schema context —
-only the variant name is needed:
-
-```kli
-// schema declares: history []Status
+// or inline in a list:
 history [
     Started  { at "2024-01-01T00:00:00Z" }
     Finished { at "2024-01-31T12:00:00Z" }
 ]
+```
+
+### Built-in scalar branches
+
+When a union has a built-in scalar branch (`String`, `Concrete<String>`, `Int`, etc.),
+write the literal directly — the syntax identifies the branch:
+
+```kli
+// schema: Tag = {_} | Concrete<String>
+userIdTag = Tag {userId String}   // {_} branch: struct with one field
+simpleTag = Tag "simple-tag"      // Concrete<String> branch: string literal
 ```
 
 ---
@@ -190,14 +186,14 @@ source is nested.
 
 The root segment of the path must be one of the sources named in `@source`.
 
-### Computed (`Type = @computed_from [path, ...]`)
+### Computed (`Type = compute(path, ...)`)
 
 ```kli
-amount Int = @computed_from [fields.quantity, fields.unitAmount]
+amount Int = compute(fields.quantity, fields.unitAmount)
 ```
 
 The value is derived from multiple source fields. Paths are comma-separated dot-paths
-inside `[...]`. At least one path is required. All path roots must satisfy the same
+inside `(...)`. At least one path is required. All path roots must satisfy the same
 `@source` constraint as mapped fields.
 
 ### Precedence
@@ -205,7 +201,7 @@ inside `[...]`. At least one path is required. All path roots must satisfy the s
 When `@source` is in effect, the validator resolves each field in priority order:
 
 1. `Type*` — exempt; skip provenance check
-2. `Type = path` or `Type = @computed_from [paths]` — explicit origin; validate path roots
+2. `Type = path` or `Type = compute(paths)` — explicit origin; validate path roots
 3. No origin form — implicit; structural name-match against the source fields
 
 ---
@@ -226,13 +222,14 @@ When `@source` is in effect, the validator resolves each field in priority order
 For the corresponding ilk schema see `ilk-spec.md`.
 
 ```kli
-// Tag bindings — structural union: shape determines branch
-userIdTag   = Tag {userId String}    // satisfies {1 Type}
+// Tag bindings — Tag = {_} | Concrete<String>
+userIdTag   = Tag {userId String}    // {_} branch: one-field struct
 userNameTag = Tag {name String}
 commonTag   = Tag {x String}
-simpleTag   = Tag "simple-tag"       // satisfies Concrete<String>
+simpleTag   = Tag "simple-tag"       // Concrete<String> branch: string constant
 
 // Event bindings with their associated tags
+// Event carries @assoc [Tag] — supply tags in angle brackets
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id   String
     name String
@@ -252,7 +249,7 @@ registerUser = Command {
 
     // @source [fields] is in effect on emits:
     // - timestamp is generated (not in fields)
-    // - id is mapped by name (fields.id matches)
+    // - id is matched by name (fields.id → implicit)
     emits [userRegistered {
         timestamp Int*
         id        String         // implicit: matched by name to fields.id
