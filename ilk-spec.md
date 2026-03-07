@@ -367,7 +367,6 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
 | `@source [fields]` | field / list decl | Values must originate from the named field list |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
-| `@AnnotationName` | field / list decl | User-defined annotation with declared validation effects (see [User-defined annotations](#user-defined-annotations)) |
 
 ### `@main`
 
@@ -415,71 +414,6 @@ QueryItem {
     tags       []Tag
 }
 ```
-
----
-
-## User-defined annotations
-
-Ilk authors may define their own annotations and declare what effect they have on validation.
-This allows domain-specific annotation vocabulary without adding new built-in keywords.
-
-### Definition syntax
-
-```ilk
-annotation AnnotationName {
-    effect
-    effect
-    ...
-}
-```
-
-The body lists one or more **effects** from the closed effects vocabulary (see below).
-Annotation names follow the same PascalCase convention as block type names.
-
-### Effects vocabulary
-
-| Effect | Meaning |
-|---|---|
-| `suppresses source_check` | The annotated field's value does not need a declared `@source`. The validator skips provenance checking for this field even when `@source` is in effect on the enclosing block. |
-
-Additional effects may be added as new validation dimensions are introduced.
-User-defined predicates or arbitrary code are not valid effects.
-
-### Applying a user-defined annotation
-
-A defined annotation is applied with `@AnnotationName`, exactly like a built-in annotation,
-on the line immediately before the field it annotates:
-
-```ilk
-annotation Output {
-    suppresses source_check
-}
-
-Command {
-    fields {...}
-
-    @source [fields]
-    emits []Event
-
-    query []QueryItem
-}
-
-QueryItem {
-    @Output
-    eventTypes []Event   // source_check suppressed — not subject to @source
-
-    tags []Tag
-}
-```
-
-### Semantics
-
-- Annotation definitions are **top-level declarations**, like block type definitions.
-  They are not valid inside block bodies.
-- The same annotation may be applied to multiple fields across multiple blocks.
-- A field may carry **at most one** user-defined annotation.
-- User-defined annotations and built-in annotations may not be stacked on the same field.
-- Kli files never define or use annotations — they are an ilk-only concept.
 
 ---
 
