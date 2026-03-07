@@ -26,7 +26,7 @@ Single-line comments only, using `//`:
 
 ```ilk
 // this is a comment
-Tag {_} | Concrete<String> // inline comment
+TagField {_} // inline comment on a block declaration
 ```
 
 ---
@@ -309,7 +309,9 @@ Scalar branches (`String`, `Concrete<T>`, `Int`, etc.) and literal branches (`"G
 etc.) are matched by the syntax of the kli value itself — no variant name is written:
 
 ```ilk
-Tag {_} | Concrete<String>   // {_} branch = TagField struct; Concrete<String> branch = string literal
+// Anonymous struct not valid as union branch — declare a named block first:
+TagField {_}
+Tag TagField | Concrete<String>   // TagField branch = named struct; Concrete<String> branch = string literal
 ```
 
 See `kli-spec.md` for full kli syntax for each case.
@@ -422,6 +424,37 @@ Command {
 }
 ```
 
+#### `@source [S] for [F]` — selective constraint
+
+The `for [F]` qualifier restricts the source constraint to a named subset of fields within
+each element of the annotated list. Fields not listed in `F` are unconstrained.
+
+```ilk
+// Only the `tags` field in each QueryItem must be traceable to `fields`.
+// The `eventTypes` field is not constrained.
+@source [fields] for [tags]
+query []QueryItem
+```
+
+Without `for`, `@source` applies to **all** fields in each element. With `for [F]`, only
+the fields named in `F` are checked; all others may be freely assigned in kli.
+
+#### Inline binding refinements (kli side)
+
+When `@source` is in effect on a list, kli may refine an existing binding's field origins
+by appending a struct body immediately after the binding reference within the list:
+
+```kli
+emits [userRegistered {
+    timestamp Int*               // Generated — exempt from source check
+    id        String             // implicit: matched by name to fields.id
+}]
+```
+
+The refinement struct contains only **origin annotations** for specific fields of the
+referenced binding. Fields not mentioned are resolved by the default implicit name-match.
+The refinement may not add fields that do not exist in the binding's declared type.
+
 ### `@constraint`
 
 An inline boolean predicate that every instance of the enclosing block must satisfy.
@@ -472,8 +505,11 @@ One rule everywhere: **newlines, or commas where elements fit on one line**.
 ### Schema (`dcb-board-spec.ilk`)
 
 ```ilk
-// Tag is either a single-field struct of any type, or a concrete string
-Tag {_} | Concrete<String>
+// TagField wraps exactly one field of any name and type.
+// Anonymous struct expressions are not valid as union branches — a named block is required.
+TagField {_}
+// Tag is either a TagField struct or a concrete string constant
+Tag TagField | Concrete<String>
 
 // Event has any number of fields plus a timestamp; instances may carry Tag values
 @assoc [Tag]
@@ -487,13 +523,15 @@ QueryItem {
     tags       []Tag
 }
 
-// Command: fields drive emits (timestamp auto-generated); query has no source constraint
+// Command: fields drive emits (timestamp auto-generated);
+// for query, only the tags field must be traceable to fields
 Command {
     fields {...}
 
     @source [fields]
     emits []Event
 
+    @source [fields] for [tags]
     query []QueryItem
 }
 

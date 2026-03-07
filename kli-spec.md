@@ -45,8 +45,8 @@ Bindings are:
 - **Unique** — each name may be declared at most once
 
 ```kli
-userIdTag      = Tag {userId String}      // satisfies {_} branch of Tag
-simpleTag      = Tag "simple-tag"         // satisfies Concrete<String> branch of Tag
+userIdTag      = TagField {userId String}    // satisfies TagField branch of Tag
+simpleTag      = Tag "simple-tag"            // satisfies Concrete<String> branch of Tag
 userRegistered = Event<userIdTag> {
     id   String
     name String
@@ -151,9 +151,10 @@ When a union has a built-in scalar branch (`String`, `Concrete<String>`, `Int`, 
 write the literal directly — the syntax identifies the branch:
 
 ```kli
-// schema: Tag = {_} | Concrete<String>
-userIdTag = Tag {userId String}   // {_} branch: struct with one field
-simpleTag = Tag "simple-tag"      // Concrete<String> branch: string literal
+// schema: TagField = {_}
+//         Tag = TagField | Concrete<String>
+userIdTag = TagField {userId String}   // TagField branch: named block with one field
+simpleTag = Tag "simple-tag"           // Concrete<String> branch: string literal
 ```
 
 ---
@@ -206,6 +207,49 @@ When `@source` is in effect, the validator resolves each field in priority order
 
 ---
 
+## Inline binding refinements
+
+When `@source` is in effect on a list, a list element may be written as a binding reference
+followed by a struct body. The struct body supplies **origin annotations** for specific
+fields of the referenced binding:
+
+```kli
+emits [userRegistered {
+    timestamp Int*               // Generated — exempt from source check
+    id        String             // implicit: matched by name to fields.id
+}]
+```
+
+Rules:
+- The struct body contains only origin-annotated fields (`Type*`, `Type = path`, `Type = compute(...)`), or fields with no annotation (explicit implicit match).
+- Fields not mentioned fall back to implicit name-matching against the source.
+- The refinement may not name fields that do not exist in the binding's declared type.
+- This syntax is only valid within `@source`-constrained list declarations.
+
+---
+
+## Anonymous struct instantiation
+
+When a field or list element has an unambiguous expected type from the schema, the type
+name may be omitted and an anonymous struct `{ ... }` supplied directly. Structural typing
+validates that the struct matches the expected type:
+
+```kli
+// schema: query []QueryItem
+// QueryItem type name omitted — struct matches structurally
+query [
+    {
+        eventTypes [userRegistered, other]
+        tags       [commonTag]
+    }
+]
+```
+
+This is only valid when the expected element type is a single concrete block type
+(unambiguous from context). For union-typed lists, write the branch name explicitly.
+
+---
+
 ## Separator rules (summary)
 
 | Context | Separator |
@@ -222,11 +266,11 @@ When `@source` is in effect, the validator resolves each field in priority order
 For the corresponding ilk schema see `ilk-spec.md`.
 
 ```kli
-// Tag bindings — Tag = {_} | Concrete<String>
-userIdTag   = Tag {userId String}    // {_} branch: one-field struct
-userNameTag = Tag {name String}
-commonTag   = Tag {x String}
-simpleTag   = Tag "simple-tag"       // Concrete<String> branch: string constant
+// Tag bindings — TagField = {_}, Tag = TagField | Concrete<String>
+userIdTag   = TagField {userId String}    // TagField branch: one-field struct
+userNameTag = TagField {name String}
+commonTag   = TagField {x String}
+simpleTag   = Tag "simple-tag"            // Concrete<String> branch: string constant
 
 // Event bindings with their associated tags
 // Event carries @assoc [Tag] — supply tags in angle brackets
@@ -247,15 +291,19 @@ registerUser = Command {
         x    String
     }
 
-    // @source [fields] is in effect on emits:
-    // - timestamp is generated (not in fields)
-    // - id is matched by name (fields.id → implicit)
+    // @source [fields] is in effect on emits.
+    // Inline refinement annotates field origins for userRegistered:
+    // - timestamp is generated (not in fields, so marked Int*)
+    // - id is matched by name implicitly (fields.id)
+    // - name is matched by name implicitly (fields.name)
     emits [userRegistered {
         timestamp Int*
         id        String         // implicit: matched by name to fields.id
     }]
 
-    // query has no @source — no provenance constraint
+    // @source [fields] for [tags] is in effect on query:
+    // only the tags field of each QueryItem is source-constrained.
+    // QueryItem type name omitted — anonymous struct matches structurally.
     query [
         {
             eventTypes [userRegistered, other]

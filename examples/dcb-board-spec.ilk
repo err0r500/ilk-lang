@@ -1,9 +1,12 @@
 // THIS IS THE META SCHEMA
 
-Tag {1 Type} | Concrete<String> // a tag is {key (any) Type} or a concrete string
+// TagField wraps a single field of any name and type.
+// Anonymous structs are not valid as union branches — a named block is required.
+TagField {_}
+Tag TagField | Concrete<String> // a tag is a single-field struct of any type, or a concrete string
 
 @assoc [Tag]
-Event {* Type} & {timestamp Int} // an Event is a set of fields and an optional timestamp field, and can be associated with tags type
+Event {...} & {timestamp Int} // an Event has any number of fields plus a timestamp, and can be associated with tags
 
 QueryItem {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
@@ -13,16 +16,16 @@ QueryItem {
 }
 
 Command {
-    fields {* Type}
+    fields {...}
 
     @source [fields] // all Event fields in emits must be sourced from Command fields
     emits []Event
 
-    @source [fields] for [tags] // only tags fields in query must be sourced from Command fields
+    @source [fields] for [tags] // only the tags field in each QueryItem must be sourced from Command fields
     query []QueryItem
 }
 
-@root
+@main
 Board {
     commands []Command
 }

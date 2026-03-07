@@ -1,7 +1,8 @@
-userIdTag = Tag {userId String}
-userNameTag = Tag {name String}
-commonTag = Tag {x String}
-simpleTag = Tag "simple-tag"
+// Tag bindings — TagField = {_}, Tag = TagField | Concrete<String>
+userIdTag   = TagField {userId String}    // TagField branch: one-field struct
+userNameTag = TagField {name String}
+commonTag   = TagField {x String}
+simpleTag   = Tag "simple-tag"            // Concrete<String> branch: string constant
 
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id String
@@ -19,8 +20,13 @@ registerUser = Command {
          x String
     }
 
+    // @source [fields] is in effect on emits:
+    // - timestamp is generated (not in fields)
+    // - id and name are matched by name implicitly
     emits [userRegistered {timestamp Int*}]
 
+    // query has @source [fields] for [tags] — only the tags field is source-constrained
+    // QueryItem type name omitted: anonymous struct matches structurally
     query [
         {
             eventTypes [userRegistered, other],
