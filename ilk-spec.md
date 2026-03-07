@@ -51,29 +51,48 @@ specific type is intentionally left open.
 
 ---
 
-## Concrete types
+## Value ownership
 
-`T` and `Concrete<T>` both accept values of type `T`, but carry different intent:
+Three forms express who determines a field's value:
 
-| Form | Meaning |
-|---|---|
-| `String`, `Int`, … | A **runtime** value — determined dynamically by the system consuming the domain model |
-| `Concrete<String>`, `Concrete<Int>`, … | A **domain-model constant** — a specific value chosen in the kli file and fixed for all instances |
+| Form | Owner | Meaning |
+|---|---|---|
+| `String`, `Int`, … | Runtime | Value comes from the system consuming the domain model |
+| `Concrete<String>`, `Concrete<Int>`, … | kli author | A specific value chosen in the kli file; any valid value of that type |
+| `"hello"`, `42`, `true`, … | ilk author | An exact literal value fixed in the schema itself |
 
 ```ilk
-// label is a specific constant string chosen in kli
+// runtime: the consuming system supplies the name
+name String
+
+// domain constant: kli author picks any string (e.g. "webhook")
 label Concrete<String>
+
+// schema literal: schema mandates exactly this integer
+version 1
 ```
 
 ```kli
-label "webhook"   // the constant string, pinned in the domain model
+name   "alice"    // runtime value — supplied by the consumer
+label  "webhook"  // domain constant — kli author's choice
+version 1         // must match the schema literal exactly
 ```
 
-The validator does not enforce a particular literal; it records that the field holds
-a domain-constant. The distinction documents intent: `Concrete<T>` fields belong to
-the model definition, `T` fields belong to runtime data.
+`Concrete<T>` and literal types serve different purposes: `Concrete<T>` says "the kli
+author decides the value"; a literal says "the schema author has already decided."
 
-Identifier-only union variants (no body, no quotes) are shorthand for named empty blocks:
+Literal types are most useful in union positions:
+
+```ilk
+HttpMethod "GET" | "POST" | "PUT" | "DELETE"
+```
+
+```kli
+method "POST"   // matched by literal syntax
+```
+
+Identifier-only union variants (no body, no quotes) remain available as shorthand for
+named empty blocks when a symbolic name is preferred over a string literal:
 
 ```ilk
 HttpVerb Get | Post | Put | Delete
@@ -234,16 +253,18 @@ Bad {id Uuid} & {id String}
 
 ## Union types
 
-`A | B` means a value must satisfy **exactly one** of the alternatives. Every branch must
-be a **named type** — either a user-defined block or a built-in scalar type
-(`String`, `Int`, `Concrete<T>`, etc.). Inline anonymous struct expressions (`{...}`) are
-not valid as union branches; declare a named block first.
+`A | B` means a value must satisfy **exactly one** of the alternatives. Branches may be:
+- **Named blocks** — user-defined block types
+- **Built-in scalar types** — `String`, `Int`, `Concrete<T>`, etc.
+- **Literal types** — exact values like `"GET"`, `42`, `true`
 
-In kli, the right way to write a union value depends on whether the branch is a
-user-defined block or a built-in scalar:
+Inline anonymous struct expressions (`{...}`) are not valid as union branches; declare a
+named block first.
 
-- **User-defined block branches** require writing the variant name (see [Discriminated unions](#discriminated-unions)).
-- **Built-in scalar branches** are matched by syntax (string literals, int literals, etc.).
+In kli, the branch is identified by syntax:
+
+- **Named block branches** require writing the variant name (see [Discriminated unions](#discriminated-unions)).
+- **Scalar and literal branches** are matched by the syntax of the kli value itself.
 
 ```ilk
 // named block branches — variant name required in kli
@@ -284,9 +305,8 @@ Finished { at Timestamp }
 Status   Started | Finished   // two named branches with the same shape — unambiguous by name
 ```
 
-Built-in scalar branches (`String`, `Concrete<T>`, `Int`, etc.) are matched by the
-syntax of the kli value itself (a string literal, int literal, etc.), so no variant name
-is written for those branches:
+Scalar branches (`String`, `Concrete<T>`, `Int`, etc.) and literal branches (`"GET"`, `42`,
+etc.) are matched by the syntax of the kli value itself — no variant name is written:
 
 ```ilk
 Tag {_} | Concrete<String>   // {_} branch = TagField struct; Concrete<String> branch = string literal
