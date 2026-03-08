@@ -51,35 +51,36 @@ specific type is intentionally left open.
 
 ---
 
-## Value ownership
+## Value constraint levels
 
-Three forms express who determines a field's value:
+Three forms express how tightly the schema constrains a field's value:
 
-| Form | Owner | Meaning |
+| ilk form | Constraint | Meaning |
 |---|---|---|
-| `String`, `Int`, … | Runtime | Value comes from the system consuming the domain model |
-| `Concrete<String>`, `Concrete<Int>`, … | kli author | A specific value chosen in the kli file; any valid value of that type |
-| `"hello"`, `42`, `true`, … | ilk author | An exact literal value fixed in the schema itself |
+| `String`, `Int`, … | Open | kli accepts **any** value of that type |
+| `Concrete<String>`, `Concrete<Int>`, … | kli-fixed | kli declares **one specific** value; the schema does not prescribe which one |
+| `"hello"`, `42`, `true`, … | Schema-fixed | Only this exact value is valid; kli cannot change it |
 
 ```ilk
-// runtime: the consuming system supplies the name
+// open: kli may supply any string
 name String
 
-// domain constant: kli author picks any string (e.g. "webhook")
+// kli-fixed: kli picks one specific string (e.g. "webhook")
 label Concrete<String>
 
-// schema literal: schema mandates exactly this integer
+// schema-fixed: must be exactly this integer — kli cannot override it
 version 1
 ```
 
 ```kli
-name   "alice"    // runtime value — supplied by the consumer
-label  "webhook"  // domain constant — kli author's choice
+name    "alice"   // any string accepted — open constraint
+label   "webhook" // one specific string, chosen by the kli author
 version 1         // must match the schema literal exactly
 ```
 
-`Concrete<T>` and literal types serve different purposes: `Concrete<T>` says "the kli
-author decides the value"; a literal says "the schema author has already decided."
+The three levels form a tightening progression: `String` leaves the value fully open,
+`Concrete<String>` lets the kli author fix it to one value, and `"hello"` forecloses
+the choice in the schema itself.
 
 Literal types are most useful in union positions:
 

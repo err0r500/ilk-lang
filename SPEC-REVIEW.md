@@ -104,27 +104,20 @@ when context is unambiguous — was not documented.
 
 ## Design clarity issues
 
-### 7. `String` (runtime) vs `Concrete<String>` in kli
+### 7. `String` (runtime) vs `Concrete<String>` in kli — **Fixed**
 
-`String` is defined as runtime-owned (the consuming system provides the value). Yet both
-the kli-spec value-literals table and the full example show string literals for `String`
-fields, with comments like `// runtime value — supplied by the consumer`. This is
-potentially confusing: if the consuming system provides the value, why does it appear as a
-literal in a kli file?
+The "value ownership" framing was confusing: it implied `String` fields are never written
+in kli, but the examples showed string literals for them.
 
-**Assessment:** The spec intent is that kli files define the *shape* of entities (field
-names and types) even for runtime-typed fields. The string literals in examples are
-illustrative placeholders showing what a runtime string looks like — they are not fixed
-domain constants. The distinction is:
-- `Concrete<String>` in kli: the value is fixed and meaningful (e.g. `"webhook"` as a
-  label identifier).
-- `String` in kli: the literal is a shape declaration (type annotation), not a value
-  commitment; runtime provides the actual string.
+**Fix:** Reframed as **value constraint levels** in both specs:
+- `String` — open: kli accepts any string (runtime value)
+- `Concrete<String>` — kli-fixed: kli declares one specific string (author's choice)
+- `"hello"` — schema-fixed: only that exact literal is valid
 
-**Recommendation (not yet applied):** Add a clarifying note to the value-ownership table
-or the kli-spec overview explaining that `String`/`Int`/etc. field declarations in kli
-describe *shape*, and any literal shown is illustrative. A future syntax like `_` or `?`
-as a runtime-value placeholder (instead of a mock literal) would remove the ambiguity.
+`ilk-spec.md`: renamed section to "Value constraint levels"; updated table and prose.
+`kli-spec.md`: added "Value constraint levels" section before value literals; updated
+literals table to show `String` / `Concrete<String>` share the same literal syntax, with
+a note that the validator resolves the constraint level from the schema declaration.
 
 ---
 
@@ -191,7 +184,7 @@ leave extension hooks without breaking changes.
 
 ## Open items (require further design decisions)
 
-1. **§7** — Clarify kli semantics of `String` literals (shape vs runtime placeholder)
+1. ~~**§7** — Clarify kli semantics of `String` literals~~ **Done**
 2. **§8** — Specify `@source` implicit name-matching depth (one level vs recursive)
 3. **§9** — Decide whether kli struct fields allow inline commas
 4. **Constraint language** — Add `exists`, comparisons, and roadmap note

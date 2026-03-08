@@ -16,18 +16,46 @@ This document specifies the **kli domain-model language**. For the ilk schema la
 
 ---
 
+## Value constraint levels
+
+The ilk schema uses three levels of constraint on a field's value. kli must respect them:
+
+| ilk form | kli obligation |
+|---|---|
+| `String`, `Int`, … | Supply **any** valid value of that type |
+| `Concrete<String>`, `Concrete<Int>`, … | Supply **one specific** value of that type (your choice) |
+| `"hello"`, `42`, `true`, … | Supply **exactly** that value — no other is accepted |
+
+```ilk
+name    String           // open — any string
+label   Concrete<String> // kli-fixed — one string, kli author decides which
+version 1                // schema-fixed — must be exactly 1
+```
+
+```kli
+name    "alice"   // satisfies String  — any string is fine
+label   "webhook" // satisfies Concrete<String> — this specific string is the domain constant
+version 1         // satisfies literal 1 — must match exactly
+```
+
 ## Value literals
+
+Literal syntax for each base type:
 
 | Type | kli literal |
 |------|-------------|
-| `String` | `"hello world"` |
-| `Int` | `42` |
-| `Float` | `3.14` |
-| `Bool` | `true` / `false` |
-| `Uuid` | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `Date` | `"2024-01-31"` (ISO 8601) |
-| `Timestamp` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
-| `Money` | `"19.99 USD"` (amount + ISO 4217 currency code) |
+| `String` / `Concrete<String>` | `"hello world"` |
+| `Int` / `Concrete<Int>` | `42` |
+| `Float` / `Concrete<Float>` | `3.14` |
+| `Bool` / `Concrete<Bool>` | `true` / `false` |
+| `Uuid` / `Concrete<Uuid>` | `"550e8400-e29b-41d4-a716-446655440000"` |
+| `Date` / `Concrete<Date>` | `"2024-01-31"` (ISO 8601) |
+| `Timestamp` / `Concrete<Timestamp>` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
+| `Money` / `Concrete<Money>` | `"19.99 USD"` (amount + ISO 4217 currency code) |
+
+`String` and `Concrete<String>` share the same literal syntax in kli. The validator
+determines which constraint level applies from the schema declaration, not from the
+literal form itself.
 
 ---
 
