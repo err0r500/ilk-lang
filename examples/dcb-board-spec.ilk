@@ -1,9 +1,11 @@
 // THIS IS THE META SCHEMA
 
-// TagField wraps a single field of any name and type.
+// Parametrized wraps a single field of any name but specifically of type String.
 // Anonymous structs are not valid as union branches — a named block is required.
-TagField {_}
-Tag TagField | Concrete<String> // a tag is a single-field struct of any type, or a concrete string
+Parametrized {String}
+// Unique is a named alias for Concrete<String>, used as a union branch.
+Unique Concrete<String>
+Tag Parametrized | Unique // a tag is a single-field String struct, or a unique concrete string
 
 @assoc [Tag]
 Event {...} & {timestamp Int} // an Event has any number of fields plus a timestamp, and can be associated with tags

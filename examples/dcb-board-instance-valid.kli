@@ -1,8 +1,8 @@
-// Tag bindings — TagField = {_}, Tag = TagField | Concrete<String>
-userIdTag   = TagField {userId String}    // TagField branch: one-field struct
-userNameTag = TagField {name String}
-commonTag   = TagField {x String}
-simpleTag   = Tag Concrete "simple-tag"   // Concrete<String> branch: tagged concrete value
+// Tag bindings — Parametrized = {String}, Unique = Concrete<String>, Tag = Parametrized | Unique
+userIdTag   = Parametrized {userId String}   // Parametrized branch: one String field
+userNameTag = Parametrized {name String}
+commonTag   = Parametrized {x String}
+simpleTag   = Unique "simple-tag"            // Unique branch: concrete string via type alias
 
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id String

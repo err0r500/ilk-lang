@@ -85,8 +85,8 @@ Bindings are:
 - **Unique** — each name may be declared at most once
 
 ```kli
-userIdTag      = TagField {userId String}    // satisfies TagField branch of Tag
-simpleTag      = Tag Concrete "simple-tag"   // satisfies Concrete<String> branch of Tag
+userIdTag      = Parametrized {userId String}   // satisfies Parametrized branch of Tag
+simpleTag      = Unique "simple-tag"            // satisfies Unique branch of Tag
 userRegistered = Event<userIdTag> {
     id   String
     name String
@@ -192,16 +192,17 @@ history [
 ]
 ```
 
-### Built-in scalar branches
+### `Concrete<T>` branches
 
-When a union has a built-in scalar branch (`String`, `Concrete<String>`, `Int`, etc.),
-the syntax of the value identifies the branch:
+When a union has a `Concrete<T>` branch, wrap it in a named alias so it is discriminable
+by name — the alias name is always written in kli:
 
 ```kli
-// schema: TagField = {_}
-//         Tag = TagField | Concrete<String>
-userIdTag = TagField {userId String}          // TagField branch: named block with one field
-simpleTag = Tag Concrete "simple-tag"         // Concrete<String> branch: tagged concrete value
+// schema: Parametrized = {String}
+//         Unique = Concrete<String>
+//         Tag = Parametrized | Unique
+userIdTag = Parametrized {userId String}   // Parametrized branch: named block, one String field
+simpleTag = Unique "simple-tag"            // Unique branch: concrete string via named alias
 ```
 
 ---
@@ -313,11 +314,11 @@ This is only valid when the expected element type is a single concrete block typ
 For the corresponding ilk schema see `ilk-spec.md`.
 
 ```kli
-// Tag bindings — TagField = {_}, Tag = TagField | Concrete<String>
-userIdTag   = TagField {userId String}    // TagField branch: one-field struct
-userNameTag = TagField {name String}
-commonTag   = TagField {x String}
-simpleTag   = Tag Concrete "simple-tag"   // Concrete<String> branch: tagged concrete value
+// Tag bindings — Parametrized = {String}, Unique = Concrete<String>, Tag = Parametrized | Unique
+userIdTag   = Parametrized {userId String}   // Parametrized branch: one String field
+userNameTag = Parametrized {name String}
+commonTag   = Parametrized {x String}
+simpleTag   = Unique "simple-tag"            // Unique branch: concrete string via named alias
 
 // Event bindings with their associated tags
 // Event carries @assoc [Tag] — supply tags in angle brackets

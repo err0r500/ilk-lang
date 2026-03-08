@@ -254,18 +254,17 @@ Bad {id Uuid} & {id String}
 
 ## Union types
 
-`A | B` means a value must satisfy **exactly one** of the alternatives. Branches may be:
-- **Named blocks** — user-defined block types, including identifier-only variants (empty named blocks: `Get`, `Post`, …)
-- **Built-in scalar types** — `String`, `Int`, `Concrete<T>`, etc.
-- **Literal types** — exact values like `"GET"`, `42`, `true`
+`A | B` means a value must satisfy **exactly one** of the alternatives. All branches must
+be **named blocks** — user-defined block types, including:
+- Struct blocks: `Success { value Bool }`
+- Identifier-only variants (empty named blocks): `Get`, `Post`, …
+- Type aliases: `Unique Concrete<String>`
 
 Inline anonymous struct expressions (`{...}`) are not valid as union branches; declare a
-named block first.
+named block first. `Concrete<T>` and other scalar types used as branches must likewise be
+wrapped in a named alias so kli can discriminate them by name.
 
-In kli, the branch is identified by syntax:
-
-- **Named block branches** require writing the variant name (see [Discriminated unions](#discriminated-unions)).
-- **Scalar and literal branches** are matched by the syntax of the kli value itself.
+In kli, the branch is always identified by the variant name (see [Discriminated unions](#discriminated-unions)).
 
 ```ilk
 // named block branches — variant name required in kli
@@ -311,8 +310,9 @@ etc.) are matched by the syntax of the kli value itself — no variant name is w
 
 ```ilk
 // Anonymous struct not valid as union branch — declare a named block first:
-TagField {_}
-Tag TagField | Concrete<String>   // TagField branch = named struct; Concrete<String> branch = string literal
+Parametrized {String}            // one field of any name, type String
+Unique Concrete<String>          // named alias — Concrete<String> as a discriminable branch
+Tag Parametrized | Unique        // Parametrized branch = named struct; Unique branch = concrete string
 ```
 
 See `kli-spec.md` for full kli syntax for each case.
@@ -507,11 +507,13 @@ One rule everywhere: **newlines, or commas where elements fit on one line**.
 ### Schema (`dcb-board-spec.ilk`)
 
 ```ilk
-// TagField wraps exactly one field of any name and type.
+// Parametrized wraps exactly one field of any name, constrained to type String.
 // Anonymous struct expressions are not valid as union branches — a named block is required.
-TagField {_}
-// Tag is either a TagField struct or a concrete string constant
-Tag TagField | Concrete<String>
+Parametrized {String}
+// Unique is a named alias for Concrete<String>, making the branch discriminable in kli.
+Unique Concrete<String>
+// Tag is either a Parametrized struct or a Unique concrete string.
+Tag Parametrized | Unique
 
 // Event has any number of fields plus a timestamp; instances may carry Tag values
 @assoc [Tag]
