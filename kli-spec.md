@@ -16,6 +16,17 @@ This document specifies the **kli domain-model language**. For the ilk schema la
 
 ---
 
+## Comments
+
+Single-line comments only, using `//`:
+
+```kli
+// this is a comment
+userIdTag = TagField {userId String} // inline comment on a binding
+```
+
+---
+
 ## Value constraint levels
 
 The ilk schema uses three levels of constraint on a field's value. kli must respect them:
@@ -33,9 +44,9 @@ version 1                // schema-fixed — must be exactly 1
 ```
 
 ```kli
-name    "alice"   // satisfies String  — any string is fine
-label   "webhook" // satisfies Concrete<String> — this specific string is the domain constant
-version 1         // satisfies literal 1 — must match exactly
+name    "alice"            // satisfies String  — any string is fine
+label   Concrete "webhook" // satisfies Concrete<String> — tagged; kli author's chosen value
+version 1                  // satisfies literal 1 — must match exactly
 ```
 
 ## Value literals
@@ -44,18 +55,19 @@ Literal syntax for each base type:
 
 | Type | kli literal |
 |------|-------------|
-| `String` / `Concrete<String>` | `"hello world"` |
-| `Int` / `Concrete<Int>` | `42` |
-| `Float` / `Concrete<Float>` | `3.14` |
-| `Bool` / `Concrete<Bool>` | `true` / `false` |
-| `Uuid` / `Concrete<Uuid>` | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `Date` / `Concrete<Date>` | `"2024-01-31"` (ISO 8601) |
-| `Timestamp` / `Concrete<Timestamp>` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
-| `Money` / `Concrete<Money>` | `"19.99 USD"` (amount + ISO 4217 currency code) |
+| `String` | `"hello world"` |
+| `Int` | `42` |
+| `Float` | `3.14` |
+| `Bool` | `true` / `false` |
+| `Uuid` | `"550e8400-e29b-41d4-a716-446655440000"` |
+| `Date` | `"2024-01-31"` (ISO 8601) |
+| `Timestamp` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
+| `Money` | `"19.99 USD"` (amount + ISO 4217 currency code) |
+| `Concrete<T>` | `Concrete <literal>` — e.g. `Concrete "webhook"`, `Concrete 42` |
 
-`String` and `Concrete<String>` share the same literal syntax in kli. The validator
-determines which constraint level applies from the schema declaration, not from the
-literal form itself.
+`Concrete<T>` values are always written with the `Concrete` prefix followed by the literal.
+This makes them syntactically distinct from open (`String`, `Int`, …) field values, which
+are written as plain literals.
 
 ---
 
@@ -74,7 +86,7 @@ Bindings are:
 
 ```kli
 userIdTag      = TagField {userId String}    // satisfies TagField branch of Tag
-simpleTag      = Tag "simple-tag"            // satisfies Concrete<String> branch of Tag
+simpleTag      = Tag Concrete "simple-tag"   // satisfies Concrete<String> branch of Tag
 userRegistered = Event<userIdTag> {
     id   String
     name String
@@ -140,18 +152,25 @@ registerUser = Command {
 
 When a block type is declared with `@assoc [T]` in the schema, kli instances of that
 block may carry associated values — named bindings of type `T` — listed in angle brackets
-immediately after the type name:
+immediately after the type name. When there are no associated values, the angle brackets
+are omitted entirely (`Event<>` is not valid):
 
 ```kli
+// with associations
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id   String
     name String
 }
+
+// no associations — angle brackets absent
+other = Event {
+    hello String
+}
 ```
 
-The angle-bracket list is **not** a generic type parameter. It is a runtime set of
-references to other named bindings. The `.assoc(t)` predicate in `@constraint` expressions
-tests membership in this set.
+The angle-bracket list is **not** a generic type parameter. It is a set of references to
+named bindings. The `.assoc(t)` predicate in `@constraint` expressions tests membership
+in this set.
 
 ---
 
@@ -176,13 +195,13 @@ history [
 ### Built-in scalar branches
 
 When a union has a built-in scalar branch (`String`, `Concrete<String>`, `Int`, etc.),
-write the literal directly — the syntax identifies the branch:
+the syntax of the value identifies the branch:
 
 ```kli
 // schema: TagField = {_}
 //         Tag = TagField | Concrete<String>
-userIdTag = TagField {userId String}   // TagField branch: named block with one field
-simpleTag = Tag "simple-tag"           // Concrete<String> branch: string literal
+userIdTag = TagField {userId String}          // TagField branch: named block with one field
+simpleTag = Tag Concrete "simple-tag"         // Concrete<String> branch: tagged concrete value
 ```
 
 ---
@@ -298,7 +317,7 @@ For the corresponding ilk schema see `ilk-spec.md`.
 userIdTag   = TagField {userId String}    // TagField branch: one-field struct
 userNameTag = TagField {name String}
 commonTag   = TagField {x String}
-simpleTag   = Tag "simple-tag"            // Concrete<String> branch: string constant
+simpleTag   = Tag Concrete "simple-tag"   // Concrete<String> branch: tagged concrete value
 
 // Event bindings with their associated tags
 // Event carries @assoc [Tag] — supply tags in angle brackets

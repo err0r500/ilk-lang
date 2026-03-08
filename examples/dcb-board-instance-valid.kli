@@ -2,7 +2,7 @@
 userIdTag   = TagField {userId String}    // TagField branch: one-field struct
 userNameTag = TagField {name String}
 commonTag   = TagField {x String}
-simpleTag   = Tag "simple-tag"            // Concrete<String> branch: string constant
+simpleTag   = Tag Concrete "simple-tag"   // Concrete<String> branch: tagged concrete value
 
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id String

@@ -73,9 +73,9 @@ version 1
 ```
 
 ```kli
-name    "alice"   // any string accepted — open constraint
-label   "webhook" // one specific string, chosen by the kli author
-version 1         // must match the schema literal exactly
+name    "alice"            // any string accepted — open constraint
+label   Concrete "webhook" // one specific string, chosen by the kli author — tagged
+version 1                  // must match the schema literal exactly
 ```
 
 The three levels form a tightening progression: `String` leaves the value fully open,
@@ -353,17 +353,25 @@ Event {...} & {timestamp Int}
 ```
 
 **2. Kli supply** — in kli, associated references are listed in angle brackets immediately
-after the type name at the binding site:
+after the type name at the binding site. The angle brackets are omitted entirely when no
+associations are supplied:
 
 ```kli
+// with associations
 userRegistered = Event<userIdTag, commonTag> {
     id   String
     name String
 }
+
+// no associations — angle brackets absent
+other = Event {
+    hello String
+}
 ```
 
 The angle brackets are **not** generics. They are a list of references to named kli
-bindings of the declared associated type.
+bindings of the declared associated type. `Event<>` (empty brackets) is not valid — omit
+them instead.
 
 **3. Constraint access** — the `.assoc(t)` predicate in `@constraint` expressions tests
 whether a specific reference is in an instance's association set:
@@ -389,7 +397,7 @@ Annotations appear on the line immediately before the declaration they annotate.
 |---|---|---|
 | `@main` | block | Entry point — the kli file must satisfy this block |
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
-| `@source [fields]` | field / list decl | Values must originate from the named field list |
+| `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
 
 ### `@main`
@@ -406,20 +414,28 @@ Board {
 
 ### `@source`
 
-`@source [fields]` on a declaration means every value in that construct must be
-traceable to one of the fields listed.
+`@source [S, …]` on a declaration means every value in that construct must be traceable
+to one of the named source fields. Multiple sources may be listed, comma-separated.
 
 The validator resolves each field in a kli struct refinement in priority order:
 1. `Type*` — exempt (generated)
 2. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
 3. No origin form — implicit; matched by structural name against the source fields
 
+**On a list declaration** — each element's fields are checked against the sources.
+
+**On a plain struct field** — the field's own struct element is checked directly: every
+sub-field of that struct must be traceable to the named sources.
+
 ```ilk
 Command {
     fields {...}
 
     @source [fields]
-    emits []Event
+    emits []Event       // each Event element's fields must trace to Command.fields
+
+    @source [fields]
+    summary {...}       // summary struct's own fields must trace to Command.fields
 
     query []QueryItem
 }

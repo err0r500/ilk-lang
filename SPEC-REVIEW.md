@@ -182,9 +182,22 @@ leave extension hooks without breaking changes.
 | `ilk-spec.md` | Comments section example updated; discriminated-unions section updated to named-block form; `@source` section: added `for [F]` qualifier docs and inline binding refinement docs; full example updated |
 | `kli-spec.md` | Bindings example updated; union-values section updated; added "Inline binding refinements" section; added "Anonymous struct instantiation" section; full example updated |
 
+## Additional gaps resolved
+
+| Gap | Resolution |
+|---|---|
+| A — Comments not defined in `kli-spec.md` | Added Comments section (same as ilk: `//` only) |
+| B — `Concrete<T>` disambiguation | `Concrete<T>` values are written `Concrete <literal>` in kli (e.g. `Concrete "webhook"`), always syntactically distinct from open type literals |
+| C — `@assoc` with zero associations | Angle brackets are omitted entirely; `Event<>` is invalid |
+| D — `@source` multiple sources | `@source [S, …]` — comma-separated list; documented in annotations table and `@source` section |
+| E — `@source` on non-list field | Validates the field's own struct element directly; documented in `@source` section |
+| F — `[N]T` in kli | Site-specific; no general spec entry needed |
+| G — `@source` cross-instance resolution | Open; design not yet decided |
+
 ## Open items (require further design decisions)
 
 1. ~~**§7** — Clarify kli semantics of `String` literals~~ **Done**
 2. **§8** — Specify `@source` implicit name-matching depth (one level vs recursive)
 3. **§9** — Decide whether kli struct fields allow inline commas
 4. **Constraint language** — Add `exists`, comparisons, and roadmap note
+5. **G** — `@source` cross-instance resolution: how the validator resolves a source field name to a concrete struct from the same binding instance
