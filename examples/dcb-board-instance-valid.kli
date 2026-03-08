@@ -1,7 +1,8 @@
-userIdTag = Tag {userId String}
-userNameTag = Tag {name String}
-commonTag = Tag {x String}
-simpleTag = Tag "simple-tag"
+// Tag bindings — Parametrized = {String}, Unique = Concrete<String>, Tag = Parametrized | Unique
+userIdTag   = Parametrized {userId String}   // Parametrized branch: one String field
+userNameTag = Parametrized {name String}
+commonTag   = Parametrized {x String}
+simpleTag   = Unique "simple-tag"            // Unique branch: concrete string via type alias
 
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id String
@@ -19,8 +20,13 @@ registerUser = Command {
          x String
     }
 
-    emits [userRegistered {timestamp Int*}]
+    // @source [fields] is in effect on emits:
+    // - timestamp is generated (not in fields)
+    // - id and name are matched by name implicitly
+    emits [userRegistered & {timestamp Int*}]
 
+    // query has no @source — no provenance constraint
+    // QueryItem type name omitted: anonymous struct matches structurally
     query [
         {
             eventTypes [userRegistered, other],

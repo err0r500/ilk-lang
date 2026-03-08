@@ -16,7 +16,42 @@ This document specifies the **kli domain-model language**. For the ilk schema la
 
 ---
 
+## Comments
+
+Single-line comments only, using `//`:
+
+```kli
+// this is a comment
+userIdTag = TagField {userId String} // inline comment on a binding
+```
+
+---
+
+## Value constraint levels
+
+The ilk schema uses three levels of constraint on a field's value. kli must respect them:
+
+| ilk form | kli obligation |
+|---|---|
+| `String`, `Int`, … | Supply **any** valid value of that type |
+| `Concrete<String>`, `Concrete<Int>`, … | Supply **one specific** value of that type (your choice) |
+| `"hello"`, `42`, `true`, … | Supply **exactly** that value — no other is accepted |
+
+```ilk
+name    String           // open — any string
+label   Concrete<String> // kli-fixed — one string, kli author decides which
+version 1                // schema-fixed — must be exactly 1
+```
+
+```kli
+name    "alice"            // satisfies String  — any string is fine
+label   Concrete "webhook" // satisfies Concrete<String> — tagged; kli author's chosen value
+version 1                  // satisfies literal 1 — must match exactly
+```
+
 ## Value literals
+
+Literal syntax for each base type:
 
 | Type | kli literal |
 |------|-------------|
@@ -28,6 +63,11 @@ This document specifies the **kli domain-model language**. For the ilk schema la
 | `Date` | `"2024-01-31"` (ISO 8601) |
 | `Timestamp` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
 | `Money` | `"19.99 USD"` (amount + ISO 4217 currency code) |
+| `Concrete<T>` | `Concrete <literal>` — e.g. `Concrete "webhook"`, `Concrete 42` |
+
+`Concrete<T>` values are always written with the `Concrete` prefix followed by the literal.
+This makes them syntactically distinct from open (`String`, `Int`, …) field values, which
+are written as plain literals.
 
 ---
 
@@ -45,8 +85,8 @@ Bindings are:
 - **Unique** — each name may be declared at most once
 
 ```kli
-userIdTag      = Tag {userId String}      // satisfies {_} branch of Tag
-simpleTag      = Tag "simple-tag"         // satisfies Concrete<String> branch of Tag
+userIdTag      = Parametrized {userId String}   // satisfies Parametrized branch of Tag
+simpleTag      = Unique "simple-tag"            // satisfies Unique branch of Tag
 userRegistered = Event<userIdTag> {
     id   String
     name String
@@ -112,18 +152,25 @@ registerUser = Command {
 
 When a block type is declared with `@assoc [T]` in the schema, kli instances of that
 block may carry associated values — named bindings of type `T` — listed in angle brackets
-immediately after the type name:
+immediately after the type name. When there are no associated values, the angle brackets
+are omitted entirely (`Event<>` is not valid):
 
 ```kli
+// with associations
 userRegistered = Event<userIdTag, userNameTag, commonTag> {
     id   String
     name String
 }
+
+// no associations — angle brackets absent
+other = Event {
+    hello String
+}
 ```
 
-The angle-bracket list is **not** a generic type parameter. It is a runtime set of
-references to other named bindings. The `.assoc(t)` predicate in `@constraint` expressions
-tests membership in this set.
+The angle-bracket list is **not** a generic type parameter. It is a set of references to
+named bindings. The `.assoc(t)` predicate in `@constraint` expressions tests membership
+in this set.
 
 ---
 
@@ -145,15 +192,17 @@ history [
 ]
 ```
 
-### Built-in scalar branches
+### `Concrete<T>` branches
 
-When a union has a built-in scalar branch (`String`, `Concrete<String>`, `Int`, etc.),
-write the literal directly — the syntax identifies the branch:
+When a union has a `Concrete<T>` branch, wrap it in a named alias so it is discriminable
+by name — the alias name is always written in kli:
 
 ```kli
-// schema: Tag = {_} | Concrete<String>
-userIdTag = Tag {userId String}   // {_} branch: struct with one field
-simpleTag = Tag "simple-tag"      // Concrete<String> branch: string literal
+// schema: Parametrized = {String}
+//         Unique = Concrete<String>
+//         Tag = Parametrized | Unique
+userIdTag = Parametrized {userId String}   // Parametrized branch: named block, one String field
+simpleTag = Unique "simple-tag"            // Unique branch: concrete string via named alias
 ```
 
 ---
@@ -206,6 +255,49 @@ When `@source` is in effect, the validator resolves each field in priority order
 
 ---
 
+## Inline binding refinements
+
+When `@source` is in effect on a list, a list element may be written as a binding reference
+followed by `& { ... }` — mirroring ilk intersection syntax. The struct body supplies
+**origin annotations** for specific fields of the referenced binding:
+
+```kli
+emits [userRegistered & {
+    timestamp Int*               // Generated — exempt from source check
+    id        String             // implicit: matched by name to fields.id
+}]
+```
+
+Rules:
+- The struct body contains only origin-annotated fields (`Type*`, `Type = path`, `Type = compute(...)`), or fields with no annotation (explicit implicit match).
+- Fields not mentioned fall back to implicit name-matching against the source.
+- The refinement may not name fields that do not exist in the binding's declared type.
+- This syntax is only valid within `@source`-constrained list declarations.
+
+---
+
+## Anonymous struct instantiation
+
+When a field or list element has an unambiguous expected type from the schema, the type
+name may be omitted and an anonymous struct `{ ... }` supplied directly. Structural typing
+validates that the struct matches the expected type:
+
+```kli
+// schema: query []QueryItem
+// QueryItem type name omitted — struct matches structurally
+query [
+    {
+        eventTypes [userRegistered, other]
+        tags       [commonTag]
+    }
+]
+```
+
+This is only valid when the expected element type is a single concrete block type
+(unambiguous from context). For union-typed lists, write the branch name explicitly.
+
+---
+
 ## Separator rules (summary)
 
 | Context | Separator |
@@ -222,11 +314,11 @@ When `@source` is in effect, the validator resolves each field in priority order
 For the corresponding ilk schema see `ilk-spec.md`.
 
 ```kli
-// Tag bindings — Tag = {_} | Concrete<String>
-userIdTag   = Tag {userId String}    // {_} branch: one-field struct
-userNameTag = Tag {name String}
-commonTag   = Tag {x String}
-simpleTag   = Tag "simple-tag"       // Concrete<String> branch: string constant
+// Tag bindings — Parametrized = {String}, Unique = Concrete<String>, Tag = Parametrized | Unique
+userIdTag   = Parametrized {userId String}   // Parametrized branch: one String field
+userNameTag = Parametrized {name String}
+commonTag   = Parametrized {x String}
+simpleTag   = Unique "simple-tag"            // Unique branch: concrete string via named alias
 
 // Event bindings with their associated tags
 // Event carries @assoc [Tag] — supply tags in angle brackets
@@ -247,15 +339,18 @@ registerUser = Command {
         x    String
     }
 
-    // @source [fields] is in effect on emits:
-    // - timestamp is generated (not in fields)
-    // - id is matched by name (fields.id → implicit)
-    emits [userRegistered {
+    // @source [fields] is in effect on emits.
+    // Inline refinement annotates field origins for userRegistered:
+    // - timestamp is generated (not in fields, so marked Int*)
+    // - id is matched by name implicitly (fields.id)
+    // - name is matched by name implicitly (fields.name)
+    emits [userRegistered & {
         timestamp Int*
         id        String         // implicit: matched by name to fields.id
     }]
 
-    // query has no @source — no provenance constraint
+    // query has no @source — no provenance constraint.
+    // QueryItem type name omitted — anonymous struct matches structurally.
     query [
         {
             eventTypes [userRegistered, other]

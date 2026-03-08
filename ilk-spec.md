@@ -26,7 +26,7 @@ Single-line comments only, using `//`:
 
 ```ilk
 // this is a comment
-Tag {_} | Concrete<String> // inline comment
+TagField {_} // inline comment on a block declaration
 ```
 
 ---
@@ -51,35 +51,36 @@ specific type is intentionally left open.
 
 ---
 
-## Value ownership
+## Value constraint levels
 
-Three forms express who determines a field's value:
+Three forms express how tightly the schema constrains a field's value:
 
-| Form | Owner | Meaning |
+| ilk form | Constraint | Meaning |
 |---|---|---|
-| `String`, `Int`, … | Runtime | Value comes from the system consuming the domain model |
-| `Concrete<String>`, `Concrete<Int>`, … | kli author | A specific value chosen in the kli file; any valid value of that type |
-| `"hello"`, `42`, `true`, … | ilk author | An exact literal value fixed in the schema itself |
+| `String`, `Int`, … | Open | kli accepts **any** value of that type |
+| `Concrete<String>`, `Concrete<Int>`, … | kli-fixed | kli declares **one specific** value; the schema does not prescribe which one |
+| `"hello"`, `42`, `true`, … | Schema-fixed | Only this exact value is valid; kli cannot change it |
 
 ```ilk
-// runtime: the consuming system supplies the name
+// open: kli may supply any string
 name String
 
-// domain constant: kli author picks any string (e.g. "webhook")
+// kli-fixed: kli picks one specific string (e.g. "webhook")
 label Concrete<String>
 
-// schema literal: schema mandates exactly this integer
+// schema-fixed: must be exactly this integer — kli cannot override it
 version 1
 ```
 
 ```kli
-name   "alice"    // runtime value — supplied by the consumer
-label  "webhook"  // domain constant — kli author's choice
-version 1         // must match the schema literal exactly
+name    "alice"            // any string accepted — open constraint
+label   Concrete "webhook" // one specific string, chosen by the kli author — tagged
+version 1                  // must match the schema literal exactly
 ```
 
-`Concrete<T>` and literal types serve different purposes: `Concrete<T>` says "the kli
-author decides the value"; a literal says "the schema author has already decided."
+The three levels form a tightening progression: `String` leaves the value fully open,
+`Concrete<String>` lets the kli author fix it to one value, and `"hello"` forecloses
+the choice in the schema itself.
 
 Literal types are most useful in union positions:
 
@@ -253,18 +254,17 @@ Bad {id Uuid} & {id String}
 
 ## Union types
 
-`A | B` means a value must satisfy **exactly one** of the alternatives. Branches may be:
-- **Named blocks** — user-defined block types, including identifier-only variants (empty named blocks: `Get`, `Post`, …)
-- **Built-in scalar types** — `String`, `Int`, `Concrete<T>`, etc.
-- **Literal types** — exact values like `"GET"`, `42`, `true`
+`A | B` means a value must satisfy **exactly one** of the alternatives. All branches must
+be **named blocks** — user-defined block types, including:
+- Struct blocks: `Success { value Bool }`
+- Identifier-only variants (empty named blocks): `Get`, `Post`, …
+- Type aliases: `Unique Concrete<String>`
 
 Inline anonymous struct expressions (`{...}`) are not valid as union branches; declare a
-named block first.
+named block first. `Concrete<T>` and other scalar types used as branches must likewise be
+wrapped in a named alias so kli can discriminate them by name.
 
-In kli, the branch is identified by syntax:
-
-- **Named block branches** require writing the variant name (see [Discriminated unions](#discriminated-unions)).
-- **Scalar and literal branches** are matched by the syntax of the kli value itself.
+In kli, the branch is always identified by the variant name (see [Discriminated unions](#discriminated-unions)).
 
 ```ilk
 // named block branches — variant name required in kli
@@ -309,7 +309,10 @@ Scalar branches (`String`, `Concrete<T>`, `Int`, etc.) and literal branches (`"G
 etc.) are matched by the syntax of the kli value itself — no variant name is written:
 
 ```ilk
-Tag {_} | Concrete<String>   // {_} branch = TagField struct; Concrete<String> branch = string literal
+// Anonymous struct not valid as union branch — declare a named block first:
+Parametrized {String}            // one field of any name, type String
+Unique Concrete<String>          // named alias — Concrete<String> as a discriminable branch
+Tag Parametrized | Unique        // Parametrized branch = named struct; Unique branch = concrete string
 ```
 
 See `kli-spec.md` for full kli syntax for each case.
@@ -350,17 +353,25 @@ Event {...} & {timestamp Int}
 ```
 
 **2. Kli supply** — in kli, associated references are listed in angle brackets immediately
-after the type name at the binding site:
+after the type name at the binding site. The angle brackets are omitted entirely when no
+associations are supplied:
 
 ```kli
+// with associations
 userRegistered = Event<userIdTag, commonTag> {
     id   String
     name String
 }
+
+// no associations — angle brackets absent
+other = Event {
+    hello String
+}
 ```
 
 The angle brackets are **not** generics. They are a list of references to named kli
-bindings of the declared associated type.
+bindings of the declared associated type. `Event<>` (empty brackets) is not valid — omit
+them instead.
 
 **3. Constraint access** — the `.assoc(t)` predicate in `@constraint` expressions tests
 whether a specific reference is in an instance's association set:
@@ -386,7 +397,7 @@ Annotations appear on the line immediately before the declaration they annotate.
 |---|---|---|
 | `@main` | block | Entry point — the kli file must satisfy this block |
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
-| `@source [fields]` | field / list decl | Values must originate from the named field list |
+| `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
 
 ### `@main`
@@ -403,24 +414,48 @@ Board {
 
 ### `@source`
 
-`@source [fields]` on a declaration means every value in that construct must be
-traceable to one of the fields listed.
+`@source [S, …]` on a declaration means every value in that construct must be traceable
+to one of the named source fields. Multiple sources may be listed, comma-separated.
 
 The validator resolves each field in a kli struct refinement in priority order:
 1. `Type*` — exempt (generated)
 2. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
 3. No origin form — implicit; matched by structural name against the source fields
 
+**On a list declaration** — each element's fields are checked against the sources.
+
+**On a plain struct field** — the field's own struct element is checked directly: every
+sub-field of that struct must be traceable to the named sources.
+
 ```ilk
 Command {
     fields {...}
 
     @source [fields]
-    emits []Event
+    emits []Event       // each Event element's fields must trace to Command.fields
+
+    @source [fields]
+    summary {...}       // summary struct's own fields must trace to Command.fields
 
     query []QueryItem
 }
 ```
+
+#### Inline binding refinements (kli side)
+
+When `@source` is in effect on a list, kli may refine an existing binding's field origins
+using `& { ... }` after the binding reference — mirroring ilk intersection syntax:
+
+```kli
+emits [userRegistered & {
+    timestamp Int*               // Generated — exempt from source check
+    id        String             // implicit: matched by name to fields.id
+}]
+```
+
+The refinement struct contains only **origin annotations** for specific fields of the
+referenced binding. Fields not mentioned are resolved by the default implicit name-match.
+The refinement may not add fields that do not exist in the binding's declared type.
 
 ### `@constraint`
 
@@ -472,8 +507,13 @@ One rule everywhere: **newlines, or commas where elements fit on one line**.
 ### Schema (`dcb-board-spec.ilk`)
 
 ```ilk
-// Tag is either a single-field struct of any type, or a concrete string
-Tag {_} | Concrete<String>
+// Parametrized wraps exactly one field of any name, constrained to type String.
+// Anonymous struct expressions are not valid as union branches — a named block is required.
+Parametrized {String}
+// Unique is a named alias for Concrete<String>, making the branch discriminable in kli.
+Unique Concrete<String>
+// Tag is either a Parametrized struct or a Unique concrete string.
+Tag Parametrized | Unique
 
 // Event has any number of fields plus a timestamp; instances may carry Tag values
 @assoc [Tag]
