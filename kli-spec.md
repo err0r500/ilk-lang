@@ -27,6 +27,27 @@ userIdTag = TagField {userId String} // inline comment on a binding
 
 ---
 
+## Doc annotations
+
+`@doc "..."` attaches documentation to the following declaration or field. Unlike `//` comments which are stripped during parsing, `@doc` annotations are preserved in the AST and emitted by tooling.
+
+```kli
+@doc "multiply qty * unitPrice"
+totalAmount Int = compute(fields.qty, fields.unitPrice)
+
+@doc "generate UUID v4 at runtime"
+correlationId Uuid*
+```
+
+Use `@doc` to provide implementation hints:
+- Transformation semantics ("multiply", "aggregate", "filter")
+- Generation strategy ("UUID v4", "current timestamp")
+- Domain context for AI/human implementers
+
+Multiple `@doc` annotations on the same element concatenate.
+
+---
+
 ## Value constraint levels
 
 The ilk schema uses three levels of constraint on a field's value. kli must respect them:
@@ -204,6 +225,24 @@ by name — the alias name is always written in kli:
 userIdTag = Parametrized {userId String}   // Parametrized branch: named block, one String field
 simpleTag = Unique "simple-tag"            // Unique branch: concrete string via named alias
 ```
+
+---
+
+## Reference values
+
+When a schema field has type `&T` (reference to T), the kli value is an unquoted binding name:
+
+```kli
+// schema: eventTypes []&Event
+eventTypes [cartCreated, itemAdded]
+```
+
+The binding must:
+- Exist in the kli file
+- Be of type `T`
+
+References are not strings — `"cartCreated"` (quoted) would not satisfy `&Event`.
+No data flows through references; they identify which binding, not instantiate it.
 
 ---
 

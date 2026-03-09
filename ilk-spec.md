@@ -164,6 +164,38 @@ List values in `.kli` are separated by **commas** (or newlines):
 
 ---
 
+## Reference types
+
+`&T` — a reference to a binding of type `T`.
+
+Reference types express a pointer to an existing binding without instantiating it or flowing data through it. The validator checks that the referenced binding exists and is of the correct type.
+
+```ilk
+&Event      // reference to an Event binding
+[]&Event    // list of references to Event bindings
+```
+
+**Validation rules:**
+- The kli value must be an unquoted binding name
+- The binding must exist in the kli file
+- The binding must be of type `T` (or a subtype)
+- No data flows through references — `@source` checks do not apply
+
+Use references when you need to identify *which* binding, not instantiate it:
+
+```ilk
+Query {
+    eventTypes []&Event   // which event types to filter (references)
+    tags       []Tag      // actual tag instances (data may flow for Parametrized)
+}
+```
+
+Contrast with instance types where structural rules apply:
+- Open fields (`String`, `{...}`) require data, `@source` checked
+- Concrete fields (`Concrete<T>`, literals) need no data
+
+---
+
 ## Block (user-defined types)
 
 Names start with a capital letter: `User`, `Product`, `Command`, etc.
@@ -248,6 +280,16 @@ If both sides are concrete (neither is `{...}`) and declare the same field name 
 ```ilk
 // error: both sides explicitly name "id" with different types
 Bad {id Uuid} & {id String}
+```
+
+### Reference intersections
+
+Reference types (`&T`) cannot participate in intersections. References point to bindings,
+while intersections merge struct shapes — the two concepts do not combine meaningfully.
+
+```ilk
+// error: reference cannot be intersected
+Bad &Event & {priority Int}
 ```
 
 ---
@@ -399,6 +441,7 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
+| `@doc "..."` | declaration / field (kli only) | Implementation hint preserved in AST; see `kli-spec.md` |
 
 ### `@main`
 
@@ -426,6 +469,8 @@ The validator resolves each field in a kli struct refinement in priority order:
 
 **On a plain struct field** — the field's own struct element is checked directly: every
 sub-field of that struct must be traceable to the named sources.
+
+**Reference types (`&T`) are exempt** — since references point to bindings rather than instantiating them, no data flows and `@source` validation does not apply.
 
 ```ilk
 Command {
@@ -482,10 +527,31 @@ A minimal expression language for `@constraint` predicates.
 | Expression | Meaning |
 |---|---|
 | `forall(col, x => body)` | True if `body` holds for every element `x` in collection `col` |
+| `exists(col, x => body)` | True if `body` holds for at least one element `x` in collection `col` |
+| `unique(col, x => expr)` | True if `expr` yields distinct values for all elements in `col` |
+| `count(col)` | Number of elements in collection `col` |
 | `e.assoc(t)` | True if instance `e` has `t` as one of its associated values. Available only when `e`'s type carries `@assoc [T]` and `t` is of type `T`. |
 
-Predicates compose with `&&` (and) and `||` (or). Additional built-ins may be added
-as the language evolves; user-defined predicates are not currently supported.
+### Operators
+
+| Operator | Meaning |
+|---|---|
+| `&&` | Logical and |
+| `\|\|` | Logical or |
+| `!` | Logical not |
+| `==`, `!=` | Equality, inequality |
+| `<`, `<=`, `>`, `>=` | Numeric comparison |
+
+Examples:
+
+```ilk
+@constraint exists(eventTypes, e => e.assoc(urgentTag))
+@constraint unique(eventTypes, e => e.name)
+@constraint count(eventTypes) >= 1
+@constraint count(tags) <= 5
+```
+
+User-defined predicates are not currently supported.
 
 ---
 

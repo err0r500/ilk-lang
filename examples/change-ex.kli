@@ -1,0 +1,59 @@
+cartIdTag = Parametrized {userId String}
+
+cartCreated = Event <cartId, customerId> {
+  cartId Uuid
+  customerId Uuid
+  createdAt Timestamp
+}
+
+itemAdded = Event <cartId, itemId> {
+  cartId Uuid
+  itemId Uuid
+  productId Uuid
+  quantity Int
+  unitPrice Money
+}
+
+addItem = Change {
+  actor Customer
+
+  endpoint {
+    method POST
+
+    path "/carts/{cartId}/items"
+
+    params {
+      cartId Uuid
+    }
+
+    auth {
+      userId Uuid
+    }
+
+    body {
+      productId Uuid
+      quantity Int
+      unitPrice Money
+    }
+  }
+
+  command {
+    fields {
+      customerId Uuid = auth.userId
+      itemId Uuid*
+      cartId Uuid
+      productId Uuid
+      quantity Int
+      unitPrice Money
+    }
+
+    query {
+        eventTypes [cartCreated, itemAdded]
+        tags [cartIdTag]
+        // will provide a list of cartCreated and itemAdded events
+    }
+
+    emits [ItemAdded]
+  }
+}
+
