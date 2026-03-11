@@ -240,12 +240,12 @@ sufficient; the schema context provides the union type:
 
 ```kli
 // schema: Status = Started | Finished
-current = Started { at "2024-01-31T12:00:00Z" }
+current = Started { at Timestamp }
 
 // or inline in a list:
 history [
-    Started  { at "2024-01-01T00:00:00Z" }
-    Finished { at "2024-01-31T12:00:00Z" }
+    Started  { at Timestamp }
+    Finished { at Timestamp }
 ]
 ```
 
