@@ -71,7 +71,7 @@ Api {
 
 findUser = DbMethod {
     name    "users.findById"
-    args    {id Uuid}
+    args    {userId Uuid}
 
     returns {id Uuid, name String}
 }
@@ -82,7 +82,9 @@ getUser = Endpoint {
     params {id Uuid}
 
     db findUser & {
-        id Uuid = params.id
+        // because field name doen't match,
+        // we have to explicitly tell the validator where to find userId
+        userId = params.id
     }
 
     // uses data from params and db.returns to construct responses
