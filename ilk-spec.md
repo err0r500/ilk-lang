@@ -516,9 +516,10 @@ body {...}
 Source paths are resolved from the enclosing block root, not relative to the annotation's position.
 
 The validator resolves each field in a kli struct refinement in priority order:
-1. `Type*` — exempt (generated)
-2. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
-3. No origin form — implicit; matched by structural name against the source fields
+1. `Concrete<T>` value or schema-fixed literal — exempt (author-chosen, not runtime data)
+2. `Type*` — exempt (generated)
+3. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
+4. No origin form — implicit; matched by structural name against the source fields
 
 **On a list declaration** — each element's fields are checked against the sources.
 
@@ -564,10 +565,11 @@ Direct field mapping (implicit or explicit `= path`) requires the source type to
 
 | Mapping | Syntax | Type rule | Example |
 |---|---|---|---|
+| Author-chosen | `field "hello"` / `Concrete<T>` value | n/a | no source check |
+| Generated | `field Type*` | n/a | no source check |
 | Direct (implicit) | `field Type` | source ≤ target | `Uuid` → `String` ✓ |
 | Direct (explicit) | `field Type = path` | source ≤ target | `Uuid` → `String` ✓ |
 | Narrowing | `field Type = compute(...)` | any (runtime) | `String` → `Uuid` ✓ |
-| Generated | `field Type*` | n/a | no source check |
 
 **Why no variance annotations needed:** Data flow direction is declared via `@source`.
 The sound rule (source ≤ target) is implicit. Narrowing requires the explicit `compute()`
@@ -728,22 +730,25 @@ DbMethod {
     returns {...}
 }
 
+// Response: each endpoint declares one or more possible responses
+Response {
+    status Concrete<Int>
+    body   {...}
+}
+
 // API endpoint with data flow constraints
 Endpoint {
     @constraint forall(templateVars(path), v => v in keys(params))
     path    Concrete<String>
     method  HttpMethod
-    params {...}
-    body   {...}
+    params  {...}
+    body    {...}
 
     @source [params, body]
     db DbMethod
 
-    response {
-        status Concrete<Int>
-        @source [db.returns]
-        body {...}
-    }
+    @source [params, body, db.returns]
+    responses []Response
 }
 
 @main
@@ -754,6 +759,7 @@ Api {
 
 Data flows through the endpoint:
 - `params`/`body` → `@source` → `db.args`
-- `db.returns` → `@source` → `response.body`
+- `db.returns` → `@source` → `responses[*].body` (for data-carrying responses)
+- `Concrete<Int>` status codes and `Concrete<String>` error messages are author-chosen and exempt from `@source`
 
 For the corresponding kli instance see `kli-spec.md`.
