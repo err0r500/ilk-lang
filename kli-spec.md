@@ -65,8 +65,8 @@ version 1                // schema-fixed — must be exactly 1
 ```
 
 ```kli
-name    "alice"            // satisfies String  — any string is fine
-label   Concrete "webhook" // satisfies Concrete<String> — tagged; kli author's chosen value
+name    String             // satisfies String  — open type, any string at runtime
+label   "webhook"          // satisfies Concrete<String> — kli author's chosen value
 version 1                  // satisfies literal 1 — must match exactly
 ```
 
@@ -74,21 +74,20 @@ version 1                  // satisfies literal 1 — must match exactly
 
 Literal syntax for each base type:
 
-| Type | kli literal |
-|------|-------------|
-| `String` | `"hello world"` |
-| `Int` | `42` |
-| `Float` | `3.14` |
-| `Bool` | `true` / `false` |
-| `Uuid` | `"550e8400-e29b-41d4-a716-446655440000"` |
-| `Date` | `"2024-01-31"` (ISO 8601) |
-| `Timestamp` | `"2024-01-31T12:00:00Z"` (ISO 8601) |
-| `Money` | `"19.99 USD"` (amount + ISO 4217 currency code) |
-| `Concrete<T>` | `Concrete <literal>` — e.g. `Concrete "webhook"`, `Concrete 42` |
+| ilk type | kli form | meaning |
+|----------|----------|---------|
+| `Any` | `String`, `42`, `{...}` | any type or value accepted |
+| `String` | `String` | open — type only, value provided at runtime |
+| `Concrete<String>` | `"webhook"` | kli-fixed — kli author picks the literal |
+| `"hello"` | `"hello"` | schema-fixed — exact match required |
 
-`Concrete<T>` values are always written with the `Concrete` prefix followed by the literal.
-This makes them syntactically distinct from open (`String`, `Int`, …) field values, which
-are written as plain literals.
+Both `Concrete<T>` and schema-fixed literals look the same in kli (`"value"`), but validation differs:
+- `Concrete<T>` — any literal of type T is valid; kli author chooses
+- Schema literal — must match exactly
+
+**Constraint levels must match exactly.** kli cannot narrow an open type to concrete:
+if ilk declares `ts Timestamp`, kli must write `ts Timestamp` — the schema is saying
+"this field accepts any timestamp at runtime" and kli cannot change that contract.
 
 ---
 
@@ -155,7 +154,7 @@ All elements must conform to the same type declared in the schema.
 
 ## Block values
 
-A block instance supplies all required fields declared in the schema block:
+A block instance supplies the fields it defines:
 
 ```kli
 registerUser = Command {
@@ -165,6 +164,41 @@ registerUser = Command {
     }
     emits [userRegistered]
 }
+```
+
+---
+
+## Optional fields
+
+Appending `?` to a field name marks it as optional — downstream mappings cannot rely
+on its presence. This is useful when evolving a domain model: marking a field `?`
+signals it may be absent and should not be depended upon.
+
+```kli
+fields {
+    id    String
+    email? String   // optional — may be absent, don't rely on it
+}
+```
+
+**Validation rule:** A required target field cannot map to an optional source field
+via `@source`. This ensures data flow consistency.
+
+```kli
+// ERROR: required field relies on optional source
+emits [userRegistered & {
+    email String = fields.email   // fields.email is optional
+}]
+
+// OK: optional target can map to optional source
+emits [userRegistered & {
+    email? String = fields.email  // both optional
+}]
+
+// OK: use compute() for explicit handling
+emits [userRegistered & {
+    email String = compute(fields.email)  // runtime handles absence
+}]
 ```
 
 ---
@@ -219,11 +253,11 @@ When a union has a `Concrete<T>` branch, wrap it in a named alias so it is discr
 by name — the alias name is always written in kli:
 
 ```kli
-// schema: Parametrized = {String}
+// schema: Parametrized = {_ String}
 //         Unique = Concrete<String>
 //         Tag = Parametrized | Unique
 userIdTag = Parametrized {userId String}   // Parametrized branch: named block, one String field
-simpleTag = Unique "simple-tag"            // Unique branch: concrete string via named alias
+simpleTag = Unique "simple-tag"            // Unique branch: kli picks a concrete string
 ```
 
 ---
@@ -353,7 +387,7 @@ This is only valid when the expected element type is a single concrete block typ
 For the corresponding ilk schema see `ilk-spec.md`.
 
 ```kli
-// Tag bindings — Parametrized = {String}, Unique = Concrete<String>, Tag = Parametrized | Unique
+// Tag bindings — Parametrized = {_ String}, Unique = Concrete<String>, Tag = Parametrized | Unique
 userIdTag   = Parametrized {userId String}   // Parametrized branch: one String field
 userNameTag = Parametrized {name String}
 commonTag   = Parametrized {x String}
@@ -396,5 +430,70 @@ registerUser = Command {
             tags       [commonTag]
         }
     ]
+}
+```
+
+---
+
+## API endpoint example
+
+### Instance (`api-instance.kli`)
+
+For the corresponding ilk schema see `ilk-spec.md`.
+
+```kli
+// DB method bindings
+insertUser = DbMethod {
+    name    "users.insert"
+    args    {name String, email String}
+    returns {id Uuid, name String, email String}
+}
+
+findUser = DbMethod {
+    name    "users.findById"
+    args    {id Uuid}
+    returns {id Uuid, name String, email String}
+}
+
+// Endpoint bindings
+createUser = Endpoint {
+    path   "/users"
+    method "POST"
+    body   {name String, email String}
+
+    // @source [params, body] in effect — db.args traces to body
+    db insertUser & {
+        name  String = body.name
+        email String = body.email
+    }
+
+    response {
+        status 201
+        // @source [db.returns] in effect — response.body traces to db.returns
+        body {
+            id    Uuid   = db.returns.id
+            name  String = db.returns.name
+            email String = db.returns.email
+        }
+    }
+}
+
+getUser = Endpoint {
+    path   "/users/{id}"
+    method "GET"
+    params {id Uuid}
+
+    // db.args traces to params
+    db findUser & {
+        id Uuid = params.id
+    }
+
+    response {
+        status 200
+        body {
+            id    Uuid   = db.returns.id
+            name  String = db.returns.name
+        }
+    }
 }
 ```

@@ -35,7 +35,7 @@ TagField {_} // inline comment on a block declaration
 
 | Token | Description |
 |-------|-------------|
-| `Any` | Meta-type: stands for any built-in or user-defined type. Used in struct cardinality notation and type-level positions. |
+| `Any` | Accepts any type. Usable as a field type or in struct cardinality notation. |
 | `Uuid` | UUID value |
 | `String` | UTF-8 string |
 | `Int` | Integer |
@@ -45,9 +45,8 @@ TagField {_} // inline comment on a block declaration
 | `Timestamp` | Point in time |
 | `Money` | Monetary amount |
 
-`Any` is not a value type — it is a placeholder meaning "any type" and appears in
-struct cardinality notation, schema-level declarations, and any position where a
-specific type is intentionally left open.
+`Any` can be used as a field type (kli may instantiate with any concrete type or
+value) or in struct cardinality notation like `{_}` (shorthand for `{_ Any}`).
 
 ---
 
@@ -82,6 +81,13 @@ The three levels form a tightening progression: `String` leaves the value fully 
 `Concrete<String>` lets the kli author fix it to one value, and `"hello"` forecloses
 the choice in the schema itself.
 
+**Constraint levels must match exactly.** kli cannot narrow an open type to concrete:
+if ilk declares `ts Timestamp`, kli must write `ts Timestamp` — the schema is saying
+"this field accepts any timestamp at runtime" and kli cannot change that contract.
+
+> **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
+> allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
+
 Literal types are most useful in union positions:
 
 ```ilk
@@ -111,9 +117,11 @@ Structs have named fields. The schema can constrain how many fields are required
 **anonymous-field shorthand** where `_` is a placeholder for "a field of any name":
 
 ```ilk
-{_}      // exactly 1 field of any name and type
-{_, _}   // exactly 2 fields of any names and types
-{...}    // zero or more fields of any names and types
+{_}              // exactly 1 field of any name and type (= {_ Any})
+{_ String}       // exactly 1 field of any name, type String
+{_, _}           // exactly 2 fields of any names and types
+{_ Int, _ String}  // exactly 2 fields with specific types
+{...}            // zero or more fields of any names and types
 ```
 
 For structs with known field names, list them explicitly:
@@ -196,6 +204,40 @@ Contrast with instance types where structural rules apply:
 
 ---
 
+## Subtyping
+
+Type compatibility in ilk follows structural subtyping with the following rules:
+
+### Struct subtyping
+
+Closed structs require exact field match — no width subtyping:
+
+```ilk
+{x Int}           // requires exactly {x Int}, no extra fields
+{...}             // accepts any struct (zero or more fields)
+{...} & {x Int}   // accepts any struct with at least {x Int}
+```
+
+Width subtyping is only available via the open struct pattern (`{...} & {...}`).
+
+### List subtyping (covariant)
+
+Lists are covariant in their element type:
+
+```ilk
+[]Event           // accepts list of Event or Event subtypes
+```
+
+### Reference subtyping (covariant)
+
+References are covariant — `&S` is a subtype of `&T` when `S` is a subtype of `T`:
+
+```ilk
+&Event            // accepts reference to Event or Event subtype
+```
+
+---
+
 ## Block (user-defined types)
 
 Names start with a capital letter: `User`, `Product`, `Command`, etc.
@@ -220,20 +262,22 @@ Command {
 }
 ```
 
-### Optional fields
+### Field presence
 
-Appending `?` to a field name marks it as optional — the field may be absent in a kli
-binding without failing validation.
+All fields in ilk are **optional by default** — the schema defines shape and structure,
+not presence requirements. Presence is enforced by data flow: if a `@source` mapping
+requires a field, validation catches its absence.
 
 ```ilk
 User {
-    id     Uuid
-    name   String
-    email? String   // may be absent
+    id    Uuid
+    name  String
+    email String   // all fields optional by default
 }
 ```
 
-Required fields (no `?`) must be present in every kli instance of that block.
+This design separates concerns: ilk defines *what fields can exist*, kli defines
+*what fields do exist*, and `@source` validation ensures data flow consistency.
 
 ---
 
@@ -352,7 +396,7 @@ etc.) are matched by the syntax of the kli value itself — no variant name is w
 
 ```ilk
 // Anonymous struct not valid as union branch — declare a named block first:
-Parametrized {String}            // one field of any name, type String
+Parametrized {_ String}          // one field of any name, type String
 Unique Concrete<String>          // named alias — Concrete<String> as a discriminable branch
 Tag Parametrized | Unique        // Parametrized branch = named struct; Unique branch = concrete string
 ```
@@ -460,6 +504,15 @@ Board {
 `@source [S, …]` on a declaration means every value in that construct must be traceable
 to one of the named source fields. Multiple sources may be listed, comma-separated.
 
+**Dot-path sources:** Source entries may be dot-separated paths to reach nested fields:
+
+```ilk
+@source [db.returns]   // fields must trace to db.returns.*
+body {...}
+```
+
+Source paths are resolved from the enclosing block root, not relative to the annotation's position.
+
 The validator resolves each field in a kli struct refinement in priority order:
 1. `Type*` — exempt (generated)
 2. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
@@ -502,6 +555,47 @@ The refinement struct contains only **origin annotations** for specific fields o
 referenced binding. Fields not mentioned are resolved by the default implicit name-match.
 The refinement may not add fields that do not exist in the binding's declared type.
 
+#### Subtyping rules for `@source`
+
+Direct field mapping (implicit or explicit `= path`) requires the source type to be a
+**subtype** of the target type. Narrowing mappings require `compute()`.
+
+| Mapping | Syntax | Type rule | Example |
+|---|---|---|---|
+| Direct (implicit) | `field Type` | source ≤ target | `Uuid` → `String` ✓ |
+| Direct (explicit) | `field Type = path` | source ≤ target | `Uuid` → `String` ✓ |
+| Narrowing | `field Type = compute(...)` | any (runtime) | `String` → `Uuid` ✓ |
+| Generated | `field Type*` | n/a | no source check |
+
+**Why no variance annotations needed:** Data flow direction is declared via `@source`.
+The sound rule (source ≤ target) is implicit. Narrowing requires the explicit `compute()`
+escape hatch, signaling runtime validation.
+
+```ilk
+// OK: fields.id (Uuid) can map to Event.id (String) — Uuid <: String
+Command {
+    fields {id Uuid}
+    @source [fields]
+    emits []Event
+}
+
+// ERROR: fields.id (String) cannot narrow to Event.id (Uuid) — String </: Uuid
+Command {
+    fields {id String}
+    @source [fields]
+    emits []Event  // Event.id is Uuid — fails, needs compute()
+}
+
+// OK: narrowing via compute() — runtime validation
+Command {
+    fields {id String}
+    @source [fields]
+    emits []Event & {
+        id Uuid = compute(fields.id)  // explicit narrowing
+    }
+}
+```
+
 ### `@constraint`
 
 An inline boolean predicate that every instance of the enclosing block must satisfy.
@@ -531,6 +625,8 @@ A minimal expression language for `@constraint` predicates.
 | `unique(col, x => expr)` | True if `expr` yields distinct values for all elements in `col` |
 | `count(col)` | Number of elements in collection `col` |
 | `e.assoc(t)` | True if instance `e` has `t` as one of its associated values. Available only when `e`'s type carries `@assoc [T]` and `t` is of type `T`. |
+| `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
+| `keys(struct)` | Returns the set of field names in a struct |
 
 ### Operators
 
@@ -540,6 +636,7 @@ A minimal expression language for `@constraint` predicates.
 | `\|\|` | Logical or |
 | `!` | Logical not |
 | `==`, `!=` | Equality, inequality |
+| `in` | Set membership (`x in set`) |
 | `<`, `<=`, `>`, `>=` | Numeric comparison |
 
 Examples:
@@ -575,7 +672,7 @@ One rule everywhere: **newlines, or commas where elements fit on one line**.
 ```ilk
 // Parametrized wraps exactly one field of any name, constrained to type String.
 // Anonymous struct expressions are not valid as union branches — a named block is required.
-Parametrized {String}
+Parametrized {_ String}
 // Unique is a named alias for Concrete<String>, making the branch discriminable in kli.
 Unique Concrete<String>
 // Tag is either a Parametrized struct or a Unique concrete string.
@@ -609,5 +706,52 @@ Board {
     commands []Command
 }
 ```
+
+For the corresponding kli instance see `kli-spec.md`.
+
+---
+
+## API endpoint example
+
+### Schema (`api-spec.ilk`)
+
+```ilk
+// HTTP method union
+HttpMethod "GET" | "POST" | "PUT" | "DELETE"
+
+// Database method abstraction
+DbMethod {
+    name    Concrete<String>
+    args    {...}
+    returns {...}
+}
+
+// API endpoint with data flow constraints
+Endpoint {
+    @constraint forall(templateVars(path), v => v in keys(params))
+    path    Concrete<String>
+    method  HttpMethod
+    params {...}
+    body   {...}
+
+    @source [params, body]
+    db DbMethod
+
+    response {
+        status Concrete<Int>
+        @source [db.returns]
+        body {...}
+    }
+}
+
+@main
+Api {
+    endpoints []Endpoint
+}
+```
+
+Data flows through the endpoint:
+- `params`/`body` → `@source` → `db.args`
+- `db.returns` → `@source` → `response.body`
 
 For the corresponding kli instance see `kli-spec.md`.
