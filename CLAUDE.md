@@ -33,6 +33,9 @@ Constraint levels must match exactly. kli cannot narrow open→concrete (would c
 ```ilk
 []Event          // 0+ events
 [3]Tag           // exactly 3
+[1..]Tag         // 1+ tags
+[2..5]Tag        // 2 to 5 tags
+[..10]Tag        // 0 to 10 tags
 &Event           // reference to binding (no data flow)
 ```
 

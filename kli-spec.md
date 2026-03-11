@@ -152,6 +152,15 @@ A list value is `[ ... ]` with elements separated by **commas** or **newlines**:
 
 All elements must conform to the same type declared in the schema.
 
+**List cardinality validation:**
+| ilk | Valid kli |
+|-----|-----------|
+| `[]T` | any count |
+| `[N]T` | exactly N |
+| `[N..]T` | N or more |
+| `[N..M]T` | N to M (inclusive) |
+| `[..M]T` | 0 to M |
+
 ---
 
 ## Block values

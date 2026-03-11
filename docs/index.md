@@ -24,8 +24,10 @@ features:
 
 ### API Endpoint with Data Flow
 
+<div class="code-compare">
+
 ```ilk
-HttpMethod "GET" | "POST" | "PUT" | "DELETE"
+HttpMethod GET | POST | PUT | DELETE
 
 DbMethod {
     name    Concrete<String>
@@ -36,6 +38,7 @@ DbMethod {
 Endpoint {
     @constraint forall(templateVars(path), v => v in keys(params))
     path    Concrete<String>
+
     method  HttpMethod
     params  {...}
     body    {...}
@@ -45,6 +48,7 @@ Endpoint {
 
     response {
         status Concrete<Int>
+
         @source [db.returns]
         body {...}
     }
@@ -65,7 +69,7 @@ findUser = DbMethod {
 
 getUser = Endpoint {
     path   "/users/{id}"
-    method "GET"
+    method GET
     params {id Uuid}
 
     db findUser & {
@@ -86,10 +90,12 @@ Api {
 }
 ```
 
+</div>
+
 ## Quick Reference
 
 ### Base Types
-`Any` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
+`*` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
 
 ### Value Constraints
 | ilk | kli | meaning |
@@ -112,6 +118,9 @@ Api {
 ```ilk
 []Event          // 0+ events
 [3]Tag           // exactly 3
+[1..]Tag         // 1+ tags
+[2..5]Tag        // 2 to 5 tags
+[..10]Tag        // 0 to 10 tags
 &Event           // reference to binding (no data flow)
 ```
 

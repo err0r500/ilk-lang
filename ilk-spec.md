@@ -151,14 +151,22 @@ Fields are separated by **newlines** (or commas inline):
 
 ## List types
 
-`[]T` — a list of zero or more values, all of the same type `T`.
-`[N]T` — a list of exactly `N` values of type `T` (N is a positive integer).
+| Syntax | Meaning |
+|--------|---------|
+| `[]T` | 0+ elements |
+| `[N]T` | exactly N elements |
+| `[N..]T` | N+ elements |
+| `[N..M]T` | N to M elements (inclusive) |
+| `[..M]T` | 0 to M elements |
 
 Unlike structs, list elements have **no keys** — they are positional and uniform.
 
 ```ilk
 []Event       // zero or more Event values
 [3]Tag        // exactly 3 Tag values
+[1..]Tag      // at least 1 Tag
+[2..5]Tag     // 2 to 5 Tags
+[..10]Tag     // up to 10 Tags
 ```
 
 List values in `.kli` are separated by **commas** (or newlines):
