@@ -165,6 +165,7 @@
     <span class="keyword">method</span> <span class="string">"GET"</span>
     <span class="keyword">params</span> {<span class="keyword">id</span> <span class="type">Uuid</span>}
 
+    <span class="comment">// inline refinement works for single fields too</span>
     <span class="keyword">db</span> <span class="keyword">findUser</span> &amp; {
         <span class="keyword">id</span> <span class="type">Uuid</span> = <span class="keyword">params.id</span>
     }
@@ -269,9 +270,12 @@
 <span class="keyword">name</span>      <span class="type">String</span>
 <span class="keyword">id</span>        <span class="type">Uuid</span>
 <span class="keyword">count</span>     <span class="type">Int</span>
-<span class="keyword">price</span>     <span class="type">Float</span>
+<span class="keyword">rate</span>      <span class="type">Float</span>
 <span class="keyword">active</span>    <span class="type">Bool</span>
 <span class="keyword">data</span>      <span class="type">Any</span>              <span class="comment">// anything</span>
+<span class="keyword">created</span>   <span class="type">Date</span>
+<span class="keyword">timestamp</span> <span class="type">Timestamp</span>
+<span class="keyword">price</span>     <span class="type">Money</span>
 
 <span class="comment">// Constraint levels</span>
 <span class="keyword">label</span>     <span class="type">Concrete&lt;String&gt;</span>  <span class="comment">// kli picks one</span>
@@ -287,9 +291,12 @@
           <pre><span class="keyword">name</span>      <span class="type">String</span>           <span class="comment">// open type</span>
 <span class="keyword">id</span>        <span class="type">Uuid</span>
 <span class="keyword">count</span>     <span class="type">Int</span>
-<span class="keyword">price</span>     <span class="type">Float</span>
+<span class="keyword">rate</span>      <span class="type">Float</span>
 <span class="keyword">active</span>    <span class="type">Bool</span>
 <span class="keyword">data</span>      <span class="string">"text"</span>           <span class="comment">// any type works</span>
+<span class="keyword">created</span>   <span class="type">Date</span>
+<span class="keyword">timestamp</span> <span class="type">Timestamp</span>
+<span class="keyword">price</span>     <span class="type">Money</span>
 
 <span class="keyword">label</span>     <span class="string">"webhook"</span>        <span class="comment">// concrete literal</span>
 <span class="keyword">version</span>   <span class="number">1</span>                <span class="comment">// exact match</span></pre>
@@ -342,14 +349,18 @@
   <!-- 3. Structs -->
   <section class="section">
     <h2>Structs</h2>
-    <p><code>{_}</code> = exactly 1 field, <code>{_, _}</code> = exactly 2, <code>{...}</code> = any number, <code>{name Type}</code> = specific fields</p>
+    <p><code>{}</code> = empty, <code>{_}</code> = exactly 1 field, <code>{_ String}</code> = 1 field typed, <code>{_, _}</code> = exactly 2, <code>{...}</code> = any number</p>
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// exactly 1 field</span>
-<span class="type">TagField</span> {<span class="keyword">_</span>}
+        <pre><span class="comment">// cardinality patterns</span>
+<span class="type">Empty</span> {}                        <span class="comment">// zero fields</span>
+<span class="type">TagField</span> {<span class="keyword">_</span>}                   <span class="comment">// exactly 1 field</span>
+<span class="type">TypedTag</span> {<span class="keyword">_</span> <span class="type">String</span>}            <span class="comment">// 1 field, typed</span>
+<span class="type">Pair</span> {<span class="keyword">_</span>, <span class="keyword">_</span>}                    <span class="comment">// exactly 2 fields</span>
+<span class="type">TypedPair</span> {<span class="keyword">_</span> <span class="type">Int</span>, <span class="keyword">_</span> <span class="type">String</span>}   <span class="comment">// 2 fields, typed</span>
 
-<span class="comment">// any fields + timestamp required</span>
+<span class="comment">// open + required</span>
 <span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
 
 <span class="comment">// specific fields</span>
@@ -362,7 +373,11 @@
           <div class="tab invalid" onclick="showTab(this, 'struct-invalid')">&#10007; Invalid</div>
         </div>
         <div class="pane active" id="struct-valid">
-          <pre><span class="keyword">tag</span> = <span class="type">TagField</span> {<span class="keyword">userId</span> <span class="type">String</span>}
+          <pre><span class="keyword">empty</span> = <span class="type">Empty</span> {}
+<span class="keyword">tag</span> = <span class="type">TagField</span> {<span class="keyword">userId</span> <span class="type">String</span>}
+<span class="keyword">typed</span> = <span class="type">TypedTag</span> {<span class="keyword">x</span> <span class="type">String</span>}
+<span class="keyword">pair</span> = <span class="type">Pair</span> {<span class="keyword">a</span> <span class="type">Int</span>, <span class="keyword">b</span> <span class="type">Bool</span>}
+<span class="keyword">tpair</span> = <span class="type">TypedPair</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">String</span>}
 
 <span class="keyword">evt</span> = <span class="type">Event</span> {
     <span class="keyword">foo</span>       <span class="type">String</span>
@@ -381,17 +396,13 @@
     <span class="error">b</span> <span class="type">String</span>  <span class="error-msg">// too many fields</span>
 }
 
+<span class="comment">// ERROR: {_ String} needs String type</span>
+<span class="keyword">typed</span> = <span class="type">TypedTag</span> {<span class="keyword">x</span> <span class="error">Int</span>}  <span class="error-msg">// must be String</span>
+
 <span class="comment">// ERROR: missing required timestamp</span>
 <span class="keyword">evt</span> = <span class="type">Event</span> {
     <span class="keyword">foo</span> <span class="type">String</span>
-}  <span class="error-msg">// missing: timestamp</span>
-
-<span class="comment">// ERROR: extra field</span>
-<span class="keyword">user</span> = <span class="type">User</span> {
-    <span class="keyword">id</span>    <span class="type">Uuid</span>
-    <span class="keyword">name</span>  <span class="type">String</span>
-    <span class="error">extra</span> <span class="type">Int</span>  <span class="error-msg">// not in schema</span>
-}</pre>
+}  <span class="error-msg">// missing: timestamp</span></pre>
         </div>
       </div>
     </div>
@@ -467,6 +478,26 @@
     <span class="keyword">email</span> <span class="error">String</span> = <span class="keyword">fields.email</span>
 }]  <span class="error-msg">// fields.email is optional</span></pre>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5b. @doc Annotation -->
+  <section class="section">
+    <h2>@doc Annotation</h2>
+    <p>kli-only: hints for runtime implementation (not in ilk)</p>
+    <div class="columns">
+      <div class="col">
+        <div class="col-header ilk">schema.ilk</div>
+        <pre><span class="comment">// No ilk equivalent — kli only</span></pre>
+      </div>
+      <div class="col">
+        <div class="col-header kli">instance.kli</div>
+        <pre><span class="annotation">@doc</span> <span class="string">"multiply qty * unitPrice"</span>
+<span class="keyword">totalAmount</span> <span class="type">Int</span> = <span class="keyword">compute</span>(<span class="keyword">fields.qty</span>, <span class="keyword">fields.unitPrice</span>)
+
+<span class="annotation">@doc</span> <span class="string">"generate UUID v4 at runtime"</span>
+<span class="keyword">correlationId</span> <span class="type">Uuid*</span></pre>
       </div>
     </div>
   </section>
@@ -690,6 +721,64 @@
         <span class="keyword">id</span> <span class="error">Uuid</span>  <span class="error-msg">// String </: Uuid, needs compute()</span>
     }]
 }</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10b. Subtyping -->
+  <section class="section">
+    <h2>Subtyping</h2>
+    <p>Closed structs require exact match. Lists and references are covariant.</p>
+    <div class="columns">
+      <div class="col">
+        <div class="col-header ilk">schema.ilk</div>
+        <pre><span class="comment">// Closed struct — exact fields</span>
+<span class="type">Point</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">Int</span>}
+
+<span class="comment">// Open with required — width subtyping ok</span>
+<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
+
+<span class="comment">// Lists covariant</span>
+<span class="keyword">events</span> []<span class="type">Event</span>
+
+<span class="comment">// References covariant</span>
+<span class="keyword">ref</span> &amp;<span class="type">Event</span></pre>
+      </div>
+      <div class="col">
+        <div class="col-header kli">instance.kli</div>
+        <div class="tabs">
+          <div class="tab active" onclick="showTab(this, 'sub-valid')">&#10003; Valid</div>
+          <div class="tab invalid" onclick="showTab(this, 'sub-invalid')">&#10007; Invalid</div>
+        </div>
+        <div class="pane active" id="sub-valid">
+          <pre><span class="comment">// Exact match for closed struct</span>
+<span class="keyword">p</span> = <span class="type">Point</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">Int</span>}
+
+<span class="comment">// Open struct: extra fields ok</span>
+<span class="keyword">evt</span> = <span class="type">Event</span> {
+    <span class="keyword">name</span>      <span class="type">String</span>
+    <span class="keyword">timestamp</span> <span class="type">Int</span>
+}
+
+<span class="comment">// List accepts Event subtypes</span>
+<span class="keyword">events</span> [<span class="keyword">evt</span>]
+
+<span class="comment">// Ref accepts Event subtype</span>
+<span class="keyword">ref</span> <span class="keyword">evt</span></pre>
+        </div>
+        <div class="pane" id="sub-invalid">
+          <pre><span class="comment">// ERROR: extra field in closed struct</span>
+<span class="keyword">p</span> = <span class="type">Point</span> {
+    <span class="keyword">x</span> <span class="type">Int</span>
+    <span class="keyword">y</span> <span class="type">Int</span>
+    <span class="error">z</span> <span class="type">Int</span>  <span class="error-msg">// not allowed</span>
+}
+
+<span class="comment">// ERROR: missing field in closed struct</span>
+<span class="keyword">p2</span> = <span class="type">Point</span> {
+    <span class="keyword">x</span> <span class="type">Int</span>
+}  <span class="error-msg">// missing: y</span></pre>
         </div>
       </div>
     </div>
