@@ -27,12 +27,19 @@ features:
 <div class="code-compare">
 
 ```ilk
+// we define the vocabulary for our API schema in .ilk
+
 HttpMethod GET | POST | PUT | DELETE
 
 DbMethod {
     name    Concrete<String>
     args    {...}
     returns {...}
+}
+
+HttpResponse {
+    status Concrete<Int>
+    body {...}
 }
 
 Endpoint {
@@ -46,12 +53,8 @@ Endpoint {
     @source [params, body]
     db DbMethod
 
-    response {
-        status Concrete<Int>
-
-        @source [db.returns]
-        body {...}
-    }
+    @source [params, body, db.returns]
+    responses []HttpResponse
 }
 
 @main
@@ -61,6 +64,8 @@ Api {
 ```
 
 ```kli
+// then implement it in .kli-spec
+
 findUser = DbMethod {
     name    "users.findById"
     args    {id Uuid}
@@ -76,13 +81,22 @@ getUser = Endpoint {
         id Uuid = params.id
     }
 
-    response {
-        status 200
-        body {
-            id   Uuid   = db.returns.id
-            name String = db.returns.name
+    responses [
+        HttpResponse {
+            status 200
+            body {
+                id   Uuid   = db.returns.id
+                name String = db.returns.name
+            }
         }
-    }
+        HttpResponse {
+            status 404
+            body {
+                error  "User not found"
+                userId Uuid = params.id
+            }
+        }
+    ]
 }
 
 Api {

@@ -13,5 +13,10 @@
 
 @media (max-width: 768px) {
   .code-compare { flex-direction: column; }
-  .code-compare code { font-size: 0.5rem; }
+}
+
+@media (min-width: 769px) {
+  :root {
+    --vp-code-font-size: 0.75em;
+  }
 }
