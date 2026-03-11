@@ -5,7 +5,7 @@ import kliLang from './langs/kli.tmLanguage.json'
 export default defineConfig({
   title: 'ilk/kli',
   description: 'Two-level data modeling with provenance tracking',
-  base: '/ilk/',
+  base: '/ilk-lang/',
 
   vite: {
     resolve: {
@@ -32,7 +32,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/matthieujacquot/ilk' }
+      { icon: 'github', link: 'https://github.com/err0r500/ilk-lang' }
     ]
   },
 
