@@ -52,6 +52,7 @@ Response Success | Error            // block union
 | `@main` | block | entry point for .kli validation |
 | `@assoc [T]` | block | instances carry refs to T |
 | `@source [fields]` | field/list | data provenance constraint |
+| `@out` | field | output field - exempt from @source, can be referenced |
 | `@constraint expr` | block | boolean predicate |
 | `@doc "..."` | field (kli) | implementation hint |
 

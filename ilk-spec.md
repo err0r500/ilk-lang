@@ -494,6 +494,7 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@main` | block | Entry point — the kli file must satisfy this block |
 | `@assoc [T]` | block | Instances may carry associated values of type `T` |
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
+| `@out` | field | Field is an output — exempt from `@source` checks, can be referenced by other `@source` |
 | `@constraint <expr>` | block body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field (kli only) | Implementation hint preserved in AST; see `kli-spec.md` |
 
@@ -607,6 +608,33 @@ Command {
     }
 }
 ```
+
+### `@out`
+
+`@out` marks a field as **output** — data flows OUT from this field rather than into it.
+Fields marked `@out` are exempt from `@source` checks (they are providers, not consumers)
+and can be referenced in `@source` lists of other fields.
+
+```ilk
+DbMethod {
+    name    Concrete<String>
+    args    {...}
+
+    @out
+    returns {...}  // data provided by DB, not consumed
+}
+
+Endpoint {
+    @source [params, body]
+    db DbMethod
+
+    @source [db.returns]   // can reference @out field
+    response {...}
+}
+```
+
+Without `@out`, a field like `returns` would appear to be missing a `@source` constraint.
+The annotation disambiguates intentional output fields from accidental omissions.
 
 ### `@constraint`
 
@@ -735,6 +763,8 @@ HttpMethod "GET" | "POST" | "PUT" | "DELETE"
 DbMethod {
     name    Concrete<String>
     args    {...}
+
+    @out
     returns {...}
 }
 

@@ -34,6 +34,8 @@ HttpMethod GET | POST | PUT | DELETE
 DbMethod {
     name    Concrete<String>
     args    {...}
+
+    @out // this field won't be check for @source constraints
     returns {...}
 }
 
@@ -43,6 +45,7 @@ HttpResponse {
 }
 
 Endpoint {
+    // ensure that all fields used in path template are declared as params
     @constraint forall(templateVars(path), v => v in keys(params))
     path    Concrete<String>
 
@@ -69,18 +72,20 @@ Api {
 findUser = DbMethod {
     name    "users.findById"
     args    {id Uuid}
+
     returns {id Uuid, name String}
 }
 
 getUser = Endpoint {
-    path   "/users/{id}"
-    method GET
+    path   "/users/{id}" // template variable "id" is actually declared in params
+    method GET // one of the HttpMethod literals
     params {id Uuid}
 
     db findUser & {
         id Uuid = params.id
     }
 
+    // uses data from params and db.returns to construct responses
     responses [
         HttpResponse {
             status 200
@@ -151,5 +156,6 @@ Response Success | Error            // block union
 | `@main` | block | entry point for .kli validation |
 | `@assoc [T]` | block | instances carry refs to T |
 | `@source [fields]` | field/list | data provenance constraint |
+| `@out` | field | output field - exempt from @source, can be referenced |
 | `@constraint expr` | block | boolean predicate |
 | `@doc "..."` | field (kli) | implementation hint |
