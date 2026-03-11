@@ -96,8 +96,21 @@
 <body>
   <header class="intro">
     <h1>ilk / kli</h1>
-    <p><strong>ilk</strong> (.ilk) = schema language — declares abstract vocabulary of a domain<br>
-    <strong>kli</strong> (.kli) = domain model language — instantiates that vocabulary with concrete entities</p>
+    <p style="font-size: 1.1rem; color: var(--text); margin-bottom: 1.5rem;">
+      A two-level data modeling system for domains where <em>data provenance matters</em>.
+    </p>
+    <p>
+      Traditional schemas validate shape. ilk/kli validates <strong>data flow</strong>: where does each field come from?
+      Can the response body only contain data from the DB result? Does every event field trace back to the command input?
+    </p>
+    <p>
+      <strong>ilk</strong> (.ilk) defines the abstract vocabulary — what concepts exist, their shapes, and flow constraints via <code>@source</code>.<br>
+      <strong>kli</strong> (.kli) instantiates that vocabulary — names the concrete entities and maps their field origins.
+    </p>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">
+      Neither level holds runtime data. A .kli file is a <em>domain model</em> — a catalog of named entities and their structures.
+      Actual values (UUIDs, timestamps) live in the system that consumes the validated model.
+    </p>
   </header>
 
   <!-- 0. API Endpoint Example -->
@@ -107,7 +120,7 @@
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">api-spec.ilk</div>
-        <pre><span class="type">HttpMethod</span> <span class="string">GET</span> | <span class="string">POST</span> | <span class="string">PUT</span> | <span class="string">DELETE</span>
+        <pre><span class="type">HttpMethod</span> <span class="string">"GET"</span> | <span class="string">"POST"</span> | <span class="string">"PUT"</span> | <span class="string">"DELETE"</span>
 
 <span class="type">DbMethod</span> {
     <span class="keyword">name</span>    <span class="type">Concrete&lt;String&gt;</span>
@@ -149,7 +162,7 @@
 <span class="comment">// "id" in keys(params) ✓</span>
 <span class="keyword">getUser</span> = <span class="type">Endpoint</span> {
     <span class="keyword">path</span>   <span class="string">"/users/{id}"</span>
-    <span class="keyword">method</span> <span class="string">GET</span>
+    <span class="keyword">method</span> <span class="string">"GET"</span>
     <span class="keyword">params</span> {<span class="keyword">id</span> <span class="type">Uuid</span>}
 
     <span class="keyword">db</span> <span class="keyword">findUser</span> &amp; {
@@ -163,7 +176,85 @@
             <span class="keyword">name</span> <span class="type">String</span> = <span class="keyword">db.returns.name</span>
         }
     }
+}
+
+<span class="keyword">api</span> = <span class="type">Api</span> {
+    <span class="keyword">endpoints</span> [<span class="keyword">getUser</span>]
 }</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 0b. Event Sourcing Example -->
+  <section class="section">
+    <h2>Event Sourcing Example</h2>
+    <p>Domain commands emit events with <code>@source</code> provenance. Tags are associated via <code>@assoc</code> and validated with <code>@constraint</code>.</p>
+    <div class="columns">
+      <div class="col">
+        <div class="col-header ilk">dcb-board-spec.ilk</div>
+        <pre><span class="comment">// Tag: either a parametrized field or a unique string</span>
+<span class="type">Parametrized</span> {<span class="keyword">_</span> <span class="type">String</span>}
+<span class="type">Unique</span> <span class="type">Concrete&lt;String&gt;</span>
+<span class="type">Tag</span> <span class="type">Parametrized</span> | <span class="type">Unique</span>
+
+<span class="comment">// Event: open struct + timestamp, can carry Tag associations</span>
+<span class="annotation">@assoc</span> [<span class="type">Tag</span>]
+<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
+
+<span class="comment">// QueryItem: all listed events must have all listed tags</span>
+<span class="type">QueryItem</span> {
+    <span class="annotation">@constraint</span> <span class="keyword">forall</span>(<span class="keyword">tags</span>, <span class="keyword">t</span> =&gt;
+        <span class="keyword">forall</span>(<span class="keyword">eventTypes</span>, <span class="keyword">e</span> =&gt; <span class="keyword">e</span>.<span class="keyword">assoc</span>(<span class="keyword">t</span>)))
+    <span class="keyword">eventTypes</span> []<span class="type">Event</span>
+    <span class="keyword">tags</span>       []<span class="type">Tag</span>
+}
+
+<span class="comment">// Command: fields drive emits via @source</span>
+<span class="type">Command</span> {
+    <span class="keyword">fields</span> {<span class="keyword">...</span>}
+    <span class="annotation">@source</span> [<span class="keyword">fields</span>]
+    <span class="keyword">emits</span> []<span class="type">Event</span>
+    <span class="keyword">query</span> []<span class="type">QueryItem</span>
+}
+
+<span class="annotation">@main</span>
+<span class="type">Board</span> {
+    <span class="keyword">commands</span> []<span class="type">Command</span>
+}</pre>
+      </div>
+      <div class="col">
+        <div class="col-header kli">dcb-board-instance.kli</div>
+        <pre><span class="comment">// Define tags</span>
+<span class="keyword">userIdTag</span>   = <span class="type">Parametrized</span> {<span class="keyword">userId</span> <span class="type">String</span>}
+<span class="keyword">userNameTag</span> = <span class="type">Parametrized</span> {<span class="keyword">name</span> <span class="type">String</span>}
+<span class="keyword">commonTag</span>   = <span class="type">Parametrized</span> {<span class="keyword">x</span> <span class="type">String</span>}
+<span class="keyword">simpleTag</span>   = <span class="type">Unique</span> <span class="string">"simple-tag"</span>
+
+<span class="comment">// Events with associated tags</span>
+<span class="keyword">userRegistered</span> = <span class="type">Event</span>&lt;<span class="keyword">userIdTag</span>, <span class="keyword">userNameTag</span>, <span class="keyword">commonTag</span>&gt; {
+    <span class="keyword">id</span>   <span class="type">String</span>
+    <span class="keyword">name</span> <span class="type">String</span>
+}
+
+<span class="keyword">other</span> = <span class="type">Event</span>&lt;<span class="keyword">commonTag</span>, <span class="keyword">simpleTag</span>&gt; {
+    <span class="keyword">hello</span> <span class="type">String</span>
+}
+
+<span class="comment">// Command with @source provenance</span>
+<span class="keyword">registerUser</span> = <span class="type">Command</span> {
+    <span class="keyword">fields</span> {<span class="keyword">id</span> <span class="type">String</span>, <span class="keyword">name</span> <span class="type">String</span>, <span class="keyword">x</span> <span class="type">String</span>}
+
+    <span class="comment">// timestamp generated, id/name implicit match</span>
+    <span class="keyword">emits</span> [<span class="keyword">userRegistered</span> &amp; {<span class="keyword">timestamp</span> <span class="type">Int*</span>}]
+
+    <span class="comment">// query: both events have commonTag ✓</span>
+    <span class="keyword">query</span> [{
+        <span class="keyword">eventTypes</span> [<span class="keyword">userRegistered</span>, <span class="keyword">other</span>]
+        <span class="keyword">tags</span>       [<span class="keyword">commonTag</span>]
+    }]
+}
+
+<span class="keyword">board</span> = <span class="type">Board</span> {<span class="keyword">commands</span> [<span class="keyword">registerUser</span>]}</pre>
       </div>
     </div>
   </section>
@@ -215,7 +306,7 @@
   <!-- 2. Value Constraints -->
   <section class="section">
     <h2>Value Constraints</h2>
-    <p>Three levels: Open (any value), Concrete (kli picks one), Schema-fixed (exact value)</p>
+    <p>Three levels: Open (any value), Concrete (kli picks one), Schema-fixed (exact value). Types must match exactly — kli cannot narrow <code>String</code> to <code>"hello"</code>.</p>
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">schema.ilk</div>
@@ -383,7 +474,7 @@
   <!-- 6. References -->
   <section class="section">
     <h2>References</h2>
-    <p><code>&amp;T</code> = reference to a binding of type T (unquoted name, not string)</p>
+    <p><code>&amp;T</code> = reference to a binding of type T (unquoted name, not string). No data flows through references — they identify <em>which</em> binding, not instantiate it.</p>
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">schema.ilk</div>
@@ -430,8 +521,8 @@
         <pre><span class="comment">// open struct + required timestamp</span>
 <span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
 
-<span class="comment">// ERROR in schema: incompatible types</span>
-<span class="comment">// Bad {id Uuid} & {id String}</span></pre>
+<span class="comment">// conflict: right side wins</span>
+<span class="comment">// {id Uuid} & {id String} → {id String}</span></pre>
       </div>
       <div class="col">
         <div class="col-header kli">instance.kli</div>
@@ -503,11 +594,14 @@
   <!-- 9. Associated Values -->
   <section class="section">
     <h2>Associated Values</h2>
-    <p><code>@assoc [T]</code> = instances can carry references to T bindings in angle brackets</p>
+    <p><code>@assoc [T]</code> = instances can carry references to T bindings in angle brackets. Not generics — just metadata attachments for <code>@constraint</code> predicates like <code>e.assoc(t)</code>.</p>
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="type">Tag</span> <span class="type">Parametrized</span> | <span class="type">Unique</span>
+        <pre><span class="comment">// Tag variants (see Union section)</span>
+<span class="type">Parametrized</span> {<span class="keyword">_</span> <span class="type">String</span>}
+<span class="type">Unique</span> <span class="type">Concrete&lt;String&gt;</span>
+<span class="type">Tag</span> <span class="type">Parametrized</span> | <span class="type">Unique</span>
 
 <span class="annotation">@assoc</span> [<span class="type">Tag</span>]
 <span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}</pre>
@@ -551,7 +645,7 @@
   <!-- 10. Field Origins -->
   <section class="section">
     <h2>Field Origins (@source)</h2>
-    <p><code>Type*</code> = generated, <code>= path</code> = mapped, <code>= compute(...)</code> = computed</p>
+    <p><code>@source [fields]</code> constrains where data can come from. Each target field must trace to a source: <code>Type*</code> = generated (exempt), <code>= path</code> = mapped, <code>= compute(...)</code> = derived from multiple sources.</p>
     <div class="columns">
       <div class="col">
         <div class="col-header ilk">schema.ilk</div>
@@ -571,8 +665,10 @@
         <div class="pane active" id="src-valid">
           <pre><span class="keyword">cmd</span> = <span class="type">Command</span> {
     <span class="keyword">fields</span> {
-        <span class="keyword">id</span>   <span class="type">String</span>
-        <span class="keyword">name</span> <span class="type">String</span>
+        <span class="keyword">id</span>    <span class="type">String</span>
+        <span class="keyword">name</span>  <span class="type">String</span>
+        <span class="keyword">qty</span>   <span class="type">Int</span>
+        <span class="keyword">price</span> <span class="type">Int</span>
     }
 
     <span class="keyword">emits</span> [<span class="keyword">userRegistered</span> &amp; {
