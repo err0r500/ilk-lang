@@ -81,9 +81,11 @@ The three levels form a tightening progression: `String` leaves the value fully 
 `Concrete<String>` lets the kli author fix it to one value, and `"hello"` forecloses
 the choice in the schema itself.
 
-**Constraint levels must match exactly.** kli cannot narrow an open type to concrete:
-if ilk declares `ts Timestamp`, kli must write `ts Timestamp` — the schema is saying
-"this field accepts any timestamp at runtime" and kli cannot change that contract.
+**Types must match exactly.** kli must use the same type as ilk — no subtyping:
+- ilk `String` → kli must use `String`, not `Uuid` or `"hello"`
+- ilk `Timestamp` → kli must use `Timestamp`, not a literal
+
+ilk defines structure; kli instantiates it without narrowing the runtime contract.
 
 > **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
 > allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
@@ -121,6 +123,7 @@ Structs have named fields. The schema can constrain how many fields are required
 {_ String}       // exactly 1 field of any name, type String
 {_, _}           // exactly 2 fields of any names and types
 {_ Int, _ String}  // exactly 2 fields with specific types
+{}               // zero fields (empty struct)
 {...}            // zero or more fields of any names and types
 ```
 
@@ -142,7 +145,6 @@ Fields are separated by **newlines** (or commas inline):
 ```
 
 **Constraints:**
-- `{}` (zero fields) is invalid — use the absence of a struct instead.
 - Mixed anonymous/named structs are not allowed; use **intersection types** (`&`) for that pattern.
 
 ---
@@ -318,12 +320,12 @@ the right operand refines the left.
 Event {...} & {timestamp Int}
 ```
 
-If both sides are concrete (neither is `{...}`) and declare the same field name with
-**incompatible types**, it is a schema error.
+This rule applies unconditionally — the right side wins even when both sides are
+concrete with different types:
 
 ```ilk
-// error: both sides explicitly name "id" with different types
-Bad {id Uuid} & {id String}
+// OK: right side wins — result has {id String}
+{id Uuid} & {id String}
 ```
 
 ### Reference intersections

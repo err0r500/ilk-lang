@@ -85,9 +85,11 @@ Both `Concrete<T>` and schema-fixed literals look the same in kli (`"value"`), b
 - `Concrete<T>` — any literal of type T is valid; kli author chooses
 - Schema literal — must match exactly
 
-**Constraint levels must match exactly.** kli cannot narrow an open type to concrete:
-if ilk declares `ts Timestamp`, kli must write `ts Timestamp` — the schema is saying
-"this field accepts any timestamp at runtime" and kli cannot change that contract.
+**Types must match exactly.** kli must use the same type as ilk — no subtyping:
+- ilk `String` → kli must use `String`, not `Uuid` or `"hello"`
+- ilk `Timestamp` → kli must use `Timestamp`, not a literal
+
+ilk defines structure; kli instantiates it without narrowing the runtime contract.
 
 ---
 
