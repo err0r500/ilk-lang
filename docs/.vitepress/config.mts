@@ -7,12 +7,6 @@ export default defineConfig({
   description: 'Two-level data modeling with provenance tracking',
   base: '/ilk-lang/',
 
-  vite: {
-    resolve: {
-      preserveSymlinks: false
-    }
-  },
-
   themeConfig: {
     nav: [
       { text: 'Home', link: '/' },
