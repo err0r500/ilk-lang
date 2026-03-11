@@ -76,7 +76,7 @@ Literal syntax for each base type:
 
 | ilk type | kli form | meaning |
 |----------|----------|---------|
-| `Any` | `String`, `42`, `{...}` | any type or value accepted |
+| `*` | `String`, `42`, `{...}` | any type or value accepted |
 | `String` | `String` | open — type only, value provided at runtime |
 | `Concrete<String>` | `"webhook"` | kli-fixed — kli author picks the literal |
 | `"hello"` | `"hello"` | schema-fixed — exact match required |

@@ -35,7 +35,7 @@ TagField {_} // inline comment on a block declaration
 
 | Token | Description |
 |-------|-------------|
-| `Any` | Accepts any type. Usable as a field type or in struct cardinality notation. |
+| `*` | Wildcard — matches any type. Usable as a field type or in struct cardinality notation. |
 | `Uuid` | UUID value |
 | `String` | UTF-8 string |
 | `Int` | Integer |
@@ -45,8 +45,8 @@ TagField {_} // inline comment on a block declaration
 | `Timestamp` | Point in time |
 | `Money` | Monetary amount |
 
-`Any` can be used as a field type (kli may instantiate with any concrete type or
-value) or in struct cardinality notation like `{_}` (shorthand for `{_ Any}`).
+`*` can be used as a field type (kli may instantiate with any concrete type or
+value) or in struct cardinality notation like `{_}` (shorthand for `{_ *}`).
 
 ---
 
@@ -119,7 +119,7 @@ Structs have named fields. The schema can constrain how many fields are required
 **anonymous-field shorthand** where `_` is a placeholder for "a field of any name":
 
 ```ilk
-{_}              // exactly 1 field of any name and type (= {_ Any})
+{_}              // exactly 1 field of any name and type (= {_ *})
 {_ String}       // exactly 1 field of any name, type String
 {_, _}           // exactly 2 fields of any names and types
 {_ Int, _ String}  // exactly 2 fields with specific types

@@ -7,7 +7,7 @@ Full specs: [ilk-spec.md](ilk-spec.md) | [kli-spec.md](kli-spec.md)
 ## Quick Reference
 
 ### Base Types
-`Any` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
+`*` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
 
 ### Value Constraints
 | ilk | kli | meaning |
@@ -20,7 +20,7 @@ Constraint levels must match exactly. kli cannot narrow open→concrete (would c
 
 ### Structs
 ```ilk
-{_}              // exactly 1 field (= {_ Any})
+{_}              // exactly 1 field (= {_ *})
 {_ String}       // exactly 1 field, type String
 {_, _}           // exactly 2 fields
 {_ Int, _ String}  // exactly 2 fields with specific types
