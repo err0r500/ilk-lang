@@ -1,0 +1,61 @@
+{
+  "name": "kli",
+  "scopeName": "source.kli",
+  "fileTypes": ["kli"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#annotation" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#base-type" },
+    { "include": "#operator" },
+    { "include": "#keyword" },
+    { "include": "#bracket" },
+    { "include": "#type-name" },
+    { "include": "#binding" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.kli"
+    },
+    "annotation": {
+      "match": "@doc\\b",
+      "name": "keyword.other.annotation.kli"
+    },
+    "string": {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.kli"
+    },
+    "number": {
+      "match": "\\b\\d+\\b",
+      "name": "constant.numeric.kli"
+    },
+    "base-type": {
+      "match": "\\b(Any|Uuid|String|Int|Float|Bool|Date|Timestamp|Money)\\b",
+      "name": "support.type.kli"
+    },
+    "operator": {
+      "match": "(\\&|\\||\\*|=|=>|&&|\\|\\||!|==|!=|<=|>=|<|>)",
+      "name": "keyword.operator.kli"
+    },
+    "keyword": {
+      "match": "\\b(compute|true|false)\\b",
+      "name": "keyword.control.kli"
+    },
+    "bracket": {
+      "match": "[\\{\\}\\[\\]\\(\\)<>]",
+      "name": "punctuation.bracket.kli"
+    },
+    "type-name": {
+      "match": "\\b[A-Z][a-zA-Z0-9]*\\b",
+      "name": "entity.name.type.kli"
+    },
+    "binding": {
+      "match": "^\\s*([a-z][a-zA-Z0-9]*)\\s*=",
+      "captures": {
+        "1": { "name": "variable.other.binding.kli" }
+      }
+    }
+  }
+}

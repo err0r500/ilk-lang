@@ -72,8 +72,8 @@ version 1
 ```
 
 ```kli
-name    "alice"            // any string accepted — open constraint
-label   Concrete "webhook" // one specific string, chosen by the kli author — tagged
+name    String            // any string accepted — open constraint
+label   "webhook" // one specific string, chosen by the kli author — tagged
 version 1                  // must match the schema literal exactly
 ```
 
@@ -362,9 +362,9 @@ Response Success | Error
 ```
 
 ```kli
-result = Success { value true }
+result = Success { value Bool }
 // or
-result = Error { message "not found" }
+result = Error { message String }
 ```
 
 Identifier-only variants (no body) are named blocks with empty bodies:

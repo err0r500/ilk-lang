@@ -1,0 +1,59 @@
+{
+  "name": "ilk",
+  "scopeName": "source.ilk",
+  "fileTypes": ["ilk"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#annotation" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#base-type" },
+    { "include": "#concrete" },
+    { "include": "#operator" },
+    { "include": "#constraint-keyword" },
+    { "include": "#bracket" },
+    { "include": "#type-name" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.ilk"
+    },
+    "annotation": {
+      "match": "@(main|assoc|source|constraint|doc)\\b",
+      "name": "keyword.other.annotation.ilk"
+    },
+    "string": {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.ilk"
+    },
+    "number": {
+      "match": "\\b\\d+\\b",
+      "name": "constant.numeric.ilk"
+    },
+    "base-type": {
+      "match": "\\b(Any|Uuid|String|Int|Float|Bool|Date|Timestamp|Money)\\b",
+      "name": "support.type.ilk"
+    },
+    "concrete": {
+      "match": "\\bConcrete\\b",
+      "name": "keyword.other.concrete.ilk"
+    },
+    "operator": {
+      "match": "(\\&|\\||\\*|=|=>|&&|\\|\\||!|==|!=|<=|>=|<|>|\\bin\\b)",
+      "name": "keyword.operator.ilk"
+    },
+    "constraint-keyword": {
+      "match": "\\b(forall|exists|unique|count|keys|templateVars|assoc|compute)\\b",
+      "name": "keyword.control.ilk"
+    },
+    "bracket": {
+      "match": "[\\{\\}\\[\\]\\(\\)<>]",
+      "name": "punctuation.bracket.ilk"
+    },
+    "type-name": {
+      "match": "\\b[A-Z][a-zA-Z0-9]*\\b",
+      "name": "entity.name.type.ilk"
+    }
+  }
+}
