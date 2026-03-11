@@ -286,7 +286,19 @@ No data flows through references; they identify which binding, not instantiate i
 
 When `@source [fields]` is in effect on a schema declaration, every field in a kli struct
 refinement must be traceable to the listed sources. By default the validator matches by
-structural name. Three **optional** origin annotations override that:
+structural name. Several **optional** origin annotations override that:
+
+### Author-chosen (Concrete values)
+
+```kli
+status 404
+message "User not found"
+```
+
+`Concrete<T>` values (literals chosen by the kli author) are **not** runtime data and are
+exempt from `@source` checking. This includes string literals, integer literals, and any
+value that satisfies a `Concrete<T>` or schema-fixed field. Use this for status codes,
+static error messages, and other fixed values in response shapes.
 
 ### Generated (`Type*`)
 
@@ -324,9 +336,10 @@ inside `(...)`. At least one path is required. All path roots must satisfy the s
 
 When `@source` is in effect, the validator resolves each field in priority order:
 
-1. `Type*` — exempt; skip provenance check
-2. `Type = path` or `Type = compute(paths)` — explicit origin; validate path roots
-3. No origin form — implicit; structural name-match against the source fields
+1. `Concrete<T>` value or schema-fixed literal — exempt; author-chosen, not runtime data
+2. `Type*` — exempt; skip provenance check
+3. `Type = path` or `Type = compute(paths)` — explicit origin; validate path roots
+4. No origin form — implicit; structural name-match against the source fields
 
 ---
 
@@ -469,15 +482,22 @@ createUser = Endpoint {
         email String = body.email
     }
 
-    response {
-        status 201
-        // @source [db.returns] in effect — response.body traces to db.returns
-        body {
-            id    Uuid   = db.returns.id
-            name  String = db.returns.name
-            email String = db.returns.email
+    // @source [params, body, db.returns] in effect on responses
+    // status codes and static messages are Concrete<T> — exempt from @source
+    responses [
+        {
+            status 201
+            body {
+                id    Uuid   = db.returns.id
+                name  String = db.returns.name
+                email String = db.returns.email
+            }
         }
-    }
+        {
+            status 422
+            body { message "Validation failed" }
+        }
+    ]
 }
 
 getUser = Endpoint {
@@ -490,12 +510,19 @@ getUser = Endpoint {
         id Uuid = params.id
     }
 
-    response {
-        status 200
-        body {
-            id    Uuid   = db.returns.id
-            name  String = db.returns.name
+    // @source [params, body, db.returns] in effect on responses
+    responses [
+        {
+            status 200
+            body {
+                id   Uuid   = db.returns.id
+                name String = db.returns.name
+            }
         }
-    }
+        {
+            status 404
+            body { message "User not found" }
+        }
+    ]
 }
 ```
