@@ -1,0 +1,173 @@
+================================================================================
+Base types
+================================================================================
+
+Type *
+Type Uuid
+Type String
+Type Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (base_type))
+  (block (type_identifier) (base_type))
+  (block (type_identifier) (base_type))
+  (block (type_identifier) (base_type)))
+
+================================================================================
+Struct types
+================================================================================
+
+Empty {}
+Open {...}
+Anonymous {_}
+AnonymousTyped {_ String}
+Named {x Int}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (struct_type))
+  (block (type_identifier) (struct_type))
+  (block (type_identifier) (struct_type (anonymous_fields (anonymous_field))))
+  (block (type_identifier) (struct_type (anonymous_fields (anonymous_field (base_type)))))
+  (block (type_identifier) (struct_type (field_list (field (identifier) (base_type))))))
+
+================================================================================
+List types
+================================================================================
+
+Items []Event
+Exact [3]Tag
+AtLeast [1..]Tag
+Range [2..5]Tag
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (list_type (named_type)))
+  (block (type_identifier) (list_type (cardinality (number)) (named_type)))
+  (block (type_identifier) (list_type (cardinality (number)) (named_type)))
+  (block (type_identifier) (list_type (cardinality (number) (number)) (named_type))))
+
+================================================================================
+Union types
+================================================================================
+
+Status Pending | Active | Archived
+Method "GET" | "POST"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (union_type (union_type (named_type) (named_type)) (named_type)))
+  (block (type_identifier) (union_type (literal_type (string)) (literal_type (string)))))
+
+================================================================================
+Intersection types
+================================================================================
+
+Event {...} & {timestamp Int}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (intersection_type (struct_type) (struct_type (field_list (field (identifier) (base_type)))))))
+
+================================================================================
+Reference types
+================================================================================
+
+Ref &Event
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (reference_type (type_identifier))))
+
+================================================================================
+Concrete types
+================================================================================
+
+Label Concrete<String>
+Version Concrete<Int>
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (concrete_type (base_type)))
+  (block (type_identifier) (concrete_type (base_type))))
+
+================================================================================
+Annotations - main
+================================================================================
+
+@main
+Board {commands []Command}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (annotation) (type_identifier) (struct_type (field_list (field (identifier) (list_type (named_type)))))))
+
+================================================================================
+Annotations - assoc
+================================================================================
+
+@assoc [Tag]
+Event {...}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (annotation (annotation_args (type_identifier))) (type_identifier) (struct_type)))
+
+================================================================================
+Annotations - source
+================================================================================
+
+Command {
+    fields {...}
+    @source [fields]
+    emits []Event
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (struct_type (field_list
+    (field (identifier) (struct_type))
+    (field (annotation (source_args (source_path (identifier)))) (identifier) (list_type (named_type)))))))
+
+================================================================================
+Annotations - constraint
+================================================================================
+
+QueryItem {
+    @constraint forall(tags, t => e.assoc(t))
+    tags []Tag
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (block (type_identifier) (struct_type (field_list
+    (field
+      (annotation (constraint_call (constraint_var (identifier)) (identifier) (constraint_call (constraint_var (identifier)) (constraint_var (identifier)))))
+      (identifier)
+      (list_type (named_type)))))))
+
+================================================================================
+Comments
+================================================================================
+
+// This is a comment
+Type String // inline
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (block (type_identifier) (base_type))
+  (comment))
