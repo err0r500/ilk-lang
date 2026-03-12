@@ -2,7 +2,7 @@
 
 // Parametrized wraps a single field of any name but specifically of type String.
 // Anonymous structs are not valid as union branches — a named block is required.
-Parametrized {String}
+Parametrized {_ String}
 // Unique is a named alias for Concrete<String>, used as a union branch.
 Unique Concrete<String>
 Tag Parametrized | Unique // a tag is a single-field String struct, or a unique concrete string
