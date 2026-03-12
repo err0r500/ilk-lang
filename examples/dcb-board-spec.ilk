@@ -20,10 +20,10 @@ QueryItem {
 Command {
     fields {...}
 
+    query []QueryItem
+
     @source [fields] // all Event fields in emits must be sourced from Command fields
     emits []Event
-
-    query []QueryItem
 }
 
 @main

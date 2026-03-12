@@ -118,19 +118,33 @@ fn validate_field_source(
                     }
                 }
                 KliListElement::BindingRef(name) => {
-                    // Binding refs in @source lists need their fields checked
-                    if let Some(_ref_binding) = ctx.bindings.get(name) {
-                        // The binding itself satisfies the source constraint
-                        // through its own field mappings
+                    if let Some(ref_binding) = ctx.bindings.get(name) {
+                        if let KliValue::Struct(ref_fields) = &ref_binding.node.body.node {
+                            for ref_field in ref_fields {
+                                validate_refinement_field(ctx, ref_field, sources, binding, errors);
+                            }
+                        }
                     }
                 }
-                KliListElement::Value(v) => {
-                    if let KliValue::Struct(fields) = v {
+                KliListElement::Value(v) => match v {
+                    KliValue::Struct(fields) => {
                         for field in fields {
                             validate_refinement_field(ctx, field, sources, binding, errors);
                         }
                     }
-                }
+                    KliValue::BindingRef(name) => {
+                        if let Some(ref_binding) = ctx.bindings.get(name) {
+                            if let KliValue::Struct(ref_fields) = &ref_binding.node.body.node {
+                                for ref_field in ref_fields {
+                                    validate_refinement_field(
+                                        ctx, ref_field, sources, binding, errors,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                },
             }
         }
     } else if let KliValue::Struct(nested_fields) = &kli_field.node.value.node {
@@ -339,6 +353,25 @@ mod tests {
         let errors = validate_source_pair(
             "Event {status Concrete<Int>}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
             "e = Event {status 200}\ncmd = Cmd {\n  fields {x Int}\n  emits [e & {status 200}]\n}",
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_binding_ref_missing_source() {
+        let errors = validate_source_pair(
+            "Event {bla String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
+            "other = Event {bla String}\ncmd = Cmd {\n  fields {x Int}\n  emits [other]\n}",
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("No source found for field 'bla'"));
+    }
+
+    #[test]
+    fn test_binding_ref_valid_source() {
+        let errors = validate_source_pair(
+            "Event {bla String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
+            "other = Event {bla String}\ncmd = Cmd {\n  fields {bla String}\n  emits [other]\n}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }

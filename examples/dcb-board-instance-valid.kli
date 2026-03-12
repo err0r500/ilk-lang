@@ -18,13 +18,14 @@ registerUser = Command {
          id String
          hello String
          x String
+         bla String
     }
 
 
     query [
         {
             eventTypes [userRegistered, other],
-            tags [commonTag]
+            tags [simpleTag]
         }
     ]
 
