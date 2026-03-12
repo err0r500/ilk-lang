@@ -70,6 +70,129 @@ fn validate_binding_constraints(
             }
         }
     }
+
+    // Recursively validate constraints on nested structures
+    validate_nested_constraints(
+        &binding.node.body,
+        &block.node.body,
+        &binding.node.name.node,
+        ctx,
+        errors,
+    );
+}
+
+fn validate_nested_constraints(
+    value: &S<KliValue>,
+    ty: &S<TypeExpr>,
+    parent_path: &str,
+    ctx: &ValidationContext,
+    errors: &mut Vec<Diagnostic>,
+) {
+    match (&value.node, &ty.node) {
+        // List of items - check element type for constraints
+        (KliValue::List(elements), TypeExpr::List(_, elem_ty)) => {
+            // Get block type if element type is a named reference
+            let block = match &elem_ty.node {
+                TypeExpr::Named(name) => ctx.env.get(name),
+                _ => None,
+            };
+
+            if let Some(block) = block {
+                let constraints = find_constraints_in_type(&block.node.body);
+                if !constraints.is_empty() {
+                    for (i, elem) in elements.iter().enumerate() {
+                        // Only inline structs need validation (bindings validated at top level)
+                        if let KliListElement::Value(KliValue::Struct(fields)) = &elem.node {
+                            let env = build_env_from_fields(fields, ctx);
+                            let assocs = HashSet::new(); // inline structs have no assocs
+
+                            for constraint in &constraints {
+                                match eval_constraint(&constraint.node, &env, &assocs, ctx) {
+                                    Ok(Value::Bool(true)) => {}
+                                    Ok(Value::Bool(false)) => {
+                                        errors.push(Diagnostic::error(
+                                            elem.span.clone(),
+                                            format!(
+                                                "Constraint failed for inline {} at {}[{}]",
+                                                block.node.name.node, parent_path, i
+                                            ),
+                                            ctx.path,
+                                        ));
+                                    }
+                                    Ok(_) => {
+                                        errors.push(Diagnostic::error(
+                                            constraint.span.clone(),
+                                            "Constraint must evaluate to boolean",
+                                            ctx.path,
+                                        ));
+                                    }
+                                    Err(msg) => {
+                                        errors.push(Diagnostic::error(
+                                            constraint.span.clone(),
+                                            format!("Constraint evaluation error: {}", msg),
+                                            ctx.path,
+                                        ));
+                                    }
+                                }
+                            }
+
+                            // Recurse into nested struct fields
+                            let inline_value = S::new(KliValue::Struct(fields.clone()), elem.span.clone());
+                            validate_nested_constraints(
+                                &inline_value,
+                                &block.node.body,
+                                &format!("{}[{}]", parent_path, i),
+                                ctx,
+                                errors,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Struct fields - recurse into each field
+        (KliValue::Struct(kli_fields), TypeExpr::Struct(kind)) => {
+            let ilk_fields = match kind {
+                StructKind::Closed(fields) | StructKind::Open(fields) => fields,
+                _ => return,
+            };
+
+            for kli_field in kli_fields {
+                let name = &kli_field.node.name.node;
+                if let Some(ilk_field) = ilk_fields.iter().find(|f| &f.node.name.node == name) {
+                    validate_nested_constraints(
+                        &kli_field.node.value,
+                        &ilk_field.node.ty,
+                        &format!("{}.{}", parent_path, name),
+                        ctx,
+                        errors,
+                    );
+                }
+            }
+        }
+
+        // Intersection - validate against both sides
+        (_, TypeExpr::Intersection(left, right)) => {
+            validate_nested_constraints(value, left, parent_path, ctx, errors);
+            validate_nested_constraints(value, right, parent_path, ctx, errors);
+        }
+
+        _ => {}
+    }
+}
+
+fn build_env_from_fields(
+    fields: &[S<KliField>],
+    ctx: &ValidationContext,
+) -> HashMap<String, Value> {
+    let mut env = HashMap::new();
+    for field in fields {
+        let name = &field.node.name.node;
+        let value = kli_value_to_eval_value(&field.node.value, ctx);
+        env.insert(name.clone(), value);
+    }
+    env
 }
 
 fn find_constraints_in_type(ty: &S<TypeExpr>) -> Vec<S<ConstraintExpr>> {
@@ -586,5 +709,125 @@ mod tests {
         assert!(vars.contains("id"));
         assert!(vars.contains("postId"));
         assert_eq!(vars.len(), 2);
+    }
+
+    #[test]
+    fn test_nested_constraint_pass() {
+        // QueryItem-like: all events must have all tags
+        let errors = validate_constraints_pair(
+            r#"
+@assoc [Tag]
+Event {...}
+Tag {_ String}
+QueryItem {
+    @constraint forall(tags, t => forall(events, e => e.assoc(t)))
+    events []Event
+    tags []Tag
+}
+@main
+Container { items []QueryItem }
+"#,
+            r#"
+tag1 = Tag {x String}
+ev1 = Event<tag1> {a String}
+ev2 = Event<tag1> {b String}
+container = Container {
+    items [
+        { events [ev1, ev2], tags [tag1] }
+    ]
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_nested_constraint_fail() {
+        // Event missing required tag
+        let errors = validate_constraints_pair(
+            r#"
+@assoc [Tag]
+Event {...}
+Tag {_ String}
+QueryItem {
+    @constraint forall(tags, t => forall(events, e => e.assoc(t)))
+    events []Event
+    tags []Tag
+}
+@main
+Container { items []QueryItem }
+"#,
+            r#"
+tag1 = Tag {x String}
+tag2 = Tag {y String}
+ev1 = Event<tag1> {a String}
+container = Container {
+    items [
+        { events [ev1], tags [tag1, tag2] }
+    ]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Constraint failed"));
+    }
+
+    #[test]
+    fn test_nested_constraint_deep() {
+        // Multiple nesting levels
+        let errors = validate_constraints_pair(
+            r#"
+Inner {
+    @constraint x > 0
+    x Int
+}
+@main
+Outer {
+    nested {
+        items []Inner
+    }
+}
+"#,
+            r#"
+outer = Outer {
+    nested {
+        items [
+            {x 5},
+            {x 10}
+        ]
+    }
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_nested_constraint_deep_fail() {
+        let errors = validate_constraints_pair(
+            r#"
+Inner {
+    @constraint x > 0
+    x Int
+}
+@main
+Outer {
+    nested {
+        items []Inner
+    }
+}
+"#,
+            r#"
+outer = Outer {
+    nested {
+        items [
+            {x 5},
+            {x -1}
+        ]
+    }
+}
+"#,
+        );
+        assert!(!errors.is_empty());
     }
 }
