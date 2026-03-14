@@ -67,7 +67,7 @@ fn validate_type_fields_sources(
                 .iter()
                 .find(|f| f.node.name.node == type_field.node.name.node)
             {
-                validate_field_source(ctx, inst_field, sources, inst_fields, errors);
+                validate_field_source(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, errors);
             }
         }
 
@@ -129,7 +129,7 @@ fn validate_intersection_struct_sources(
                 .iter()
                 .find(|f| f.node.name.node == type_field.node.name.node)
             {
-                validate_field_source(ctx, inst_field, sources, inst_fields, errors);
+                validate_field_source(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, errors);
             }
         }
 
@@ -149,16 +149,30 @@ fn validate_intersection_struct_sources(
     }
 }
 
+/// Check if a type is a list of references (e.g., []&Event)
+fn is_reference_list(ty: &TypeExpr) -> bool {
+    if let TypeExpr::List(_, inner) = ty {
+        matches!(inner.node, TypeExpr::Reference(_))
+    } else {
+        false
+    }
+}
+
 fn validate_field_source(
     ctx: &ValidationContext,
     inst_field: &S<InstanceField>,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
+    field_type: &TypeExpr,
     errors: &mut Vec<Diagnostic>,
 ) {
     // Only validate lists (refinements and inline elements)
     // Nested struct values are handled by recursive validate_struct_sources
     if let Value::List(elements) = &inst_field.node.value.node {
+        // For reference lists ([]&Type), skip validation of plain binding refs
+        // since references don't carry data - only validate refinements
+        let is_ref_list = is_reference_list(field_type);
+
         for elem in elements {
             match &elem.node {
                 ListElement::Refinement(_name, ref_fields) => {
@@ -168,7 +182,11 @@ fn validate_field_source(
                     }
                 }
                 ListElement::BindingRef(name) => {
-                    // For binding refs, validate the referenced instance's fields
+                    // Skip validation for reference types - they're just pointers
+                    if is_ref_list {
+                        continue;
+                    }
+                    // For value types, validate the referenced instance's fields
                     if let Some(ref_inst) = ctx.get_instance(name) {
                         if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
@@ -185,7 +203,11 @@ fn validate_field_source(
                         }
                     }
                     Value::BindingRef(name) => {
-                        // For binding refs, validate the referenced instance's fields
+                        // Skip validation for reference types - they're just pointers
+                        if is_ref_list {
+                            continue;
+                        }
+                        // For value types, validate the referenced instance's fields
                         if let Some(ref_inst) = ctx.get_instance(name) {
                             if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
@@ -255,17 +277,15 @@ fn validate_refinement_field(
             }
 
             // If this is a list, validate its elements recursively
+            // Note: we skip binding refs here because we don't have type context
+            // to know if this is a reference list ([]&Type). Reference lists should
+            // not validate their elements. If this list has @source, it will be
+            // validated properly by validate_field_source with type info.
             if let Value::List(elements) = &field.node.value.node {
                 for elem in elements {
                     match &elem.node {
-                        ListElement::BindingRef(name) => {
-                            if let Some(ref_inst) = ctx.get_instance(name) {
-                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                                    for ref_field in ref_fields {
-                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
-                                    }
-                                }
-                            }
+                        ListElement::BindingRef(_) => {
+                            // Skip - no type context to know if this is a reference list
                         }
                         ListElement::Refinement(_, ref_fields) => {
                             for ref_field in ref_fields {
@@ -277,14 +297,8 @@ fn validate_refinement_field(
                                 validate_refinement_field(ctx, f, sources, parent_fields, errors);
                             }
                         }
-                        ListElement::Value(Value::BindingRef(name)) => {
-                            if let Some(ref_inst) = ctx.get_instance(name) {
-                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                                    for ref_field in ref_fields {
-                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
-                                    }
-                                }
-                            }
+                        ListElement::Value(Value::BindingRef(_)) => {
+                            // Skip - no type context to know if this is a reference list
                         }
                         _ => {}
                     }

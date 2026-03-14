@@ -102,14 +102,13 @@ registerUser = ChangeSlice {
              name String = endpoint.body.name
         }
 
-
         query [
             {
                 eventTypes [userRegistered],
                 tags [userIdTag & {userId Uuid = fields.id}]
             },
             {
-                //eventTypes [userRegistered],
+                eventTypes [userRegistered],
                 tags [userNameTag & {name String = fields.name}]
             }
         ]
@@ -120,7 +119,7 @@ registerUser = ChangeSlice {
     scenarios [
         {
             name "happy path",
-            given [userRegistered & {id "123"}, userRegistered]
+            given [userRegistered & {id 123}, userRegistered]
             when {}
             then [userRegistered & {id "123"}]
         }
