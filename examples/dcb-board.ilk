@@ -14,29 +14,50 @@ type Event = {...} & {timestamp Int}
 
 type QueryItem = {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
-
-    eventTypes []Event
+    eventTypes []&Event
     tags []Tag
 }
 
 type Command = {
     fields {...}
 
+    @source [fields]
     query []QueryItem
 
     @source [fields]
     emits []Event
+
+}
+
+type HttpVerb = "GET" | "POST" | "DELETE"
+
+type HttpEndpoint = {
+    path Concrete<String>
+    verb HttpVerb
+    body {...}
+    params {...}
+}
+
+type ChangeSlice = {
+    name Concrete<String>
+    endpoint HttpEndpoint
+
+    @source [endpoint]
+    command Command
 
     scenarios []Scenario
 }
 
 type Scenario = {
     name Concrete<String>
+
     given []-Event
+    when Command
+    then []-Event
 }
 
 type Board = {
-    commands []Command
+    changes []ChangeSlice
 }
 
 
@@ -44,45 +65,59 @@ type Board = {
 
 userIdTag   = Parametrized {userId String}
 userNameTag = Parametrized {name String}
-commonTag   = Parametrized {x String}
-simpleTag   = Unique "simple-tag"
 
-userRegistered = Event<userIdTag, userNameTag, commonTag> {
-    id String
+userRegistered = Event<userIdTag, userNameTag> {
+    id Uuid
     name String
 }
 
-other = Event<commonTag, simpleTag> {
-    bla String
-}
+registerUser = ChangeSlice {
+    name "registerUser"
 
-registerUser = Command {
-    fields {
-         id String
-         hello String
-         x String
-         bla String
+    endpoint {
+        path "/users/{id}"
+        verb POST
+        params {
+            id Uuid
+        }
+
+        body {
+            name String
+        }
     }
 
-
-    query [
-        {
-            eventTypes [userRegistered, other],
-            tags [commonTag]
+    command {
+        fields {
+             userId Uuid = endpoint.params.id
+             name String = endpoint.params.name
         }
-    ]
 
-    emits [other]
+
+        query [
+            {
+                eventTypes [userRegistered],
+                tags [userIdTag]
+            },
+            {
+                eventTypes [userRegistered],
+                tags [userIdName]
+            }
+        ]
+
+        emits [userRegistered]
+    }
 
     scenarios [
         {
             name "happy path",
             given [userRegistered & {id "123"}, userRegistered]
+            when {}
+            then [userRegistered & {id "123"}]
         }
     ]
 }
 
 @main
 board = Board {
-    commands [registerUser]
+    changes [registerUser]
 }
