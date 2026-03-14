@@ -23,15 +23,13 @@ type Command = {
 
 }
 
-type HttpMethod = "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
-
 type HttpResponse = {
     status Concrete<Int>
     body {...}
 }
 
 type HttpEndpoint = {
-    method HttpMethod
+    method "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
 
     @constraint forall(templateVars(path), v => v in keys(params))
     path Concrete<String>
@@ -118,25 +116,6 @@ registerUser = ChangeSlice {
             then [userRegistered & {id "123"}]
         }
     ]
-}
-
-hello = ChangeSlice {
-    name "hello"
-
-    endpoint {
-        path "/hello"
-        method "POST"
-        params {
-            id Uuid
-        }
-    }
-
-    command {
-        fields {
-            id Uuid = endpoint.params.id
-        }
-    }
-
 }
 
 @main

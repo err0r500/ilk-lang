@@ -258,16 +258,12 @@ fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<
     match ty {
         TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
             for field in fields {
-                // Skip fields with their own @source annotation
+                // Only skip fields with their own @source annotation
+                // They will be validated by the nested type's recursion
                 let has_source = field.node.annotations.iter().any(|a| {
                     matches!(a.node, Annotation::Source(_))
                 });
-                // Skip open struct fields - they're declarations, not data usage
-                let is_open_struct = matches!(
-                    &field.node.ty.node,
-                    TypeExpr::Struct(StructKind::Open(_))
-                );
-                if has_source || is_open_struct {
+                if has_source {
                     result.insert(field.node.name.node.clone());
                 }
             }
