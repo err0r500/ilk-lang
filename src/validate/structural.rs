@@ -4,6 +4,20 @@ use crate::resolve::TypeEnv;
 use crate::span::{Span, S};
 use std::path::Path;
 
+fn format_type(ty: &TypeExpr) -> String {
+    match ty {
+        TypeExpr::Base(b) => format!("{:?}", b),
+        TypeExpr::Named(n) => n.clone(),
+        TypeExpr::Concrete(inner) => format!("Concrete<{}>", format_type(&inner.node)),
+        TypeExpr::Reference(n) => format!("&{}", n),
+        TypeExpr::List(_, inner) => format!("[]{}", format_type(&inner.node)),
+        TypeExpr::LitString(s) => format!("\"{}\"", s),
+        TypeExpr::LitInt(i) => format!("{}", i),
+        TypeExpr::LitBool(b) => format!("{}", b),
+        _ => "?".to_string(),
+    }
+}
+
 pub struct ValidationContext<'a> {
     pub env: &'a TypeEnv,
     pub path: &'a Path,
@@ -129,7 +143,7 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::String)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "String literal doesn't match Concrete type",
+                    format!("String literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }
@@ -138,7 +152,7 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Int)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "Int literal doesn't match Concrete type",
+                    format!("Int literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }
@@ -147,7 +161,7 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Bool)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "Bool literal doesn't match Concrete type",
+                    format!("Bool literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }

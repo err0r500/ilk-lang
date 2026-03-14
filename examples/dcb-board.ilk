@@ -1,13 +1,7 @@
 // Type declarations
 
-// Parametrized wraps a single field of any name but specifically of type String.
-type Parametrized = {_ String}
-
-// Unique is a named alias for Concrete<String>, used as a union branch.
-type Unique = Concrete<String>
-
 // A tag is a single-field String struct, or a unique concrete string
-type Tag = Parametrized | Unique
+type Tag = {_ String} | Concrete<String>
 
 @assoc [Tag]
 type Event = {...} & {timestamp Int}
@@ -54,10 +48,10 @@ type ChangeSlice = {
     @source [endpoint]
     command Command
 
-    scenarios []Scenario
+    scenarios []CommandScenario
 }
 
-type Scenario = {
+type CommandScenario = {
     name Concrete<String>
 
     given []-Event
@@ -72,8 +66,8 @@ type Board = {
 
 // Instance bindings
 
-userIdTag   = Parametrized {userId String}
-userNameTag = Parametrized {name String}
+userIdTag   = Tag {userId String}
+userNameTag = Tag {name String}
 
 userRegistered = Event<userIdTag, userNameTag> {
     id Uuid
@@ -86,7 +80,7 @@ registerUser = ChangeSlice {
 
     endpoint {
         path "/users/{id}"
-        method POST
+        method "POST"
         params {
             id Uuid
         }
@@ -126,7 +120,26 @@ registerUser = ChangeSlice {
     ]
 }
 
+hello = ChangeSlice {
+    name "hello"
+
+    endpoint {
+        path "/hello"
+        method "POST"
+        params {
+            id Uuid
+        }
+    }
+
+    command {
+        fields {
+            id Uuid = endpoint.params.id
+        }
+    }
+
+}
+
 @main
 board = Board {
-    changes [registerUser]
+    changes [registerUser, hello]
 }

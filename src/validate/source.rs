@@ -222,9 +222,62 @@ fn validate_field_source(
                 },
             }
         }
+    } else if let Value::Struct(nested_fields) = &inst_field.node.value.node {
+        // Validate struct fields against parent @source
+        // But skip fields that have their own @source in the nested type
+        let fields_to_skip = get_fields_to_skip(field_type, ctx);
+
+        for nested in nested_fields {
+            // Skip fields with own @source or open struct type (declarations)
+            if fields_to_skip.contains(&nested.node.name.node) {
+                continue;
+            }
+            validate_refinement_field(ctx, nested, sources, parent_fields, errors);
+        }
     }
-    // Note: nested struct values are handled by validate_struct_sources recursion,
-    // which will apply the nested type's own @source annotations if present
+}
+
+/// Get field names that should be skipped from parent @source validation
+/// This includes fields with their own @source annotation, and open struct fields (declarations)
+fn get_fields_to_skip(ty: &TypeExpr, ctx: &ValidationContext) -> std::collections::HashSet<String> {
+    let mut result = std::collections::HashSet::new();
+
+    let type_decl = match ty {
+        TypeExpr::Named(name) => ctx.env.get_type(name),
+        _ => None,
+    };
+
+    if let Some(type_decl) = type_decl {
+        collect_fields_to_skip(&type_decl.node.body.node, &mut result);
+    }
+
+    result
+}
+
+fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<String>) {
+    match ty {
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
+            for field in fields {
+                // Skip fields with their own @source annotation
+                let has_source = field.node.annotations.iter().any(|a| {
+                    matches!(a.node, Annotation::Source(_))
+                });
+                // Skip open struct fields - they're declarations, not data usage
+                let is_open_struct = matches!(
+                    &field.node.ty.node,
+                    TypeExpr::Struct(StructKind::Open(_))
+                );
+                if has_source || is_open_struct {
+                    result.insert(field.node.name.node.clone());
+                }
+            }
+        }
+        TypeExpr::Intersection(left, right) => {
+            collect_fields_to_skip(&left.node, result);
+            collect_fields_to_skip(&right.node, result);
+        }
+        _ => {}
+    }
 }
 
 fn validate_refinement_field(

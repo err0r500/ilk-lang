@@ -165,6 +165,57 @@ fn validate_nested_constraints(
             }
         }
 
+        // Handle inline struct values with named types (e.g., endpoint HttpEndpoint with inline value)
+        (Value::Struct(val_fields), TypeExpr::Named(type_name)) => {
+            if let Some(type_decl) = ctx.env.get_type(type_name) {
+                // Check constraints on this inline struct
+                let constraints = find_constraints_in_type(&type_decl.node.body);
+                if !constraints.is_empty() {
+                    let env = build_env_from_fields(val_fields, ctx);
+                    let assocs = HashSet::new();
+
+                    for constraint in &constraints {
+                        match eval_constraint(&constraint.node, &env, &assocs, ctx) {
+                            Ok(EvalValue::Bool(true)) => {}
+                            Ok(EvalValue::Bool(false)) => {
+                                errors.push(Diagnostic::error(
+                                    constraint.span.clone(),
+                                    format!(
+                                        "Constraint failed for inline {} at {}",
+                                        type_name, parent_path
+                                    ),
+                                    ctx.path,
+                                ));
+                            }
+                            Ok(_) => {
+                                errors.push(Diagnostic::error(
+                                    constraint.span.clone(),
+                                    "Constraint must evaluate to boolean",
+                                    ctx.path,
+                                ));
+                            }
+                            Err(msg) => {
+                                errors.push(Diagnostic::error(
+                                    constraint.span.clone(),
+                                    format!("Constraint evaluation error: {}", msg),
+                                    ctx.path,
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Recurse into nested fields
+                validate_nested_constraints(
+                    value,
+                    &type_decl.node.body,
+                    parent_path,
+                    ctx,
+                    errors,
+                );
+            }
+        }
+
         (_, TypeExpr::Intersection(left, right)) => {
             validate_nested_constraints(value, left, parent_path, ctx, errors);
             validate_nested_constraints(value, right, parent_path, ctx, errors);
