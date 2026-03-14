@@ -1,5 +1,5 @@
 ================================================================================
-Simple binding
+Simple instance
 ================================================================================
 
 tag = Parametrized {userId String}
@@ -7,10 +7,18 @@ tag = Parametrized {userId String}
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list (value_field (identifier) (type_ref))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
 
 ================================================================================
-Binding with literal
+Instance with literal
 ================================================================================
 
 simpleTag = Unique "simple-tag"
@@ -18,27 +26,40 @@ simpleTag = Unique "simple-tag"
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (literal_value (string))))
+  (instance
+    (identifier)
+    (identifier)
+    (literal_value
+      (string))))
 
 ================================================================================
-Binding with associations
+Instance with associations
 ================================================================================
 
 userRegistered = Event<userIdTag, commonTag> {
-    id String
+    id String,
     name String
 }
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding
+  (instance
     (identifier)
-    (type_identifier)
-    (assoc_list (identifier) (identifier))
-    (struct_value (value_field_list
-      (value_field (identifier) (type_ref))
-      (value_field (identifier) (type_ref))))))
+    (identifier)
+    (assoc_list
+      (identifier)
+      (identifier))
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
 
 ================================================================================
 Field origins - generated
@@ -51,8 +72,16 @@ event = Event {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (type_ref) (field_origin))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin))))))
 
 ================================================================================
 Field origins - mapped
@@ -65,8 +94,19 @@ event = Event {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (type_ref) (field_origin (origin_path (identifier) (identifier))))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_path
+              (identifier)
+              (identifier))))))))
 
 ================================================================================
 Field origins - computed
@@ -79,8 +119,23 @@ event = Event {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (type_ref) (field_origin (origin_paths (origin_path (identifier) (identifier)) (origin_path (identifier) (identifier)))))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_paths
+              (origin_path
+                (identifier)
+                (identifier))
+              (origin_path
+                (identifier)
+                (identifier)))))))))
 
 ================================================================================
 Optional fields
@@ -93,8 +148,15 @@ event = Event {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (type_ref))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
 
 ================================================================================
 List values
@@ -107,8 +169,21 @@ cmd = Command {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (list_value (list_elements (list_element (binding_ref (identifier))) (list_element (binding_ref (identifier))))))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (binding_ref
+                  (identifier)))
+              (list_element
+                (binding_ref
+                  (identifier))))))))))
 
 ================================================================================
 Inline refinements
@@ -123,17 +198,77 @@ cmd = Command {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (identifier) (list_value (list_elements
-      (list_element (identifier) (struct_value (value_field_list
-        (value_field (identifier) (type_ref) (field_origin))))))))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (refinement
+                  (identifier)
+                  (struct_value
+                    (value_field_list
+                      (value_field
+                        (identifier)
+                        (type_ref
+                          (base_type))
+                        (field_origin)))))))))))))
 
 ================================================================================
-Doc annotations
+Main annotation
+================================================================================
+
+@main
+board = Board {commands [cmd]}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (main_annotation)
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (binding_ref
+                  (identifier))))))))))
+
+================================================================================
+Doc annotation on instance
 ================================================================================
 
 @doc "Implementation hint"
-total = Event {
+total = Event {x String}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (doc_annotation
+      (string))
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
+
+================================================================================
+Doc annotation on field
+================================================================================
+
+ev = Event {
     @doc "multiply qty * price"
     amount Int = compute(fields.qty, fields.price)
 }
@@ -141,5 +276,47 @@ total = Event {
 --------------------------------------------------------------------------------
 
 (source_file
-  (binding (string) (identifier) (type_identifier) (struct_value (value_field_list
-    (value_field (string) (identifier) (type_ref) (field_origin (origin_paths (origin_path (identifier) (identifier)) (origin_path (identifier) (identifier)))))))))
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (doc_annotation
+            (string))
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_paths
+              (origin_path
+                (identifier)
+                (identifier))
+              (origin_path
+                (identifier)
+                (identifier)))))))))
+
+================================================================================
+Import statement
+================================================================================
+
+import "./base-types.ilk"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_stmt
+    (string)))
+
+================================================================================
+Import with alias
+================================================================================
+
+import "./common-tags.ilk" as tags
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_stmt
+    (string)
+    (identifier)))
