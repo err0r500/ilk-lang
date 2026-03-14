@@ -18,21 +18,41 @@ fn validate_instance_sources(
     type_decl: &TypeDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
+    if let Value::Struct(inst_fields) = &inst.body.node {
+        validate_struct_sources(ctx, inst_fields, type_decl, errors);
+    }
+}
+
+fn validate_struct_sources(
+    ctx: &ValidationContext,
+    inst_fields: &[S<InstanceField>],
+    type_decl: &TypeDecl,
+    errors: &mut Vec<Diagnostic>,
+) {
     // Get the struct fields from the type body
-    let fields = match &type_decl.body.node {
-        TypeExpr::Struct(StructKind::Closed(f) | StructKind::Open(f)) => f,
+    let type_fields = match &type_decl.body.node {
+        TypeExpr::Struct(StructKind::Closed(f) | StructKind::Open(f)) => f.as_slice(),
         TypeExpr::Intersection(left, right) => {
             let mut all_fields = Vec::new();
             collect_struct_fields(&left.node, &mut all_fields);
             collect_struct_fields(&right.node, &mut all_fields);
-            validate_intersection_sources(ctx, inst, &all_fields, errors);
+            validate_intersection_struct_sources(ctx, inst_fields, &all_fields, errors);
             return;
         }
         _ => return,
     };
 
+    validate_type_fields_sources(ctx, inst_fields, type_fields, errors);
+}
+
+fn validate_type_fields_sources(
+    ctx: &ValidationContext,
+    inst_fields: &[S<InstanceField>],
+    type_fields: &[S<Field>],
+    errors: &mut Vec<Diagnostic>,
+) {
     // Check each field for @source annotation
-    for type_field in fields {
+    for type_field in type_fields {
         let source_ann = type_field
             .node
             .annotations
@@ -43,15 +63,35 @@ fn validate_instance_sources(
             });
 
         if let Some(sources) = source_ann {
-            if let Value::Struct(inst_fields) = &inst.body.node {
-                if let Some(inst_field) = inst_fields
-                    .iter()
-                    .find(|f| f.node.name.node == type_field.node.name.node)
-                {
-                    validate_field_source(ctx, inst_field, sources, inst, errors);
+            if let Some(inst_field) = inst_fields
+                .iter()
+                .find(|f| f.node.name.node == type_field.node.name.node)
+            {
+                validate_field_source(ctx, inst_field, sources, inst_fields, errors);
+            }
+        }
+
+        // Recurse into nested struct values if the field type is a named type
+        if let Some(inst_field) = inst_fields
+            .iter()
+            .find(|f| f.node.name.node == type_field.node.name.node)
+        {
+            if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
+                // Get the type name from the type field
+                if let Some(nested_type_name) = get_type_name_from_type_expr(&type_field.node.ty.node) {
+                    if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
+                        validate_struct_sources(ctx, nested_inst_fields, &nested_type_decl.node, errors);
+                    }
                 }
             }
         }
+    }
+}
+
+fn get_type_name_from_type_expr(type_expr: &TypeExpr) -> Option<String> {
+    match type_expr {
+        TypeExpr::Named(name) => Some(name.clone()),
+        _ => None,
     }
 }
 
@@ -68,9 +108,9 @@ fn collect_struct_fields<'a>(ty: &'a TypeExpr, fields: &mut Vec<&'a S<Field>>) {
     }
 }
 
-fn validate_intersection_sources(
+fn validate_intersection_struct_sources(
     ctx: &ValidationContext,
-    inst: &Instance,
+    inst_fields: &[S<InstanceField>],
     type_fields: &[&S<Field>],
     errors: &mut Vec<Diagnostic>,
 ) {
@@ -85,12 +125,24 @@ fn validate_intersection_sources(
             });
 
         if let Some(sources) = source_ann {
-            if let Value::Struct(inst_fields) = &inst.body.node {
-                if let Some(inst_field) = inst_fields
-                    .iter()
-                    .find(|f| f.node.name.node == type_field.node.name.node)
-                {
-                    validate_field_source(ctx, inst_field, sources, inst, errors);
+            if let Some(inst_field) = inst_fields
+                .iter()
+                .find(|f| f.node.name.node == type_field.node.name.node)
+            {
+                validate_field_source(ctx, inst_field, sources, inst_fields, errors);
+            }
+        }
+
+        // Recurse into nested struct values if the field type is a named type
+        if let Some(inst_field) = inst_fields
+            .iter()
+            .find(|f| f.node.name.node == type_field.node.name.node)
+        {
+            if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
+                if let Some(nested_type_name) = get_type_name_from_type_expr(&type_field.node.ty.node) {
+                    if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
+                        validate_struct_sources(ctx, nested_inst_fields, &nested_type_decl.node, errors);
+                    }
                 }
             }
         }
@@ -101,39 +153,44 @@ fn validate_field_source(
     ctx: &ValidationContext,
     inst_field: &S<InstanceField>,
     sources: &[S<SourcePath>],
-    inst: &Instance,
+    parent_fields: &[S<InstanceField>],
     errors: &mut Vec<Diagnostic>,
 ) {
-    // Check if field is a list with refinements
+    // Only validate lists (refinements and inline elements)
+    // Nested struct values are handled by recursive validate_struct_sources
     if let Value::List(elements) = &inst_field.node.value.node {
         for elem in elements {
             match &elem.node {
                 ListElement::Refinement(_name, ref_fields) => {
+                    // Refinements introduce inline modifications that need source validation
                     for ref_field in ref_fields {
-                        validate_refinement_field(ctx, ref_field, sources, inst, errors);
+                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
                     }
                 }
                 ListElement::BindingRef(name) => {
+                    // For binding refs, validate the referenced instance's fields
                     if let Some(ref_inst) = ctx.get_instance(name) {
                         if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, inst, errors);
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
                             }
                         }
                     }
                 }
                 ListElement::Value(v) => match v {
                     Value::Struct(fields) => {
+                        // Inline structs need source validation
                         for field in fields {
-                            validate_refinement_field(ctx, field, sources, inst, errors);
+                            validate_refinement_field(ctx, field, sources, parent_fields, errors);
                         }
                     }
                     Value::BindingRef(name) => {
+                        // For binding refs, validate the referenced instance's fields
                         if let Some(ref_inst) = ctx.get_instance(name) {
                             if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
                                     validate_refinement_field(
-                                        ctx, ref_field, sources, inst, errors,
+                                        ctx, ref_field, sources, parent_fields, errors,
                                     );
                                 }
                             }
@@ -143,18 +200,16 @@ fn validate_field_source(
                 },
             }
         }
-    } else if let Value::Struct(nested_fields) = &inst_field.node.value.node {
-        for nested in nested_fields {
-            validate_refinement_field(ctx, nested, sources, inst, errors);
-        }
     }
+    // Note: nested struct values are handled by validate_struct_sources recursion,
+    // which will apply the nested type's own @source annotations if present
 }
 
 fn validate_refinement_field(
     ctx: &ValidationContext,
     field: &S<InstanceField>,
     sources: &[S<SourcePath>],
-    inst: &Instance,
+    parent_fields: &[S<InstanceField>],
     errors: &mut Vec<Diagnostic>,
 ) {
     let name = &field.node.name.node;
@@ -172,7 +227,7 @@ fn validate_refinement_field(
                         ctx.path,
                     ));
                 } else {
-                    validate_source_path(ctx, path, field, inst, errors);
+                    validate_source_path(ctx, path, field, parent_fields, errors);
                 }
             }
         }
@@ -190,7 +245,54 @@ fn validate_refinement_field(
             }
         }
         FieldOrigin::None => {
-            let found = check_implicit_source(ctx, name, sources, inst);
+            // If this is a struct, validate children recursively
+            if let Value::Struct(nested_fields) = &field.node.value.node {
+                for nested in nested_fields {
+                    validate_refinement_field(ctx, nested, sources, parent_fields, errors);
+                }
+                // Don't error on parent - child errors are sufficient
+                return;
+            }
+
+            // If this is a list, validate its elements recursively
+            if let Value::List(elements) = &field.node.value.node {
+                for elem in elements {
+                    match &elem.node {
+                        ListElement::BindingRef(name) => {
+                            if let Some(ref_inst) = ctx.get_instance(name) {
+                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
+                                    for ref_field in ref_fields {
+                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                                    }
+                                }
+                            }
+                        }
+                        ListElement::Refinement(_, ref_fields) => {
+                            for ref_field in ref_fields {
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                            }
+                        }
+                        ListElement::Value(Value::Struct(fields)) => {
+                            for f in fields {
+                                validate_refinement_field(ctx, f, sources, parent_fields, errors);
+                            }
+                        }
+                        ListElement::Value(Value::BindingRef(name)) => {
+                            if let Some(ref_inst) = ctx.get_instance(name) {
+                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
+                                    for ref_field in ref_fields {
+                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                return;
+            }
+
+            let found = check_implicit_source(ctx, name, sources, parent_fields);
             if !found {
                 if !is_concrete_value(&field.node.value) {
                     errors.push(Diagnostic::error(
@@ -215,36 +317,61 @@ fn validate_source_path(
     ctx: &ValidationContext,
     path: &[String],
     field: &S<InstanceField>,
-    inst: &Instance,
+    parent_fields: &[S<InstanceField>],
     errors: &mut Vec<Diagnostic>,
 ) {
-    if let Value::Struct(inst_fields) = &inst.body.node {
-        let mut current_fields = inst_fields.as_slice();
-        let mut found = true;
+    let mut current_fields = parent_fields;
+    let mut source_field: Option<&S<InstanceField>> = None;
 
-        for (i, segment) in path.iter().enumerate() {
-            if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
-                if i < path.len() - 1 {
-                    if let Value::Struct(nested) = &f.node.value.node {
-                        current_fields = nested;
-                    } else {
-                        found = false;
-                        break;
-                    }
+    for (i, segment) in path.iter().enumerate() {
+        if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
+            if i < path.len() - 1 {
+                if let Value::Struct(nested) = &f.node.value.node {
+                    current_fields = nested;
+                } else {
+                    errors.push(Diagnostic::error(
+                        field.span.clone(),
+                        format!("Source path '{}' not found", path.join(".")),
+                        ctx.path,
+                    ));
+                    return;
                 }
             } else {
-                found = false;
-                break;
+                source_field = Some(f);
             }
-        }
-
-        if !found {
+        } else {
             errors.push(Diagnostic::error(
                 field.span.clone(),
                 format!("Source path '{}' not found", path.join(".")),
                 ctx.path,
             ));
+            return;
         }
+    }
+
+    // Check type compatibility
+    if let Some(src) = source_field {
+        let src_type = get_value_type(&src.node.value.node);
+        let dst_type = get_value_type(&field.node.value.node);
+        if let (Some(s), Some(d)) = (src_type, dst_type) {
+            if s != d {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!("Type mismatch: source '{}' is {} but field is {}", path.join("."), s, d),
+                    ctx.path,
+                ));
+            }
+        }
+    }
+}
+
+fn get_value_type(value: &Value) -> Option<&str> {
+    match value {
+        Value::TypeRef(t) => Some(t),
+        Value::LitString(_) => Some("String"),
+        Value::LitInt(_) => Some("Int"),
+        Value::LitBool(_) => Some("Bool"),
+        _ => None,
     }
 }
 
@@ -252,23 +379,21 @@ fn check_implicit_source(
     _ctx: &ValidationContext,
     field_name: &str,
     sources: &[S<SourcePath>],
-    inst: &Instance,
+    parent_fields: &[S<InstanceField>],
 ) -> bool {
-    if let Value::Struct(inst_fields) = &inst.body.node {
-        for source in sources {
-            let root = match &source.node {
-                SourcePath::Simple(name) => name,
-                SourcePath::Dotted(parts) => parts.first().unwrap(),
-            };
+    for source in sources {
+        let root = match &source.node {
+            SourcePath::Simple(name) => name,
+            SourcePath::Dotted(parts) => parts.first().unwrap(),
+        };
 
-            if let Some(source_field) = inst_fields.iter().find(|f| &f.node.name.node == root) {
-                if let Value::Struct(source_fields) = &source_field.node.value.node {
-                    if source_fields
-                        .iter()
-                        .any(|f| &f.node.name.node == field_name)
-                    {
-                        return true;
-                    }
+        if let Some(source_field) = parent_fields.iter().find(|f| &f.node.name.node == root) {
+            if let Value::Struct(source_fields) = &source_field.node.value.node {
+                if source_fields
+                    .iter()
+                    .any(|f| &f.node.name.node == field_name)
+                {
+                    return true;
                 }
             }
         }
@@ -420,5 +545,91 @@ cmd = Cmd {
 "#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_mapped_type_mismatch() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id Int}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+e = Event {id Int}
+cmd = Cmd {
+  fields {userId Uuid}
+  emits [e & {id Int = fields.userId}]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
+        assert!(errors[0].message.contains("Uuid"));
+        assert!(errors[0].message.contains("Int"));
+    }
+
+    #[test]
+    fn test_nested_struct_source_context() {
+        // When validating nested structs with @source, the source paths
+        // should be resolved against the local struct context, not top-level
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Command = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+type Wrapper = {
+  outerFields {...}
+  @source [outerFields]
+  command Command
+}
+ev = Event {userId String}
+wrapper = Wrapper {
+  outerFields {x Int}
+  command {
+    fields {userId String}
+    emits [ev]
+  }
+}
+"#,
+        );
+        // Should pass: ev.userId is found in command.fields, not wrapper.outerFields
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_nested_struct_source_missing_in_local_context() {
+        // When nested struct has @source, it should check against local context
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Command = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+type Wrapper = {
+  outerFields {...}
+  @source [outerFields]
+  command Command
+}
+ev = Event {userId String}
+wrapper = Wrapper {
+  outerFields {userId String}
+  command {
+    fields {x Int}
+    emits [ev]
+  }
+}
+"#,
+        );
+        // Should fail: ev.userId is NOT in command.fields (only has x)
+        // Even though wrapper.outerFields has userId, that's the wrong context
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("No source found for field 'userId'"));
     }
 }

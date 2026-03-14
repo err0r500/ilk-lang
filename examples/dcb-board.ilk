@@ -29,13 +29,22 @@ type Command = {
 
 }
 
-type HttpVerb = "GET" | "POST" | "DELETE"
+type HttpMethod = "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+
+type HttpResponse = {
+    status Concrete<Int>
+    body {...}
+}
 
 type HttpEndpoint = {
+    method HttpMethod
+
+    @constraint forall(templateVars(path), v => v in keys(params))
     path Concrete<String>
-    verb HttpVerb
-    body {...}
     params {...}
+    body {...}
+
+    responses []HttpResponse
 }
 
 type ChangeSlice = {
@@ -69,6 +78,7 @@ userNameTag = Parametrized {name String}
 userRegistered = Event<userIdTag, userNameTag> {
     id Uuid
     name String
+    ts Timestamp
 }
 
 registerUser = ChangeSlice {
@@ -76,7 +86,7 @@ registerUser = ChangeSlice {
 
     endpoint {
         path "/users/{id}"
-        verb POST
+        method POST
         params {
             id Uuid
         }
@@ -88,23 +98,23 @@ registerUser = ChangeSlice {
 
     command {
         fields {
-             userId Uuid = endpoint.params.id
-             name String = endpoint.params.name
+             id Uuid = endpoint.params.id
+             name String = endpoint.body.name
         }
 
 
         query [
             {
                 eventTypes [userRegistered],
-                tags [userIdTag]
+                tags [userIdTag & {userId Uuid = fields.id}]
             },
             {
-                eventTypes [userRegistered],
-                tags [userIdName]
+                //eventTypes [userRegistered],
+                tags [userNameTag & {name String = fields.name}]
             }
         ]
 
-        emits [userRegistered]
+        emits [userRegistered & {ts Timestamp*}]
     }
 
     scenarios [
