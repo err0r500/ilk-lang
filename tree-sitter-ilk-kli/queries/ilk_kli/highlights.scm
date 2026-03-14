@@ -8,12 +8,12 @@
 (named_type (identifier) @type)
 
 ; Field names
-(ilk_field name: (identifier) @variable.member)
+(field name: (identifier) @variable.member)
 (value_field name: (identifier) @variable.member)
 
-; Block/binding names
-(block name: (identifier) @type.definition)
-(binding name: (identifier) @variable.definition)
+; Type/instance names
+(type_decl name: (identifier) @type.definition)
+(instance name: (identifier) @variable.definition)
 
 ; Annotations
 "@" @attribute
@@ -23,6 +23,8 @@
 "source" @attribute
 "constraint" @attribute
 "doc" @attribute
+(main_annotation) @attribute
+(doc_annotation) @attribute
 
 ; Constraint functions
 "forall" @function.builtin
@@ -34,6 +36,9 @@
 "compute" @function.builtin
 
 ; Keywords
+"type" @keyword
+"import" @keyword
+"as" @keyword
 "Concrete" @keyword
 
 ; Operators
@@ -52,6 +57,7 @@
 ">" @operator
 ">=" @operator
 "in" @keyword.operator
+"-" @operator
 ".." @operator
 
 ; Literals

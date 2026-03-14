@@ -2,133 +2,135 @@
 Base types
 ================================================================================
 
-Type *
-Type Uuid
-Type String
-Type Int
+type A = *
+type B = Uuid
+type C = String
+type D = Int
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (base_type))
-  (block (type_identifier) (base_type))
-  (block (type_identifier) (base_type))
-  (block (type_identifier) (base_type)))
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type)))
 
 ================================================================================
 Struct types
 ================================================================================
 
-Empty {}
-Open {...}
-Anonymous {_}
-AnonymousTyped {_ String}
-Named {x Int}
+type Empty = {}
+type Open = {...}
+type Anonymous = {_}
+type AnonymousTyped = {_ String}
+type Named = {x Int}
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (struct_type))
-  (block (type_identifier) (struct_type))
-  (block (type_identifier) (struct_type (anonymous_fields (anonymous_field))))
-  (block (type_identifier) (struct_type (anonymous_fields (anonymous_field (base_type)))))
-  (block (type_identifier) (struct_type (field_list (field (identifier) (base_type))))))
+  (type_decl (identifier) (struct_type))
+  (type_decl (identifier) (struct_type))
+  (type_decl (identifier) (struct_type (anonymous_fields (anonymous_field))))
+  (type_decl (identifier) (struct_type (anonymous_fields (anonymous_field (base_type)))))
+  (type_decl (identifier) (struct_type (field_list (field (identifier) (base_type))))))
 
 ================================================================================
 List types
 ================================================================================
 
-Items []Event
-Exact [3]Tag
-AtLeast [1..]Tag
-Range [2..5]Tag
+type Items = []Event
+type Exact = [3]Tag
+type AtLeast = [1..]Tag
+type Range = [2..5]Tag
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (list_type (named_type)))
-  (block (type_identifier) (list_type (cardinality (number)) (named_type)))
-  (block (type_identifier) (list_type (cardinality (number)) (named_type)))
-  (block (type_identifier) (list_type (cardinality (number) (number)) (named_type))))
+  (type_decl (identifier) (list_type (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number)) (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number)) (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number) (number)) (named_type (identifier)))))
 
 ================================================================================
 Union types
 ================================================================================
 
-Status Pending | Active | Archived
-Method "GET" | "POST"
+type Status = Pending | Active | Archived
+type Method = "GET" | "POST"
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (union_type (union_type (named_type) (named_type)) (named_type)))
-  (block (type_identifier) (union_type (literal_type (string)) (literal_type (string)))))
+  (type_decl (identifier) (union_type (union_type (named_type (identifier)) (named_type (identifier))) (named_type (identifier))))
+  (type_decl (identifier) (union_type (literal_type (string)) (literal_type (string)))))
 
 ================================================================================
 Intersection types
 ================================================================================
 
-Event {...} & {timestamp Int}
+type Event = {...} & {timestamp Int}
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (intersection_type (struct_type) (struct_type (field_list (field (identifier) (base_type)))))))
+  (type_decl (identifier) (intersection_type (struct_type) (struct_type (field_list (field (identifier) (base_type)))))))
 
 ================================================================================
 Reference types
 ================================================================================
 
-Ref &Event
+type Ref = &Event
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (reference_type (type_identifier))))
+  (type_decl (identifier) (reference_type (identifier))))
+
+================================================================================
+Refinable ref types
+================================================================================
+
+type Scenario = []-Event
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (list_type (refinable_ref (identifier)))))
 
 ================================================================================
 Concrete types
 ================================================================================
 
-Label Concrete<String>
-Version Concrete<Int>
+type Label = Concrete<String>
+type Version = Concrete<Int>
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (concrete_type (base_type)))
-  (block (type_identifier) (concrete_type (base_type))))
-
-================================================================================
-Annotations - main
-================================================================================
-
-@main
-Board {commands []Command}
-
---------------------------------------------------------------------------------
-
-(source_file
-  (block (annotation) (type_identifier) (struct_type (field_list (field (identifier) (list_type (named_type)))))))
+  (type_decl (identifier) (concrete_type (base_type)))
+  (type_decl (identifier) (concrete_type (base_type))))
 
 ================================================================================
 Annotations - assoc
 ================================================================================
 
 @assoc [Tag]
-Event {...}
+type Event = {...}
 
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (annotation (annotation_args (type_identifier))) (type_identifier) (struct_type)))
+  (type_decl
+    (annotation (annotation_args (identifier)))
+    (identifier)
+    (struct_type)))
 
 ================================================================================
 Annotations - source
 ================================================================================
 
-Command {
-    fields {...}
+type Command = {
+    fields {...},
     @source [fields]
     emits []Event
 }
@@ -136,15 +138,15 @@ Command {
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (struct_type (field_list
+  (type_decl (identifier) (struct_type (field_list
     (field (identifier) (struct_type))
-    (field (annotation (source_args (source_path (identifier)))) (identifier) (list_type (named_type)))))))
+    (field (annotation (source_args (source_path (identifier)))) (identifier) (list_type (named_type (identifier))))))))
 
 ================================================================================
 Annotations - constraint
 ================================================================================
 
-QueryItem {
+type QueryItem = {
     @constraint forall(tags, t => e.assoc(t))
     tags []Tag
 }
@@ -152,22 +154,22 @@ QueryItem {
 --------------------------------------------------------------------------------
 
 (source_file
-  (block (type_identifier) (struct_type (field_list
+  (type_decl (identifier) (struct_type (field_list
     (field
       (annotation (constraint_call (constraint_var (identifier)) (identifier) (constraint_call (constraint_var (identifier)) (constraint_var (identifier)))))
       (identifier)
-      (list_type (named_type)))))))
+      (list_type (named_type (identifier))))))))
 
 ================================================================================
 Comments
 ================================================================================
 
 // This is a comment
-Type String // inline
+type A = String // inline
 
 --------------------------------------------------------------------------------
 
 (source_file
   (comment)
-  (block (type_identifier) (base_type))
+  (type_decl (identifier) (base_type))
   (comment))
