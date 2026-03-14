@@ -257,9 +257,24 @@ fn get_fields_to_skip(ty: &TypeExpr, ctx: &ValidationContext) -> std::collection
 fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<String>) {
     match ty {
         TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
+            // First pass: collect all source roots referenced in @source annotations
             for field in fields {
-                // Only skip fields with their own @source annotation
-                // They will be validated by the nested type's recursion
+                for ann in &field.node.annotations {
+                    if let Annotation::Source(paths) = &ann.node {
+                        for path in paths {
+                            let root = match &path.node {
+                                SourcePath::Simple(name) => name,
+                                SourcePath::Dotted(parts) => parts.first().unwrap(),
+                            };
+                            // Skip fields that ARE sources (input declarations)
+                            result.insert(root.clone());
+                        }
+                    }
+                }
+            }
+
+            // Second pass: skip fields with their own @source annotation
+            for field in fields {
                 let has_source = field.node.annotations.iter().any(|a| {
                     matches!(a.node, Annotation::Source(_))
                 });

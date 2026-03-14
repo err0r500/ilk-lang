@@ -533,18 +533,30 @@ fn eval_constraint(
 
         ConstraintExpr::And(left, right) => {
             let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Bool(a), EvalValue::Bool(b)) => Ok(EvalValue::Bool(a && b)),
+            match l {
+                EvalValue::Bool(false) => Ok(EvalValue::Bool(false)),
+                EvalValue::Bool(true) => {
+                    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+                    match r {
+                        EvalValue::Bool(b) => Ok(EvalValue::Bool(b)),
+                        _ => Err("&& requires boolean operands".to_string()),
+                    }
+                }
                 _ => Err("&& requires boolean operands".to_string()),
             }
         }
 
         ConstraintExpr::Or(left, right) => {
             let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Bool(a), EvalValue::Bool(b)) => Ok(EvalValue::Bool(a || b)),
+            match l {
+                EvalValue::Bool(true) => Ok(EvalValue::Bool(true)),
+                EvalValue::Bool(false) => {
+                    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+                    match r {
+                        EvalValue::Bool(b) => Ok(EvalValue::Bool(b)),
+                        _ => Err("|| requires boolean operands".to_string()),
+                    }
+                }
                 _ => Err("|| requires boolean operands".to_string()),
             }
         }

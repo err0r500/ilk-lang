@@ -68,7 +68,7 @@ fn lit_int_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExt
         .or_not()
         .then(text::int(10))
         .to_slice()
-        .map(|s: &str| TypeExpr::LitInt(s.parse().unwrap()))
+        .map(|s: &str| TypeExpr::LitInt(s.parse().expect("valid int literal from parser")))
         .map_with(|t, e| Spanned::from_simple(t, e.span()))
 }
 
@@ -89,7 +89,7 @@ fn concrete<'a>(
 }
 
 fn cardinality<'a>() -> impl Parser<'a, ParserInput<'a>, Cardinality, ParserExtra<'a>> + Clone {
-    let num = text::int(10).map(|s: &str| s.parse::<usize>().unwrap());
+    let num = text::int(10).map(|s: &str| s.parse::<usize>().expect("valid usize from parser"));
 
     choice((
         num.clone()
@@ -174,7 +174,7 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                 .or_not()
                 .then(text::int(10))
                 .to_slice()
-                .map(|s: &str| ConstraintExpr::Int(s.parse().unwrap()))
+                .map(|s: &str| ConstraintExpr::Int(s.parse().expect("valid int literal from parser")))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("forall(")
                 .ignore_then(ident())
@@ -520,7 +520,7 @@ fn lit_int_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra
         .or_not()
         .then(text::int(10))
         .to_slice()
-        .map(|s: &str| Value::LitInt(s.parse().unwrap()))
+        .map(|s: &str| Value::LitInt(s.parse().expect("valid int literal from parser")))
         .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 

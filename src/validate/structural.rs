@@ -351,6 +351,21 @@ fn validate_struct(
                     ));
                 }
             }
+
+            // Check all required type fields are present
+            for type_field in type_fields {
+                if type_field.node.optional {
+                    continue;
+                }
+                let name = &type_field.node.name.node;
+                if !val_fields.iter().any(|f| &f.node.name.node == name) {
+                    errors.push(Diagnostic::error(
+                        span.clone(),
+                        format!("Missing required field: {}", name),
+                        ctx.path,
+                    ));
+                }
+            }
         }
 
         StructKind::Open(type_fields) => {

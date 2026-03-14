@@ -86,6 +86,10 @@ registerUser = ChangeSlice {
         body {
             name String
         }
+
+        responses [
+            {status 201, body {id Uuid, name String}}
+        ]
     }
 
     command {
@@ -112,7 +116,11 @@ registerUser = ChangeSlice {
         {
             name "happy path",
             given [userRegistered & {id 123}, userRegistered]
-            when {}
+            when {
+                fields {id Uuid, name String}
+                query []
+                emits [userRegistered & {ts Timestamp*}]
+            }
             then [userRegistered & {id "123"}]
         }
     ]
@@ -120,5 +128,5 @@ registerUser = ChangeSlice {
 
 @main
 board = Board {
-    changes [registerUser, hello]
+    changes [registerUser]
 }
