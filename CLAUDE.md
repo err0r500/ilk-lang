@@ -1,8 +1,6 @@
-# ilk/kli Language Reference
+# ilk Language Reference
 
-Two-level data modeling: `.ilk` (schema) validates `.kli` (domain model).
-
-Full specs: [ilk-spec.md](ilk-spec.md) | [kli-spec.md](kli-spec.md)
+Single-file data modeling: `.ilk` files contain both type declarations and instances.
 
 ## Quick Reference
 
@@ -10,13 +8,18 @@ Full specs: [ilk-spec.md](ilk-spec.md) | [kli-spec.md](kli-spec.md)
 `*` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
 
 ### Value Constraints
-| ilk | kli | meaning |
-|-----|-----|---------|
+| type | instance | meaning |
+|------|----------|---------|
 | `String` | `String` | open - any value at runtime |
-| `Concrete<String>` | `"hello"` | kli-fixed - author picks one |
+| `Concrete<String>` | `"hello"` | concrete - author picks literal |
 | `"hello"` | `"hello"` | schema-fixed - exact match |
 
-Constraint levels must match exactly. kli cannot narrow open→concrete (would change runtime contract).
+### Type Declarations
+```ilk
+type Foo = {x Int}                    // type declaration
+type Bar = {...} & {id Uuid}          // intersection
+type Status = Pending | Active        // union
+```
 
 ### Structs
 ```ilk
@@ -36,33 +39,45 @@ Constraint levels must match exactly. kli cannot narrow open→concrete (would c
 [1..]Tag         // 1+ tags
 [2..5]Tag        // 2 to 5 tags
 [..10]Tag        // 0 to 10 tags
-&Event           // reference to binding (no data flow)
+&Event           // reference to instance (no data flow)
 ```
 
 ### Unions
 ```ilk
-HttpMethod "GET" | "POST" | "PUT"   // literal union
-Status Pending | Active | Archived  // identifier union
-Response Success | Error            // block union
+type HttpMethod = "GET" | "POST" | "PUT"   // literal union
+type Status = Pending | Active | Archived  // identifier union
+type Response = Success | Error            // block union
 ```
 
 ### Annotations
 | Annotation | Target | Purpose |
 |------------|--------|---------|
-| `@main` | block | entry point for .kli validation |
-| `@assoc [T]` | block | instances carry refs to T |
+| `@main` | instance | entry point for validation |
+| `@assoc [T]` | type | instances carry refs to T |
 | `@source [fields]` | field/list | data provenance constraint |
-| `@out` | field | output field - exempt from @source, can be referenced |
-| `@constraint expr` | block | boolean predicate |
-| `@doc "..."` | field (kli) | implementation hint |
+| `@out` | field | output field - exempt from @source |
+| `@constraint expr` | type | boolean predicate |
+| `@doc "..."` | field | implementation hint |
 
-### @source & Field Origins (kli)
-```kli
+### Instances
+```ilk
+tag1 = Tag {userId String}            // instance declaration
+event = Event<tag1> {id String}       // instance with associations
+@main board = Board {commands [...]}  // entry point
+```
+
+### Field Origins (instances)
+```ilk
 timestamp Int*                    // generated - no check
 customerId Uuid = fields.userId   // mapped from path
 total Int = compute(a, b)         // computed from multiple
 ```
-Paths resolve from enclosing block root.
+
+### Imports
+```ilk
+import "./base-types.ilk"
+import "./common-tags.ilk" as tags  // namespaced
+```
 
 ### Constraint Functions
 `forall(col, x => body)` `exists(col, x => body)` `unique(col, x => expr)` `count(col)` `e.assoc(t)` `templateVars(str)` `keys(struct)`
@@ -73,26 +88,32 @@ Paths resolve from enclosing block root.
 ## Syntax Rules
 - Comments: `//`
 - Separators: newlines (or commas inline for structs/lists)
-- Optional fields (kli only): `email? String` — can't be relied upon by @source
+- Optional fields: `email? String`
 - Intersection: `A & B` (right side wins on conflict)
-- Bindings (kli): `name = Type body`
-- Associations (kli): `Event<tag1, tag2> {...}`
 
-## Example Pattern: API Endpoint
+## Example
 ```ilk
-Endpoint {
-    @constraint forall(templateVars(path), v => v in keys(params))
-    path    Concrete<String>
-    method  "GET" | "POST"
-    params? {...}
-    body?   {...}
+type Tag = {_ String}
 
-    @source [params, body]
-    db DbMethod
+@assoc [Tag]
+type Event = {...} & {timestamp Int}
 
-    response {
-        @source [db.returns]
-        body {...}
-    }
+type Command = {
+    fields {...}
+    @source [fields]
+    emits []Event
 }
+
+type Board = { commands []Command }
+
+tag1 = Tag {userId String}
+ev1 = Event<tag1> {id String}
+
+cmd = Command {
+    fields {id String, userId String}
+    emits [ev1 & {timestamp Int*}]
+}
+
+@main
+board = Board { commands [cmd] }
 ```

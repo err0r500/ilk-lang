@@ -1,58 +1,46 @@
+pub mod ast;
 pub mod error;
-pub mod ilk;
-pub mod kli;
+pub mod parser;
+pub mod resolve;
 pub mod span;
 pub mod validate;
 
+use ast::File;
 use error::Diagnostic;
-use ilk::TypeEnv;
-use kli::KliFile;
+use resolve::TypeEnv;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub struct Compiler {
-    ilk_cache: HashMap<PathBuf, (ilk::IlkFile, TypeEnv)>,
-    kli_cache: HashMap<PathBuf, KliFile>,
+    cache: HashMap<PathBuf, (File, TypeEnv)>,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
-            ilk_cache: HashMap::new(),
-            kli_cache: HashMap::new(),
+            cache: HashMap::new(),
         }
     }
 
-    pub fn load_ilk(&mut self, path: &Path, src: &str) -> Result<&TypeEnv, Vec<Diagnostic>> {
-        let file = ilk::parse_ilk(src, path)?;
-        let env = ilk::resolve(&file, path)?;
-        self.ilk_cache.insert(path.to_path_buf(), (file, env));
-        Ok(&self.ilk_cache.get(path).unwrap().1)
+    pub fn load(&mut self, path: &Path, src: &str) -> Result<&TypeEnv, Vec<Diagnostic>> {
+        let file = parser::parse(src, path)?;
+        let env = resolve::resolve(&file, path)?;
+        self.cache.insert(path.to_path_buf(), (file, env));
+        Ok(&self.cache.get(path).unwrap().1)
     }
 
-    pub fn load_kli(&mut self, path: &Path, src: &str) -> Result<&KliFile, Vec<Diagnostic>> {
-        let file = kli::parse_kli(src, path)?;
-        self.kli_cache.insert(path.to_path_buf(), file);
-        Ok(self.kli_cache.get(path).unwrap())
-    }
+    pub fn validate(&self, path: &Path) -> Result<(), Vec<Diagnostic>> {
+        let (file, env) = self
+            .cache
+            .get(path)
+            .ok_or_else(|| vec![Diagnostic::error(0..0, "file not loaded", path)])?;
 
-    pub fn validate(&self, ilk_path: &Path, kli_path: &Path) -> Result<(), Vec<Diagnostic>> {
-        let (_, env) = self
-            .ilk_cache
-            .get(ilk_path)
-            .ok_or_else(|| vec![Diagnostic::error(0..0, "ilk file not loaded", ilk_path)])?;
-
-        let kli = self
-            .kli_cache
-            .get(kli_path)
-            .ok_or_else(|| vec![Diagnostic::error(0..0, "kli file not loaded", kli_path)])?;
-
-        let ctx = validate::ValidationContext::new(env, kli, kli_path);
+        let ctx = validate::ValidationContext::new(env, path);
         let mut errors = Vec::new();
 
-        validate::validate_structural(&ctx, kli, &mut errors);
-        validate::validate_source(&ctx, kli, &mut errors);
-        validate::validate_constraints(&ctx, kli, &mut errors);
+        validate::validate_structural(&ctx, file, &mut errors);
+        validate::validate_source(&ctx, file, &mut errors);
+        validate::validate_constraints(&ctx, file, &mut errors);
 
         if errors.is_empty() {
             Ok(())
@@ -62,8 +50,15 @@ impl Compiler {
     }
 
     pub fn invalidate(&mut self, path: &Path) {
-        self.ilk_cache.remove(path);
-        self.kli_cache.remove(path);
+        self.cache.remove(path);
+    }
+
+    pub fn get_file(&self, path: &Path) -> Option<&File> {
+        self.cache.get(path).map(|(f, _)| f)
+    }
+
+    pub fn get_env(&self, path: &Path) -> Option<&TypeEnv> {
+        self.cache.get(path).map(|(_, e)| e)
     }
 }
 
@@ -73,27 +68,19 @@ impl Default for Compiler {
     }
 }
 
-pub fn validate_files(ilk_path: &Path, kli_path: &Path) -> Result<(), Vec<Diagnostic>> {
-    let ilk_src = std::fs::read_to_string(ilk_path).map_err(|e| {
+/// Convenience function to validate a single file
+pub fn validate_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
+    let src = std::fs::read_to_string(path).map_err(|e| {
         vec![Diagnostic::error(
             0..0,
-            format!("Failed to read ilk file: {}", e),
-            ilk_path,
-        )]
-    })?;
-
-    let kli_src = std::fs::read_to_string(kli_path).map_err(|e| {
-        vec![Diagnostic::error(
-            0..0,
-            format!("Failed to read kli file: {}", e),
-            kli_path,
+            format!("Failed to read file: {}", e),
+            path,
         )]
     })?;
 
     let mut compiler = Compiler::new();
-    compiler.load_ilk(ilk_path, &ilk_src)?;
-    compiler.load_kli(kli_path, &kli_src)?;
-    compiler.validate(ilk_path, kli_path)
+    compiler.load(path, &src)?;
+    compiler.validate(path)
 }
 
 #[cfg(test)]
@@ -102,10 +89,7 @@ mod tests {
 
     #[test]
     fn test_validate_dcb_board() {
-        let result = validate_files(
-            Path::new("examples/dcb-board-spec.ilk"),
-            Path::new("examples/dcb-board-instance-valid.kli"),
-        );
+        let result = validate_file(Path::new("examples/dcb-board.ilk"));
         assert!(result.is_ok(), "Validation failed: {:?}", result.err());
     }
 }

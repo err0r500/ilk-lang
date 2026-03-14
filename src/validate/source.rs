@@ -1,42 +1,39 @@
+use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::ilk::ast::*;
-use crate::kli::ast::*;
 use crate::span::S;
 use crate::validate::structural::ValidationContext;
 
-pub fn validate_source(ctx: &ValidationContext, kli: &KliFile, errors: &mut Vec<Diagnostic>) {
-    for binding in &kli.bindings {
-        let type_name = &binding.node.type_name.node;
-        if let Some(block) = ctx.env.get(type_name) {
-            validate_binding_sources(ctx, binding, block, errors);
+pub fn validate_source(ctx: &ValidationContext, file: &File, errors: &mut Vec<Diagnostic>) {
+    for inst in file.instances() {
+        let type_name = &inst.type_name.node;
+        if let Some(type_decl) = ctx.env.get_type(type_name) {
+            validate_instance_sources(ctx, inst, &type_decl.node, errors);
         }
     }
 }
 
-fn validate_binding_sources(
+fn validate_instance_sources(
     ctx: &ValidationContext,
-    binding: &S<Binding>,
-    block: &S<Block>,
+    inst: &Instance,
+    type_decl: &TypeDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
-    // Get the struct fields from the block body
-    let fields = match &block.node.body.node {
+    // Get the struct fields from the type body
+    let fields = match &type_decl.body.node {
         TypeExpr::Struct(StructKind::Closed(f) | StructKind::Open(f)) => f,
         TypeExpr::Intersection(left, right) => {
-            // Handle intersection - collect fields from both sides
             let mut all_fields = Vec::new();
             collect_struct_fields(&left.node, &mut all_fields);
             collect_struct_fields(&right.node, &mut all_fields);
-            // For now, handle inline
-            validate_intersection_sources(ctx, binding, &all_fields, errors);
+            validate_intersection_sources(ctx, inst, &all_fields, errors);
             return;
         }
         _ => return,
     };
 
     // Check each field for @source annotation
-    for ilk_field in fields {
-        let source_ann = ilk_field
+    for type_field in fields {
+        let source_ann = type_field
             .node
             .annotations
             .iter()
@@ -46,13 +43,12 @@ fn validate_binding_sources(
             });
 
         if let Some(sources) = source_ann {
-            // Get the corresponding kli field
-            if let KliValue::Struct(kli_fields) = &binding.node.body.node {
-                if let Some(kli_field) = kli_fields
+            if let Value::Struct(inst_fields) = &inst.body.node {
+                if let Some(inst_field) = inst_fields
                     .iter()
-                    .find(|f| f.node.name.node == ilk_field.node.name.node)
+                    .find(|f| f.node.name.node == type_field.node.name.node)
                 {
-                    validate_field_source(ctx, kli_field, sources, binding, errors);
+                    validate_field_source(ctx, inst_field, sources, inst, errors);
                 }
             }
         }
@@ -74,12 +70,12 @@ fn collect_struct_fields<'a>(ty: &'a TypeExpr, fields: &mut Vec<&'a S<Field>>) {
 
 fn validate_intersection_sources(
     ctx: &ValidationContext,
-    binding: &S<Binding>,
-    ilk_fields: &[&S<Field>],
+    inst: &Instance,
+    type_fields: &[&S<Field>],
     errors: &mut Vec<Diagnostic>,
 ) {
-    for ilk_field in ilk_fields {
-        let source_ann = ilk_field
+    for type_field in type_fields {
+        let source_ann = type_field
             .node
             .annotations
             .iter()
@@ -89,12 +85,12 @@ fn validate_intersection_sources(
             });
 
         if let Some(sources) = source_ann {
-            if let KliValue::Struct(kli_fields) = &binding.node.body.node {
-                if let Some(kli_field) = kli_fields
+            if let Value::Struct(inst_fields) = &inst.body.node {
+                if let Some(inst_field) = inst_fields
                     .iter()
-                    .find(|f| f.node.name.node == ilk_field.node.name.node)
+                    .find(|f| f.node.name.node == type_field.node.name.node)
                 {
-                    validate_field_source(ctx, kli_field, sources, binding, errors);
+                    validate_field_source(ctx, inst_field, sources, inst, errors);
                 }
             }
         }
@@ -103,41 +99,41 @@ fn validate_intersection_sources(
 
 fn validate_field_source(
     ctx: &ValidationContext,
-    kli_field: &S<KliField>,
+    inst_field: &S<InstanceField>,
     sources: &[S<SourcePath>],
-    binding: &S<Binding>,
+    inst: &Instance,
     errors: &mut Vec<Diagnostic>,
 ) {
     // Check if field is a list with refinements
-    if let KliValue::List(elements) = &kli_field.node.value.node {
+    if let Value::List(elements) = &inst_field.node.value.node {
         for elem in elements {
             match &elem.node {
-                KliListElement::Refinement(_name, ref_fields) => {
+                ListElement::Refinement(_name, ref_fields) => {
                     for ref_field in ref_fields {
-                        validate_refinement_field(ctx, ref_field, sources, binding, errors);
+                        validate_refinement_field(ctx, ref_field, sources, inst, errors);
                     }
                 }
-                KliListElement::BindingRef(name) => {
-                    if let Some(ref_binding) = ctx.bindings.get(name) {
-                        if let KliValue::Struct(ref_fields) = &ref_binding.node.body.node {
+                ListElement::BindingRef(name) => {
+                    if let Some(ref_inst) = ctx.get_instance(name) {
+                        if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, binding, errors);
+                                validate_refinement_field(ctx, ref_field, sources, inst, errors);
                             }
                         }
                     }
                 }
-                KliListElement::Value(v) => match v {
-                    KliValue::Struct(fields) => {
+                ListElement::Value(v) => match v {
+                    Value::Struct(fields) => {
                         for field in fields {
-                            validate_refinement_field(ctx, field, sources, binding, errors);
+                            validate_refinement_field(ctx, field, sources, inst, errors);
                         }
                     }
-                    KliValue::BindingRef(name) => {
-                        if let Some(ref_binding) = ctx.bindings.get(name) {
-                            if let KliValue::Struct(ref_fields) = &ref_binding.node.body.node {
+                    Value::BindingRef(name) => {
+                        if let Some(ref_inst) = ctx.get_instance(name) {
+                            if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
                                     validate_refinement_field(
-                                        ctx, ref_field, sources, binding, errors,
+                                        ctx, ref_field, sources, inst, errors,
                                     );
                                 }
                             }
@@ -147,32 +143,27 @@ fn validate_field_source(
                 },
             }
         }
-    } else if let KliValue::Struct(nested_fields) = &kli_field.node.value.node {
-        // Direct struct field with @source
+    } else if let Value::Struct(nested_fields) = &inst_field.node.value.node {
         for nested in nested_fields {
-            validate_refinement_field(ctx, nested, sources, binding, errors);
+            validate_refinement_field(ctx, nested, sources, inst, errors);
         }
     }
 }
 
 fn validate_refinement_field(
     ctx: &ValidationContext,
-    field: &S<KliField>,
+    field: &S<InstanceField>,
     sources: &[S<SourcePath>],
-    binding: &S<Binding>,
+    inst: &Instance,
     errors: &mut Vec<Diagnostic>,
 ) {
     let name = &field.node.name.node;
-
-    // Check @out fields are exempt
-    // (would need to look up in ilk schema)
 
     match &field.node.origin {
         FieldOrigin::Generated => {
             // Exempt - no check needed
         }
         FieldOrigin::Mapped(path) => {
-            // Check path root is in sources
             if let Some(root) = path.first() {
                 if !source_contains_root(sources, root) {
                     errors.push(Diagnostic::error(
@@ -181,13 +172,11 @@ fn validate_refinement_field(
                         ctx.path,
                     ));
                 } else {
-                    // Validate path exists and types match
-                    validate_source_path(ctx, path, field, binding, errors);
+                    validate_source_path(ctx, path, field, inst, errors);
                 }
             }
         }
         FieldOrigin::Computed(paths) => {
-            // Check all path roots are in sources
             for path in paths {
                 if let Some(root) = path.first() {
                     if !source_contains_root(sources, root) {
@@ -201,10 +190,8 @@ fn validate_refinement_field(
             }
         }
         FieldOrigin::None => {
-            // Implicit match - check if field name exists in any source
-            let found = check_implicit_source(ctx, name, sources, binding);
+            let found = check_implicit_source(ctx, name, sources, inst);
             if !found {
-                // Check if it's a Concrete/literal value (exempt)
                 if !is_concrete_value(&field.node.value) {
                     errors.push(Diagnostic::error(
                         field.span.clone(),
@@ -227,27 +214,24 @@ fn source_contains_root(sources: &[S<SourcePath>], root: &str) -> bool {
 fn validate_source_path(
     ctx: &ValidationContext,
     path: &[String],
-    field: &S<KliField>,
-    binding: &S<Binding>,
+    field: &S<InstanceField>,
+    inst: &Instance,
     errors: &mut Vec<Diagnostic>,
 ) {
-    // Walk the path to find the source field
-    if let KliValue::Struct(binding_fields) = &binding.node.body.node {
-        let mut current_fields = binding_fields.as_slice();
+    if let Value::Struct(inst_fields) = &inst.body.node {
+        let mut current_fields = inst_fields.as_slice();
         let mut found = true;
 
         for (i, segment) in path.iter().enumerate() {
             if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
                 if i < path.len() - 1 {
-                    // More segments to go - need to descend into struct
-                    if let KliValue::Struct(nested) = &f.node.value.node {
+                    if let Value::Struct(nested) = &f.node.value.node {
                         current_fields = nested;
                     } else {
                         found = false;
                         break;
                     }
                 }
-                // Last segment - check types would go here
             } else {
                 found = false;
                 break;
@@ -268,20 +252,17 @@ fn check_implicit_source(
     _ctx: &ValidationContext,
     field_name: &str,
     sources: &[S<SourcePath>],
-    binding: &S<Binding>,
+    inst: &Instance,
 ) -> bool {
-    // Look for field_name in any of the source paths
-    if let KliValue::Struct(binding_fields) = &binding.node.body.node {
+    if let Value::Struct(inst_fields) = &inst.body.node {
         for source in sources {
             let root = match &source.node {
                 SourcePath::Simple(name) => name,
                 SourcePath::Dotted(parts) => parts.first().unwrap(),
             };
 
-            // Find the source field in binding
-            if let Some(source_field) = binding_fields.iter().find(|f| &f.node.name.node == root) {
-                // Look for field_name in that source
-                if let KliValue::Struct(source_fields) = &source_field.node.value.node {
+            if let Some(source_field) = inst_fields.iter().find(|f| &f.node.name.node == root) {
+                if let Value::Struct(source_fields) = &source_field.node.value.node {
                     if source_fields
                         .iter()
                         .any(|f| &f.node.name.node == field_name)
@@ -295,73 +276,127 @@ fn check_implicit_source(
     false
 }
 
-fn is_concrete_value(value: &S<KliValue>) -> bool {
+fn is_concrete_value(value: &S<Value>) -> bool {
     matches!(
         value.node,
-        KliValue::LitString(_) | KliValue::LitInt(_) | KliValue::LitBool(_)
+        Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_)
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ilk::{parse_ilk, resolve};
-    use crate::kli::parse_kli;
+    use crate::parser::parse;
+    use crate::resolve::resolve;
     use crate::validate::structural::validate_structural;
     use std::path::Path;
 
-    fn validate_source_pair(ilk_src: &str, kli_src: &str) -> Vec<Diagnostic> {
-        let ilk = parse_ilk(ilk_src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&ilk, Path::new("test.ilk")).unwrap();
-        let kli = parse_kli(kli_src, Path::new("test.kli")).unwrap();
-        let ctx = ValidationContext::new(&env, &kli, Path::new("test.kli"));
+    fn validate_source_src(src: &str) -> Vec<Diagnostic> {
+        let file = parse(src, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_structural(&ctx, &kli, &mut errors);
-        validate_source(&ctx, &kli, &mut errors);
+        validate_structural(&ctx, &file, &mut errors);
+        validate_source(&ctx, &file, &mut errors);
         errors
     }
 
     #[test]
     fn test_generated_exempt() {
-        let errors = validate_source_pair(
-            "Event {timestamp Int}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "e = Event {timestamp Int}\ncmd = Cmd {\n  fields {x Int}\n  emits [e & {timestamp Int*}]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {timestamp Int}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+e = Event {timestamp Int}
+cmd = Cmd {
+  fields {x Int}
+  emits [e & {timestamp Int*}]
+}
+"#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_mapped_valid() {
-        let errors = validate_source_pair(
-            "Event {id String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "e = Event {id String}\ncmd = Cmd {\n  fields {userId String}\n  emits [e & {id String = fields.userId}]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+e = Event {id String}
+cmd = Cmd {
+  fields {userId String}
+  emits [e & {id String = fields.userId}]
+}
+"#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_source_not_found() {
-        let errors = validate_source_pair(
-            "Event {id String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "e = Event {id String}\ncmd = Cmd {\n  fields {x Int}\n  emits [e & {id String = other.id}]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+e = Event {id String}
+cmd = Cmd {
+  fields {x Int}
+  emits [e & {id String = other.id}]
+}
+"#,
         );
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_concrete_exempt() {
-        let errors = validate_source_pair(
-            "Event {status Concrete<Int>}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "e = Event {status 200}\ncmd = Cmd {\n  fields {x Int}\n  emits [e & {status 200}]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {status Concrete<Int>}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+e = Event {status 200}
+cmd = Cmd {
+  fields {x Int}
+  emits [e & {status 200}]
+}
+"#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_binding_ref_missing_source() {
-        let errors = validate_source_pair(
-            "Event {bla String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "other = Event {bla String}\ncmd = Cmd {\n  fields {x Int}\n  emits [other]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {bla String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+other = Event {bla String}
+cmd = Cmd {
+  fields {x Int}
+  emits [other]
+}
+"#,
         );
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("No source found for field 'bla'"));
@@ -369,9 +404,20 @@ mod tests {
 
     #[test]
     fn test_binding_ref_valid_source() {
-        let errors = validate_source_pair(
-            "Event {bla String}\n@main\nCmd {\n  fields {...}\n  @source [fields]\n  emits []Event\n}",
-            "other = Event {bla String}\ncmd = Cmd {\n  fields {bla String}\n  emits [other]\n}",
+        let errors = validate_source_src(
+            r#"
+type Event = {bla String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+other = Event {bla String}
+cmd = Cmd {
+  fields {bla String}
+  emits [other]
+}
+"#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }

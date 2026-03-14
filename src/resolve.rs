@@ -1,71 +1,133 @@
+use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::ilk::ast::*;
 use crate::span::S;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
-    pub blocks: HashMap<String, S<Block>>,
-    pub main_block: Option<String>,
+    pub types: HashMap<String, S<TypeDecl>>,
+    pub instances: HashMap<String, S<Instance>>,
+    pub main_instance: Option<String>,
 }
 
 impl TypeEnv {
     pub fn new() -> Self {
         Self {
-            blocks: HashMap::new(),
-            main_block: None,
+            types: HashMap::new(),
+            instances: HashMap::new(),
+            main_instance: None,
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&S<Block>> {
-        self.blocks.get(name)
+    pub fn get_type(&self, name: &str) -> Option<&S<TypeDecl>> {
+        self.types.get(name)
     }
 
-    pub fn main(&self) -> Option<&S<Block>> {
-        self.main_block.as_ref().and_then(|n| self.blocks.get(n))
+    pub fn get_instance(&self, name: &str) -> Option<&S<Instance>> {
+        self.instances.get(name)
+    }
+
+    pub fn main(&self) -> Option<&S<Instance>> {
+        self.main_instance.as_ref().and_then(|n| self.instances.get(n))
+    }
+
+    /// Get type body by name (for compatibility with old code)
+    pub fn get_type_body(&self, name: &str) -> Option<&S<TypeExpr>> {
+        self.types.get(name).map(|t| &t.node.body)
     }
 }
 
-pub fn resolve(file: &IlkFile, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
+impl Default for TypeEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn resolve(file: &File, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
     let mut env = TypeEnv::new();
     let mut errors = Vec::new();
 
-    // Collect all blocks
-    for block in &file.blocks {
-        let name = &block.node.name.node;
-        if env.blocks.contains_key(name) {
-            errors.push(Diagnostic::error(
-                block.node.name.span.clone(),
-                format!("Duplicate block: {}", name),
-                path,
-            ));
-        } else {
-            env.blocks.insert(name.clone(), block.clone());
+    // Collect all type declarations
+    for item in &file.items {
+        if let Item::TypeDecl(decl) = &item.node {
+            let name = &decl.name.node;
+            if env.types.contains_key(name) {
+                errors.push(Diagnostic::error(
+                    decl.name.span.clone(),
+                    format!("Duplicate type: {}", name),
+                    path,
+                ));
+            } else {
+                env.types.insert(name.clone(), S::new(decl.clone(), item.span.clone()));
+            }
         }
+    }
 
-        // Check for @main
-        for ann in &block.node.annotations {
-            if matches!(ann.node, Annotation::Main) {
-                if env.main_block.is_some() {
-                    errors.push(Diagnostic::error(
-                        ann.span.clone(),
-                        "Multiple @main annotations",
-                        path,
-                    ));
-                } else {
-                    env.main_block = Some(name.clone());
+    // Collect all instances
+    for item in &file.items {
+        if let Item::Instance(inst) = &item.node {
+            let name = &inst.name.node;
+            if env.instances.contains_key(name) {
+                errors.push(Diagnostic::error(
+                    inst.name.span.clone(),
+                    format!("Duplicate instance: {}", name),
+                    path,
+                ));
+            } else {
+                env.instances.insert(name.clone(), S::new(inst.clone(), item.span.clone()));
+            }
+
+            // Check for @main
+            for ann in &inst.annotations {
+                if matches!(ann.node, Annotation::Main) {
+                    if env.main_instance.is_some() {
+                        errors.push(Diagnostic::error(
+                            ann.span.clone(),
+                            "Multiple @main annotations",
+                            path,
+                        ));
+                    } else {
+                        env.main_instance = Some(name.clone());
+                    }
                 }
             }
         }
     }
 
-    // Check for unknown type references
-    for block in &file.blocks {
-        check_type_refs(&block.node.body, &env, path, &mut errors);
+    // Check for unknown type references in type declarations
+    for item in &file.items {
+        if let Item::TypeDecl(decl) = &item.node {
+            check_type_refs(&decl.body, &env, path, &mut errors);
+        }
     }
 
-    // Check for cycles
+    // Check for unknown type references in instances
+    for item in &file.items {
+        if let Item::Instance(inst) = &item.node {
+            let type_name = &inst.type_name.node;
+            if !env.types.contains_key(type_name) && !is_base_type(type_name) {
+                errors.push(Diagnostic::error(
+                    inst.type_name.span.clone(),
+                    format!("Unknown type: {}", type_name),
+                    path,
+                ));
+            }
+
+            // Check associations reference known instances
+            for assoc in &inst.assocs {
+                if !env.instances.contains_key(&assoc.node) {
+                    errors.push(Diagnostic::error(
+                        assoc.span.clone(),
+                        format!("Unknown instance in association: {}", assoc.node),
+                        path,
+                    ));
+                }
+            }
+        }
+    }
+
+    // Check for cycles in type definitions
     check_cycles(&env, path, &mut errors);
 
     if errors.is_empty() {
@@ -75,10 +137,17 @@ pub fn resolve(file: &IlkFile, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> 
     }
 }
 
+fn is_base_type(name: &str) -> bool {
+    matches!(
+        name,
+        "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
+    )
+}
+
 fn check_type_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
     match &ty.node {
         TypeExpr::Named(name) => {
-            if !env.blocks.contains_key(name) {
+            if !env.types.contains_key(name) {
                 errors.push(Diagnostic::error(
                     ty.span.clone(),
                     format!("Unknown type: {}", name),
@@ -87,7 +156,7 @@ fn check_type_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Ve
             }
         }
         TypeExpr::Reference(name) => {
-            if !env.blocks.contains_key(name) {
+            if !env.types.contains_key(name) {
                 errors.push(Diagnostic::error(
                     ty.span.clone(),
                     format!("Unknown type in reference: {}", name),
@@ -126,7 +195,7 @@ fn check_cycles(env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
     let mut visited = HashSet::new();
     let mut in_stack = HashSet::new();
 
-    for name in env.blocks.keys() {
+    for name in env.types.keys() {
         if !visited.contains(name) {
             check_cycles_dfs(name, env, path, &mut visited, &mut in_stack, errors);
         }
@@ -144,12 +213,12 @@ fn check_cycles_dfs(
     visited.insert(name.to_string());
     in_stack.insert(name.to_string());
 
-    if let Some(block) = env.blocks.get(name) {
-        let deps = collect_direct_deps(&block.node.body);
+    if let Some(decl) = env.types.get(name) {
+        let deps = collect_direct_deps(&decl.node.body);
         for dep in deps {
             if in_stack.contains(&dep) {
                 errors.push(Diagnostic::error(
-                    block.node.name.span.clone(),
+                    decl.node.name.span.clone(),
                     format!("Cyclic reference: {} -> {}", name, dep),
                     path,
                 ));
@@ -202,34 +271,40 @@ fn collect_deps_inner(ty: &TypeExpr, deps: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ilk::parser::parse_ilk;
+    use crate::parser::parse;
 
     fn resolve_str(s: &str) -> Result<TypeEnv, Vec<Diagnostic>> {
-        let file = parse_ilk(s, Path::new("test.ilk")).unwrap();
+        let file = parse(s, Path::new("test.ilk")).unwrap();
         resolve(&file, Path::new("test.ilk"))
     }
 
     #[test]
-    fn test_block_collection() {
-        let env = resolve_str("Foo {x Int}").unwrap();
-        assert!(env.blocks.contains_key("Foo"));
+    fn test_type_collection() {
+        let env = resolve_str("type Foo = {x Int}").unwrap();
+        assert!(env.types.contains_key("Foo"));
     }
 
     #[test]
-    fn test_main_block() {
-        let env = resolve_str("@main\nFoo {...}").unwrap();
-        assert_eq!(env.main_block, Some("Foo".to_string()));
+    fn test_instance_collection() {
+        let env = resolve_str("type Foo = {x Int}\nfoo = Foo {x Int}").unwrap();
+        assert!(env.instances.contains_key("foo"));
+    }
+
+    #[test]
+    fn test_main_instance() {
+        let env = resolve_str("type Foo = {...}\n@main\nfoo = Foo {x Int}").unwrap();
+        assert_eq!(env.main_instance, Some("foo".to_string()));
     }
 
     #[test]
     fn test_forward_refs() {
-        let env = resolve_str("A B\nB {x Int}");
+        let env = resolve_str("type A = B\ntype B = {x Int}");
         assert!(env.is_ok());
     }
 
     #[test]
     fn test_cycles() {
-        let result = resolve_str("A B\nB A");
+        let result = resolve_str("type A = B\ntype B = A");
         assert!(result.is_err());
         let errs = result.unwrap_err();
         assert!(errs.iter().any(|e| e.message.contains("Cyclic")));
@@ -237,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_multiple_main() {
-        let result = resolve_str("@main\nA {}\n@main\nB {}");
+        let result = resolve_str("type A = {}\ntype B = {}\n@main\na = A {}\n@main\nb = B {}");
         assert!(result.is_err());
         let errs = result.unwrap_err();
         assert!(errs.iter().any(|e| e.message.contains("Multiple @main")));
@@ -245,7 +320,15 @@ mod tests {
 
     #[test]
     fn test_unknown_type() {
-        let result = resolve_str("A Unknown");
+        let result = resolve_str("type A = Unknown");
+        assert!(result.is_err());
+        let errs = result.unwrap_err();
+        assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
+    }
+
+    #[test]
+    fn test_unknown_instance_type() {
+        let result = resolve_str("foo = Unknown {x Int}");
         assert!(result.is_err());
         let errs = result.unwrap_err();
         assert!(errs.iter().any(|e| e.message.contains("Unknown type")));

@@ -1,0 +1,88 @@
+// Type declarations
+
+// Parametrized wraps a single field of any name but specifically of type String.
+type Parametrized = {_ String}
+
+// Unique is a named alias for Concrete<String>, used as a union branch.
+type Unique = Concrete<String>
+
+// A tag is a single-field String struct, or a unique concrete string
+type Tag = Parametrized | Unique
+
+@assoc [Tag]
+type Event = {...} & {timestamp Int}
+
+type QueryItem = {
+    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
+
+    eventTypes []Event
+    tags []Tag
+}
+
+type Command = {
+    fields {...}
+
+    query []QueryItem
+
+    @source [fields]
+    emits []Event
+
+    scenarios []Scenario
+}
+
+type Scenario = {
+    name Concrete<String>
+    given []-Event
+}
+
+type Board = {
+    commands []Command
+}
+
+
+// Instance bindings
+
+userIdTag   = Parametrized {userId String}
+userNameTag = Parametrized {name String}
+commonTag   = Parametrized {x String}
+simpleTag   = Unique "simple-tag"
+
+userRegistered = Event<userIdTag, userNameTag, commonTag> {
+    id String
+    name String
+}
+
+other = Event<commonTag, simpleTag> {
+    bla String
+}
+
+registerUser = Command {
+    fields {
+         id String
+         hello String
+         x String
+         bla String
+    }
+
+
+    query [
+        {
+            eventTypes [userRegistered, other],
+            tags [commonTag]
+        }
+    ]
+
+    emits [other]
+
+    scenarios [
+        {
+            name "happy path",
+            given [userRegistered & {id "123"}, userRegistered]
+        }
+    ]
+}
+
+@main
+board = Board {
+    commands [registerUser]
+}

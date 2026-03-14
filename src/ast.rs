@@ -1,0 +1,196 @@
+use crate::span::S;
+
+// ============= Type-Level AST (formerly ilk/ast.rs) =============
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BaseType {
+    Wildcard,
+    Uuid,
+    String,
+    Int,
+    Float,
+    Bool,
+    Date,
+    Timestamp,
+    Money,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Cardinality {
+    Any,             // []
+    Exact(usize),    // [N]
+    AtLeast(usize),  // [N..]
+    AtMost(usize),   // [..M]
+    Range(usize, usize), // [N..M]
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StructKind {
+    Closed(Vec<S<Field>>),           // {x Int, y String}
+    Open(Vec<S<Field>>),             // {...} or {...} & {x Int}
+    Anonymous(Vec<Option<S<TypeExpr>>>), // {_}, {_ String}, {_, _}
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field {
+    pub name: S<String>,
+    pub optional: bool,  // ilk uses this for optional fields in kli validation
+    pub ty: S<TypeExpr>,
+    pub annotations: Vec<S<Annotation>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeExpr {
+    Base(BaseType),
+    Concrete(Box<S<TypeExpr>>),
+    LitString(String),
+    LitInt(i64),
+    LitBool(bool),
+    Named(String),
+    RefinableRef(String),  // -TypeName - allows refinement with concrete values
+    Struct(StructKind),
+    List(Cardinality, Box<S<TypeExpr>>),
+    Reference(String),
+    Union(Vec<S<TypeExpr>>),
+    Intersection(Box<S<TypeExpr>>, Box<S<TypeExpr>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SourcePath {
+    Simple(String),
+    Dotted(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Annotation {
+    Main,
+    Assoc(Vec<S<String>>),
+    Source(Vec<S<SourcePath>>),
+    Out,
+    Constraint(S<ConstraintExpr>),
+    Doc(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstraintExpr {
+    Bool(bool),
+    Var(String),
+    FieldAccess(Box<S<ConstraintExpr>>, String),
+    ForAll(String, String, Box<S<ConstraintExpr>>),
+    ForAllExpr(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
+    Exists(String, String, Box<S<ConstraintExpr>>),
+    Unique(String, String, Box<S<ConstraintExpr>>),
+    Count(String),
+    Assoc(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    TemplateVars(Box<S<ConstraintExpr>>),
+    Keys(Box<S<ConstraintExpr>>),
+    And(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Or(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Not(Box<S<ConstraintExpr>>),
+    Eq(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Ne(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    In(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Lt(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Le(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Gt(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Ge(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+    Int(i64),
+}
+
+// ============= Instance-Level AST (formerly kli/ast.rs) =============
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FieldOrigin {
+    None,                     // No annotation - implicit name match
+    Generated,                // Type*
+    Mapped(Vec<String>),      // Type = path.to.field
+    Computed(Vec<Vec<String>>), // Type = compute(path1, path2)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstanceField {
+    pub name: S<String>,
+    pub optional: bool,
+    pub value: S<Value>,
+    pub origin: FieldOrigin,
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    TypeRef(String),                       // String, Int, etc.
+    LitString(String),                     // "hello"
+    LitInt(i64),                           // 42
+    LitBool(bool),                         // true/false
+    BindingRef(String),                    // someBinding
+    Struct(Vec<S<InstanceField>>),         // {x Int, y String}
+    List(Vec<S<ListElement>>),             // [a, b, c]
+    Variant(String, Box<S<Value>>),        // VariantName body
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListElement {
+    Value(Value),
+    BindingRef(String),
+    Refinement(String, Vec<S<InstanceField>>), // binding & {field origins}
+}
+
+// ============= Unified Top-Level Items =============
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeDecl {
+    pub name: S<String>,
+    pub annotations: Vec<S<Annotation>>,
+    pub body: S<TypeExpr>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Instance {
+    pub name: S<String>,
+    pub type_name: S<String>,
+    pub assocs: Vec<S<String>>,
+    pub body: S<Value>,
+    pub annotations: Vec<S<Annotation>>,  // can have @main
+    pub doc: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Import {
+    pub path: S<String>,
+    pub alias: Option<S<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Item {
+    TypeDecl(TypeDecl),
+    Instance(Instance),
+    Import(Import),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct File {
+    pub items: Vec<S<Item>>,
+}
+
+impl File {
+    pub fn type_decls(&self) -> impl Iterator<Item = &TypeDecl> {
+        self.items.iter().filter_map(|item| match &item.node {
+            Item::TypeDecl(t) => Some(t),
+            _ => None,
+        })
+    }
+
+    pub fn instances(&self) -> impl Iterator<Item = &Instance> {
+        self.items.iter().filter_map(|item| match &item.node {
+            Item::Instance(i) => Some(i),
+            _ => None,
+        })
+    }
+
+    pub fn imports(&self) -> impl Iterator<Item = &Import> {
+        self.items.iter().filter_map(|item| match &item.node {
+            Item::Import(i) => Some(i),
+            _ => None,
+        })
+    }
+}
