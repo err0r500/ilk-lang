@@ -81,9 +81,10 @@ registerUser = ChangeSlice {
         method "POST"
         params {
             id Uuid
+        }
+        body {
             name String
         }
-        body {}
 
         responses [
             {status 201, body {id Uuid, name String}}
@@ -94,7 +95,7 @@ registerUser = ChangeSlice {
     command {
         fields {
              id Uuid = endpoint.params.id
-             name String = endpoint.params.name
+             name String = endpoint.body.name
         }
 
         query [

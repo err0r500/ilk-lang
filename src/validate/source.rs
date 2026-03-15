@@ -318,28 +318,24 @@ fn validate_refinement_field(
             // Exempt - no check needed
         }
         FieldOrigin::Mapped(path) => {
-            if let Some(root) = path.first() {
-                if !source_contains_root(sources, root) {
-                    errors.push(Diagnostic::error(
-                        field.span.clone(),
-                        format!("Source path root '{}' not in @source list", root),
-                        ctx.path,
-                    ));
-                } else {
-                    validate_source_path(ctx, path, field, parent_fields, errors);
-                }
+            if !source_allows_path(sources, path) {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!("Source path '{}' not allowed by @source", path.join(".")),
+                    ctx.path,
+                ));
+            } else {
+                validate_source_path(ctx, path, field, parent_fields, errors);
             }
         }
         FieldOrigin::Computed(paths) => {
             for path in paths {
-                if let Some(root) = path.first() {
-                    if !source_contains_root(sources, root) {
-                        errors.push(Diagnostic::error(
-                            field.span.clone(),
-                            format!("Compute path root '{}' not in @source list", root),
-                            ctx.path,
-                        ));
-                    }
+                if !source_allows_path(sources, path) {
+                    errors.push(Diagnostic::error(
+                        field.span.clone(),
+                        format!("Compute path '{}' not allowed by @source", path.join(".")),
+                        ctx.path,
+                    ));
                 }
             }
         }
@@ -397,10 +393,17 @@ fn validate_refinement_field(
     }
 }
 
-fn source_contains_root(sources: &[S<SourcePath>], root: &str) -> bool {
-    sources.iter().any(|s| match &s.node {
-        SourcePath::Simple(name) => name == root,
-        SourcePath::Dotted(parts) => parts.first().map(|p| p == root).unwrap_or(false),
+/// Check if any source path is a prefix of the given path
+/// e.g., @source [endpoint.params] allows endpoint.params.id but not endpoint.method
+fn source_allows_path(sources: &[S<SourcePath>], path: &[String]) -> bool {
+    sources.iter().any(|s| {
+        let source_parts: Vec<&str> = match &s.node {
+            SourcePath::Simple(name) => vec![name.as_str()],
+            SourcePath::Dotted(parts) => parts.iter().map(|s| s.as_str()).collect(),
+        };
+        // path must start with source_parts
+        path.len() >= source_parts.len()
+            && path.iter().zip(source_parts.iter()).all(|(p, s)| p == *s)
     })
 }
 
@@ -722,5 +725,58 @@ wrapper = Wrapper {
         // Even though wrapper.outerFields has userId, that's the wrong context
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("No source found for field 'userId'"));
+    }
+
+    #[test]
+    fn test_source_path_prefix_validation() {
+        // @source [params, body] should allow params.id
+        // but reject method (not a subtree of params or body)
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+    @source [params, body]
+    responses []Event
+}
+ev = Event {id String}
+endpoint = Endpoint {
+    method String
+    params {id String}
+    body {}
+    responses [ev & {id String = params.id}]
+}
+"#,
+        );
+        // Should pass: params.id is allowed by @source [params, body]
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_source_path_rejects_outside_subtree() {
+        let errors = validate_source_src(
+            r#"
+type Event = {method String}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+    @source [params, body]
+    responses []Event
+}
+ev = Event {method String}
+endpoint = Endpoint {
+    method String
+    params {x Int}
+    body {}
+    responses [ev & {method String = method}]
+}
+"#,
+        );
+        // Should fail: method is not within params or body subtrees
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("not allowed by @source"));
     }
 }
