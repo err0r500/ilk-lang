@@ -416,9 +416,14 @@ fn validate_source_path(
 ) {
     let mut current_fields = parent_fields;
     let mut source_field: Option<&S<InstanceField>> = None;
+    let mut source_optional = false;
 
     for (i, segment) in path.iter().enumerate() {
         if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
+            // Track if any field in the path is optional
+            if f.node.optional {
+                source_optional = true;
+            }
             if i < path.len() - 1 {
                 if let Value::Struct(nested) = &f.node.value.node {
                     current_fields = nested;
@@ -441,6 +446,15 @@ fn validate_source_path(
             ));
             return;
         }
+    }
+
+    // Check optionality: mandatory field cannot depend on optional source
+    if !field.node.optional && source_optional {
+        errors.push(Diagnostic::error(
+            field.span.clone(),
+            format!("Mandatory field cannot depend on optional source '{}'", path.join(".")),
+            ctx.path,
+        ));
     }
 
     // Check type compatibility
@@ -778,5 +792,69 @@ endpoint = Endpoint {
         // Should fail: method is not within params or body subtrees
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("not allowed by @source"));
+    }
+
+    #[test]
+    fn test_mandatory_from_optional_source() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! []Event
+}
+e = Event {id String}
+cmd = Cmd {
+  fields {opt? String}
+  emits [e & {id String = fields.opt}]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Mandatory field cannot depend on optional source"));
+    }
+
+    #[test]
+    fn test_optional_from_optional_source() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! []Event
+}
+e = Event {id String}
+cmd = Cmd {
+  fields {opt? String}
+  emits [e & {id? String = fields.opt}]
+}
+"#,
+        );
+        // Should pass: optional field can depend on optional source
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_optional_from_optional_type_mismatch() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id Int}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! []Event
+}
+e = Event {id Int}
+cmd = Cmd {
+  fields {opt? String}
+  emits [e & {id? Int = fields.opt}]
+}
+"#,
+        );
+        // Should fail: type mismatch even if both optional
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
     }
 }

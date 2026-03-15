@@ -83,7 +83,7 @@ registerUser = ChangeSlice {
             id Uuid
         }
         body {
-            name? String
+            name String
         }
 
         responses [
