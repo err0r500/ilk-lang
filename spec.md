@@ -22,7 +22,7 @@ Single-line comments only, using `//`:
 
 ```ilk
 // this is a comment
-userIdTag = Parametrized {userId String} // inline comment
+userIdTag = Tag {userId String} // inline comment
 ```
 
 ---
@@ -251,15 +251,9 @@ the validator allows concrete literals for open fields in the refinement struct.
 
 ## Union types
 
-`A | B` means a value must satisfy **exactly one** of the alternatives. All branches must
-be **named types** — user-defined type names, including:
-- Struct block types: `type Success = { value Bool }`
-- Identifier-only variants (empty named types): `Get`, `Post`, …
-- Type aliases: `type Unique = Concrete<String>`
-
-Inline anonymous struct expressions (`{...}`) are **not** valid as union branches. Declare
-a named type first. `Concrete<T>` and other scalar types used as branches must likewise be
-wrapped in a named alias so instances can discriminate them by name.
+`A | B` means a value must satisfy **exactly one** of the alternatives. Each branch is a
+type expression: a named type reference, an anonymous struct expression (`{_ String}`,
+`{...}`, etc.), a `Concrete<T>`, a scalar base type, or a literal.
 
 ```ilk
 type Success = { value Bool }
@@ -267,7 +261,7 @@ type Error   = { message String }
 type Response = Success | Error
 ```
 
-In instances, the branch is identified by the variant name:
+Unions with named-type branches — in instances, the branch is identified by the variant name:
 
 ```ilk
 result = Success { value Bool }
@@ -275,7 +269,7 @@ result = Success { value Bool }
 result = Error { message String }
 ```
 
-Identifier-only variants (no body) are named types with empty bodies:
+Identifier-only variants (named types with empty bodies) need no body in instances:
 
 ```ilk
 type Status = Pending | Active | Archived
@@ -285,36 +279,43 @@ type Status = Pending | Active | Archived
 status Active
 ```
 
+Anonymous struct branches are valid — the branch is matched structurally:
+
+```ilk
+// Tag is either a {_ String} anonymous struct or a Concrete<String>
+type Tag = {_ String} | Concrete<String>
+```
+
+In instances, the branch is chosen by the shape of the value:
+
+```ilk
+userIdTag = Tag {userId String}   // {_ String} branch — a single-field struct
+simpleTag = Tag "simple-tag"      // Concrete<String> branch — a literal string
+```
+
+Literal branches (`"GET"`, `42`, etc.) and `Concrete<T>` branches are matched by the
+syntax of the instance value. Named type branches are matched by writing the type name.
+
+Literal unions are useful for enumerated string/int values:
+
+```ilk
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+type Verb       = "POST" | "DELETE" | "PUT" | "PATCH"
+```
+
 ### Discriminated unions
 
-Since all union branches are named types, every union is discriminated. When a field or
-binding expects a union type, the instance value identifies which variant it is by name.
+For named-type branches, every union is discriminated by name. When two branches have the
+same shape, the name distinguishes them:
 
 ```ilk
 type Started  = { at Timestamp }
 type Finished = { at Timestamp }
-type Status   = Started | Finished   // two branches with the same shape — unambiguous by name
+type Status   = Started | Finished   // same shape — unambiguous by name
 ```
 
-Scalar branches (`String`, `Concrete<T>`, `Int`, etc.) and literal branches (`"GET"`, `42`,
-etc.) are matched by the syntax of the instance value itself — no variant name is written:
-
-```ilk
-// Parametrized wraps exactly one field of any name, constrained to type String.
-// Anonymous struct expressions are not valid as union branches — a named type is required.
-type Parametrized = {_ String}
-// Unique is a named alias for Concrete<String>, making the branch discriminable by name.
-type Unique = Concrete<String>
-// Tag is either a Parametrized struct or a Unique concrete string.
-type Tag = Parametrized | Unique
-```
-
-In instances:
-
-```ilk
-userIdTag = Parametrized {userId String}   // Parametrized branch: named struct, one String field
-simpleTag = Unique "simple-tag"            // Unique branch: instance picks a concrete string
-```
+For anonymous struct branches or scalar/literal branches, the instance value's syntactic
+form is sufficient to discriminate: `{...}` is a struct, `"literal"` is a string, etc.
 
 ---
 
@@ -720,33 +721,44 @@ All elements must conform to the type declared in the schema.
 
 ## Union values
 
-### Named type branches (discriminated)
+### Named type branches
 
-When union branches are user-defined named types, write the variant name — it is always
-sufficient; the type context provides the union type:
+When a union branch is a named type, write the type name in the instance value:
 
 ```ilk
 // type: type Status = Started | Finished
 current = Started { at Timestamp }
 
-// or inline in a list:
+// inline in a list:
 history [
     Started  { at Timestamp }
     Finished { at Timestamp }
 ]
 ```
 
-### `Concrete<T>` branches
+### Anonymous struct branches
 
-When a union has a `Concrete<T>` branch, wrap it in a named alias so it is discriminable
-by name:
+When a union branch is an anonymous struct type (`{_ String}`, `{...}`, etc.), supply a
+struct value directly — no type name prefix:
 
 ```ilk
-// type Parametrized = {_ String}
-// type Unique = Concrete<String>
-// type Tag = Parametrized | Unique
-userIdTag = Parametrized {userId String}   // Parametrized branch: named type, one String field
-simpleTag = Unique "simple-tag"            // Unique branch: instance picks a concrete string
+// type Tag = {_ String} | Concrete<String>
+userIdTag = Tag {userId String}   // {_ String} branch — struct value
+simpleTag = Tag "simple-tag"      // Concrete<String> branch — literal
+```
+
+### Literal and `Concrete<T>` branches
+
+Literal branches and `Concrete<T>` branches are matched by the value's syntax — a string
+literal satisfies a `Concrete<String>` branch, an integer literal satisfies a `Concrete<Int>`
+branch, etc.:
+
+```ilk
+// type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+method "GET"
+
+// type Verb = "POST" | "DELETE" | "PUT" | "PATCH"
+verb "DELETE"
 ```
 
 ---
@@ -793,13 +805,33 @@ in this set.
 
 ## Optional fields
 
-Appending `?` to a field name marks it as optional — downstream mappings cannot rely on
-its presence:
+`?` appended to a field name marks it as optional. The semantics differ between type
+declarations and instance bindings.
+
+### Optional in type declarations
+
+`field? Type` in a type declaration means instances are not required to provide this field:
+
+```ilk
+type User = {
+    id    Uuid
+    name  String
+    email? String   // instances may omit email
+}
+```
+
+A missing optional type field does not cause a validation error. When present, it must
+match the declared type.
+
+### Optional in instance bindings
+
+`field? value` in an instance binding marks the field as conditionally present at runtime.
+Downstream `@source` checks treat an optional source field as unreliable:
 
 ```ilk
 fields {
     id    String
-    email? String   // optional — may be absent, don't rely on it
+    email? String   // may be absent at runtime
 }
 ```
 
@@ -921,101 +953,136 @@ One rule everywhere: **newlines, or commas where elements fit on one line**.
 ```ilk
 // Type declarations
 
-// Parametrized wraps exactly one field of any name, constrained to type String.
-// Anonymous struct expressions are not valid as union branches — a named type is required.
-type Parametrized = {_ String}
-// Unique is a named alias for Concrete<String>, making the branch discriminable by name.
-type Unique = Concrete<String>
-// Tag is either a Parametrized struct or a Unique concrete string.
-type Tag = Parametrized | Unique
+// Tag: either a single-field String struct or a concrete string literal.
+// Anonymous struct and Concrete<T> branches are valid directly in the union.
+type Tag = {_ String} | Concrete<String>
 
-// Event has any fields plus a required timestamp; instances may carry Tag associations.
+// Event has any fields plus a required timestamp; instances carry Tag associations.
 @assoc [Tag]
 type Event = {...} & {timestamp Int}
 
 // QueryItem: every event in eventTypes must be associated with every tag in tags.
 type QueryItem = {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
-
-    eventTypes []Event
-    tags       []Tag
+    eventTypes []&Event   // list of references to Event bindings
+    tags []Tag
 }
 
-// Scenario: a named test scenario with a list of refinable Event references.
-type Scenario = {
-    name  Concrete<String>
-    given []-Event
-}
-
-// Command: fields drive emits; query and scenarios have no source constraint.
+// Command: fields drive both query and emits via @source.
 type Command = {
     fields {...}
 
-    query     []QueryItem
-    scenarios []Scenario
+    @source [fields]
+    query []QueryItem
 
     @source [fields]
     emits []Event
 }
 
+type HttpResponse = {
+    status Concrete<Int>
+    body {...}
+}
+
+type HttpEndpoint = {
+    method "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+
+    @constraint forall(templateVars(path), v => v in keys(params))
+    path Concrete<String>
+    params {...}
+    body {...}
+
+    responses []HttpResponse
+}
+
+// ChangeSlice bundles an endpoint and a command; endpoint drives command via @source.
+type ChangeSlice = {
+    name Concrete<String>
+    endpoint HttpEndpoint
+
+    @source [endpoint]
+    command Command
+
+    scenarios []CommandScenario
+}
+
+// CommandScenario: a BDD-style test scenario.
+type CommandScenario = {
+    name Concrete<String>
+
+    given []-Event   // refinable Event references for preconditions
+    when Command
+    then []-Event    // refinable Event references for postconditions
+}
+
 // Board is the entry point.
 type Board = {
-    commands []Command
+    changes []ChangeSlice
 }
 
 
 // Instance bindings
 
-userIdTag   = Parametrized {userId String}
-userNameTag = Parametrized {name String}
-commonTag   = Parametrized {x String}
-simpleTag   = Unique "simple-tag"
+// Tag bindings — {_ String} branch: single-field structs
+userIdTag   = Tag {userId String}
+userNameTag = Tag {name String}
 
 // Event bindings with their associated tags.
-// Event carries @assoc [Tag] — supply tags in angle brackets.
-userRegistered = Event<userIdTag, userNameTag, commonTag> {
-    id   String
+userRegistered = Event<userIdTag, userNameTag> {
+    id   Uuid
     name String
+    ts   Timestamp
 }
 
-other = Event<commonTag, simpleTag> {
-    bla String
-}
+// ChangeSlice instance bundling endpoint + command + scenarios.
+registerUser = ChangeSlice {
+    name "registerUser"
 
-// Command binding.
-registerUser = Command {
-    fields {
-        id    String
-        hello String
-        x     String
-        bla   String
+    // HttpEndpoint value — type name omitted (anonymous struct matches structurally)
+    endpoint {
+        path   "/users/{id}"
+        method "POST"
+        params { id Uuid }
+        body   { name String }
     }
 
-    // @source [fields] is in effect on emits.
-    // other.bla traces implicitly to fields.bla.
-    emits [other]
-
-    // query has no @source — no provenance constraint.
-    // QueryItem type name omitted — anonymous struct matches structurally.
-    query [
-        {
-            eventTypes [userRegistered, other]
-            tags       [commonTag]
+    // Command value — @source [endpoint] is in effect.
+    // fields are mapped explicitly from endpoint.params and endpoint.body.
+    command {
+        fields {
+            id   Uuid   = endpoint.params.id
+            name String = endpoint.body.name
         }
-    ]
 
-    // Refinable Event references — & {field "literal"} allowed because []-Event.
+        // @source [fields] — eventTypes is []&Event (references, no @source check)
+        query [
+            {
+                eventTypes [userRegistered],
+                tags [userIdTag & {userId Uuid = fields.id}]   // refinable tag
+            },
+            {
+                eventTypes [userRegistered],
+                tags [userNameTag & {name String = fields.name}]
+            }
+        ]
+
+        // @source [fields] — ts is generated, other fields trace implicitly.
+        emits [userRegistered & {ts Timestamp*}]
+    }
+
     scenarios [
         {
-            name  "happy path"
-            given [userRegistered & {id "123"}, userRegistered]
+            name  "happy path",
+            given [userRegistered & {id 123}, userRegistered]
+            when  {}
+            then  [userRegistered & {id "123"}]
         }
     ]
 }
 
 @main
 board = Board {
-    commands [registerUser]
+    changes [registerUser]
 }
 ```
 
@@ -1061,7 +1128,6 @@ type Endpoint = {
     responses []Response
 }
 
-@main
 type Api = {
     endpoints []Endpoint
 }
