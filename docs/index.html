@@ -3,16 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ilk/kli Language Showcase</title>
+  <title>ilk — Data Modeling Language</title>
   <style>
     :root {
       --bg: #0d1117;
       --surface: #161b22;
+      --surface2: #1c2128;
       --border: #30363d;
       --text: #c9d1d9;
       --text-muted: #8b949e;
       --accent: #58a6ff;
       --green: #3fb950;
+      --purple: #d2a8ff;
+      --yellow: #e3b341;
       --red: #f85149;
       --code-bg: #0d1117;
     }
@@ -22,838 +25,639 @@
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
-      padding: 2rem;
     }
-    h1 { color: var(--accent); margin-bottom: 0.5rem; }
-    h2 { color: var(--text); margin: 2rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
-    h3 { color: var(--text-muted); margin: 1rem 0 0.5rem; font-size: 0.95rem; }
-    p { color: var(--text-muted); margin-bottom: 1rem; }
-    .intro { max-width: 800px; margin-bottom: 2rem; }
 
-    .section { margin-bottom: 3rem; }
-    .columns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    @media (max-width: 900px) {
-      .columns { grid-template-columns: 1fr; }
-    }
-    .col { background: var(--surface); border-radius: 6px; border: 1px solid var(--border); overflow: hidden; }
-    .col-header {
-      padding: 0.5rem 1rem;
-      background: var(--border);
-      font-weight: 600;
-      font-size: 0.85rem;
+    /* Layout */
+    .page { max-width: 1000px; margin: 0 auto; padding: 3rem 2rem; }
+
+    /* Hero */
+    .hero { padding: 4rem 0 3rem; border-bottom: 1px solid var(--border); margin-bottom: 3rem; }
+    .hero h1 { font-size: 3rem; font-weight: 700; color: var(--accent); letter-spacing: -1px; margin-bottom: 0.5rem; }
+    .hero .tagline { font-size: 1.3rem; color: var(--text); margin-bottom: 1.5rem; font-weight: 400; }
+    .hero .pitch {
+      font-size: 1rem;
       color: var(--text-muted);
+      max-width: 680px;
+      line-height: 1.7;
+      margin-bottom: 2rem;
     }
-    .col-header.ilk { color: var(--accent); }
-    .col-header.kli { color: var(--green); }
-
-    .tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-    }
-    .tab {
-      padding: 0.4rem 1rem;
-      cursor: pointer;
+    .hero .pitch strong { color: var(--text); }
+    .pill {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
       font-size: 0.8rem;
-      color: var(--text-muted);
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
+      font-weight: 600;
+      border: 1px solid;
+      margin-right: 0.5rem;
     }
-    .tab:hover { color: var(--text); }
-    .tab.active { color: var(--green); border-bottom-color: var(--green); }
-    .tab.invalid.active { color: var(--red); border-bottom-color: var(--red); }
+    .pill-blue  { color: var(--accent);  border-color: var(--accent);  background: rgba(88,166,255,0.08); }
+    .pill-green { color: var(--green);   border-color: var(--green);   background: rgba(63,185,80,0.08); }
 
-    .pane { display: none; }
-    .pane.active { display: block; }
+    /* Sections */
+    .section { margin-bottom: 4rem; }
+    .section > h2 {
+      font-size: 1.4rem;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .section > h2 .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .section > .lead {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.5rem;
+      max-width: 700px;
+    }
+    .section > .lead strong { color: var(--text); }
 
+    /* Code blocks */
+    .box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
+    .box-label {
+      padding: 0.4rem 1rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+    }
+    .box-label.ilk { color: var(--accent); }
+    .box-label.ok  { color: var(--green); }
+    .box-label.err { color: var(--red); }
     pre {
       margin: 0;
-      padding: 1rem;
+      padding: 1.2rem 1.4rem;
       overflow-x: auto;
       font-family: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
-      font-size: 0.85rem;
-      line-height: 1.5;
+      font-size: 0.84rem;
+      line-height: 1.65;
       background: var(--code-bg);
     }
-    .comment { color: #8b949e; }
-    .keyword { color: #ff7b72; }
-    .type { color: #79c0ff; }
-    .string { color: #a5d6ff; }
-    .number { color: #a5d6ff; }
-    .annotation { color: #d2a8ff; }
-    .error { color: var(--red); }
-    .error-msg { color: var(--red); font-style: italic; }
 
-    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-    th, td { padding: 0.5rem; text-align: left; border: 1px solid var(--border); }
-    th { background: var(--surface); color: var(--text-muted); }
-    td code { background: var(--surface); padding: 0.2rem 0.4rem; border-radius: 3px; font-size: 0.85rem; }
+    /* Two columns */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+    @media (max-width: 700px) {
+      .cols, .cols3 { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 2.2rem; }
+    }
+
+    /* Inline callout */
+    .callout {
+      background: rgba(88,166,255,0.06);
+      border: 1px solid rgba(88,166,255,0.2);
+      border-radius: 6px;
+      padding: 0.8rem 1.2rem;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+    .callout strong { color: var(--accent); }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 0.55rem 0.9rem; text-align: left; border: 1px solid var(--border); }
+    th { background: var(--surface2); color: var(--text-muted); font-weight: 600; }
+    td code { background: var(--surface); padding: 0.15rem 0.45rem; border-radius: 3px; font-family: 'SF Mono', Consolas, monospace; font-size: 0.83rem; }
+
+    /* Syntax colors */
+    .c   { color: #8b949e; }           /* comment */
+    .kw  { color: #ff7b72; }           /* keyword: type */
+    .id  { color: #c9d1d9; }           /* identifier */
+    .ty  { color: #79c0ff; }           /* type name */
+    .str { color: #a5d6ff; }           /* string / number literal */
+    .ann { color: #d2a8ff; }           /* annotation */
+    .op  { color: #ff7b72; }           /* operator */
+    .ok  { color: #3fb950; }           /* valid marker */
+    .er  { color: #f85149; }           /* error */
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid var(--border); margin: 3rem 0; }
+
+    /* Footer */
+    footer { color: var(--text-muted); font-size: 0.82rem; padding: 2rem 0; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
-  <header class="intro">
-    <h1>ilk / kli</h1>
-    <p style="font-size: 1.1rem; color: var(--text); margin-bottom: 1.5rem;">
-      A two-level data modeling system for domains where <em>data provenance matters</em>.
+<div class="page">
+
+  <!-- ── HERO ─────────────────────────────────────────────────── -->
+  <header class="hero">
+    <h1>ilk</h1>
+    <p class="tagline">Define your types. Name your entities. Trace your data.</p>
+    <p class="pitch">
+      <strong>ilk</strong> is a single-file data modeling language.
+      One <code>.ilk</code> file holds both <strong>type declarations</strong> —
+      the abstract vocabulary of a domain — and <strong>instance bindings</strong> —
+      the named entities that actually exist in your system.<br><br>
+      Beyond shape validation, ilk tracks <strong>data provenance</strong>:
+      each field must be traceable back to a declared source.
+      The compiler catches missing mappings before runtime.
     </p>
-    <p>
-      Traditional schemas validate shape. ilk/kli validates <strong>data flow</strong>: where does each field come from?
-      Can the response body only contain data from the DB result? Does every event field trace back to the command input?
-    </p>
-    <p>
-      <strong>ilk</strong> (.ilk) defines the abstract vocabulary — what concepts exist, their shapes, and flow constraints via <code>@source</code>.<br>
-      <strong>kli</strong> (.kli) instantiates that vocabulary — names the concrete entities and maps their field origins.
-    </p>
-    <p style="color: var(--text-muted); font-size: 0.9rem;">
-      Neither level holds runtime data. A .kli file is a <em>domain model</em> — a catalog of named entities and their structures.
-      Actual values (UUIDs, timestamps) live in the system that consumes the validated model.
-    </p>
+    <span class="pill pill-blue">.ilk — types &amp; instances</span>
+    <span class="pill pill-green">validates shape + data flow</span>
   </header>
 
-  <!-- 0. API Endpoint Example -->
+
+  <!-- ── 1. HELLO WORLD ────────────────────────────────────────── -->
   <section class="section">
-    <h2>API Endpoint Example</h2>
-    <p>Complete data flow: request → DB method → responses. <code>responses []Response</code> declares all possible return shapes. <code>Concrete&lt;T&gt;</code> values (status codes, static messages) are author-chosen and exempt from <code>@source</code>.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">api-spec.ilk</div>
-        <pre><span class="type">HttpMethod</span> <span class="string">"GET"</span> | <span class="string">"POST"</span> | <span class="string">"PUT"</span> | <span class="string">"DELETE"</span>
+    <h2><span class="num">1</span> The basics — types and instances</h2>
+    <p class="lead">
+      <strong>Type declarations</strong> describe shapes (what fields exist, what types they have).
+      <strong>Instance bindings</strong> name the concrete entities in your domain — not runtime values,
+      but the fixed catalog of things your system knows about.
+      Both live in one file.
+    </p>
 
-<span class="type">DbMethod</span> {
-    <span class="keyword">name</span>    <span class="type">Concrete&lt;String&gt;</span>
-    <span class="keyword">args</span>    {<span class="keyword">...</span>}
-    <span class="keyword">returns</span> {<span class="keyword">...</span>}
+    <div class="box">
+      <div class="box-label ilk">domain.ilk</div>
+      <pre>
+<span class="c">// ── Type declarations ──────────────────────────</span>
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span> | <span class="str">"DELETE"</span>
+
+<span class="kw">type</span> <span class="ty">User</span> = {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
 }
 
-<span class="type">Response</span> {
-    <span class="keyword">status</span> <span class="type">Concrete&lt;Int&gt;</span>
-    <span class="keyword">body</span>   {<span class="keyword">...</span>}
+<span class="c">// ── Instance bindings ───────────────────────────</span>
+<span class="c">// Named entities in this specific domain</span>
+
+<span class="id">adminUser</span> = <span class="ty">User</span> {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
 }
 
-<span class="type">Endpoint</span> {
-    <span class="annotation">@constraint</span> <span class="keyword">forall</span>(<span class="keyword">templateVars</span>(<span class="keyword">path</span>), <span class="keyword">v</span> =&gt; <span class="keyword">v</span> <span class="keyword">in</span> <span class="keyword">keys</span>(<span class="keyword">params</span>))
-    <span class="keyword">path</span>    <span class="type">Concrete&lt;String&gt;</span>
-    <span class="keyword">method</span>  <span class="type">HttpMethod</span>
-    <span class="keyword">params</span>  {<span class="keyword">...</span>}
-    <span class="keyword">body</span>    {<span class="keyword">...</span>}
+<span class="id">guestUser</span> = <span class="ty">User</span> {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
+}</pre>
+    </div>
 
-    <span class="annotation">@source</span> [<span class="keyword">params</span>, <span class="keyword">body</span>]
-    <span class="keyword">db</span> <span class="type">DbMethod</span>
+    <div class="callout">
+      <strong>Instance bindings are not runtime values.</strong>
+      <code>adminUser</code> doesn't hold a real UUID or name — it declares that
+      your domain has an entity called <em>adminUser</em> whose <code>id</code> field
+      will be a <code>Uuid</code> at runtime. Think of it as a typed slot catalog.
+    </div>
+  </section>
 
-    <span class="annotation">@source</span> [<span class="keyword">params</span>, <span class="keyword">body</span>, <span class="keyword">db.returns</span>]
-    <span class="keyword">responses</span> []<span class="type">Response</span>
-}
 
-<span class="annotation">@main</span>
-<span class="type">Api</span> {
-    <span class="keyword">endpoints</span> []<span class="type">Endpoint</span>
+  <!-- ── 2. VALUE CONSTRAINTS ──────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">2</span> How tight is a value?</h2>
+    <p class="lead">
+      ilk has three constraint levels for field values.
+      They form a tightening progression: from fully open to exact match.
+    </p>
+
+    <table style="margin-bottom:1.2rem">
+      <thead>
+        <tr><th>In a type</th><th>In an instance</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>String</code></td>
+          <td><code>String</code></td>
+          <td>Open — any string value at runtime</td>
+        </tr>
+        <tr>
+          <td><code>Concrete&lt;String&gt;</code></td>
+          <td><code>"webhook"</code></td>
+          <td>Instance-fixed — the instance author picks one specific value</td>
+        </tr>
+        <tr>
+          <td><code>"POST"</code></td>
+          <td><code>"POST"</code></td>
+          <td>Type-fixed — only this exact value is ever valid</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">type</div>
+        <pre>
+<span class="kw">type</span> <span class="ty">Webhook</span> = {
+    <span class="c">// any URL at runtime</span>
+    <span class="id">url</span>     <span class="ty">String</span>
+
+    <span class="c">// instance author fixes the event name</span>
+    <span class="id">event</span>   <span class="ty">Concrete&lt;String&gt;</span>
+
+    <span class="c">// always exactly "POST"</span>
+    <span class="id">method</span>  <span class="str">"POST"</span>
 }</pre>
       </div>
-      <div class="col">
-        <div class="col-header kli">api-instance.kli</div>
-        <pre><span class="comment">// DB methods</span>
-<span class="keyword">findUser</span> = <span class="type">DbMethod</span> {
-    <span class="keyword">name</span>    <span class="string">"users.findById"</span>
-    <span class="keyword">args</span>    {<span class="keyword">id</span> <span class="type">Uuid</span>}
-    <span class="keyword">returns</span> {<span class="keyword">id</span> <span class="type">Uuid</span>, <span class="keyword">name</span> <span class="type">String</span>}
+      <div class="box">
+        <div class="box-label ok">✓ valid instance</div>
+        <pre>
+<span class="id">userCreatedHook</span> = <span class="ty">Webhook</span> {
+    <span class="c">// open: leave as String (value comes at runtime)</span>
+    <span class="id">url</span>     <span class="ty">String</span>
+
+    <span class="c">// instance-fixed: pick the event name</span>
+    <span class="id">event</span>   <span class="str">"user.created"</span>
+
+    <span class="c">// type-fixed: must be exactly "POST"</span>
+    <span class="id">method</span>  <span class="str">"POST"</span>
+}</pre>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 3. SHAPES ─────────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">3</span> Shapes — structs, lists, unions</h2>
+    <p class="lead">
+      Structs describe field collections. Lists carry cardinality.
+      Unions let a field accept multiple alternatives.
+    </p>
+
+    <div class="cols">
+      <div>
+        <div class="box">
+          <div class="box-label ilk">Structs</div>
+          <pre>
+<span class="c">// anonymous: 1 field of any name/type</span>
+{<span class="id">_</span>}
+
+<span class="c">// anonymous with type constraint</span>
+{<span class="id">_</span> <span class="ty">String</span>}
+
+<span class="c">// open: any fields</span>
+{<span class="id">...</span>}
+
+<span class="c">// named fields</span>
+{<span class="id">id</span> <span class="ty">Uuid</span>, <span class="id">name</span> <span class="ty">String</span>}
+
+<span class="c">// any fields + required id</span>
+{<span class="id">...</span>} &amp; {<span class="id">id</span> <span class="ty">Uuid</span>}</pre>
+        </div>
+
+        <div class="box">
+          <div class="box-label ilk">Unions</div>
+          <pre>
+<span class="c">// literal union</span>
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span>
+
+<span class="c">// identifier union</span>
+<span class="kw">type</span> <span class="ty">Status</span> = <span class="ty">Pending</span> | <span class="ty">Active</span> | <span class="ty">Archived</span>
+
+<span class="c">// mixed</span>
+<span class="kw">type</span> <span class="ty">Tag</span> = {<span class="id">_</span> <span class="ty">String</span>} | <span class="ty">Concrete&lt;String&gt;</span></pre>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-label ilk">Lists</div>
+        <pre>
+<span class="c">// 0 or more</span>
+[]<span class="ty">Event</span>
+
+<span class="c">// exactly 3</span>
+[3]<span class="ty">Tag</span>
+
+<span class="c">// 1 or more</span>
+[1..]<span class="ty">Tag</span>
+
+<span class="c">// 2 to 5</span>
+[2..5]<span class="ty">Tag</span>
+
+<span class="c">// up to 10</span>
+[..10]<span class="ty">Tag</span>
+
+<span class="c">// ── References ─────────────────</span>
+<span class="c">// point to a binding, no data flow</span>
+&amp;<span class="ty">Event</span>
+[]&amp;<span class="ty">Event</span>
+
+<span class="c">// refinable reference</span>
+<span class="c">// (can override open fields with literals)</span>
+-<span class="ty">Event</span>
+[]-<span class="ty">Event</span></pre>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 4. DATA FLOW ───────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">4</span> Data flow — where does this field come from?</h2>
+    <p class="lead">
+      <strong>This is the unique part.</strong>
+      <code>@source</code> declares which upstream fields can supply data to a downstream field.
+      Every non-<code>Concrete</code> field in the downstream struct must be explicitly traced back —
+      the compiler enforces it.
+    </p>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">type with @source</div>
+        <pre>
+<span class="kw">type</span> <span class="ty">DbLookup</span> = {
+    <span class="id">args</span>    {<span class="id">...</span>}
+
+    <span class="c">// @out: this field provides data to callers</span>
+    <span class="ann">@out</span>
+    <span class="id">returns</span> {<span class="id">...</span>}
 }
 
-<span class="comment">// "id" in keys(params) ✓</span>
-<span class="keyword">getUser</span> = <span class="type">Endpoint</span> {
-    <span class="keyword">path</span>   <span class="string">"/users/{id}"</span>
-    <span class="keyword">method</span> <span class="string">"GET"</span>
-    <span class="keyword">params</span> {<span class="keyword">id</span> <span class="type">Uuid</span>}
+<span class="kw">type</span> <span class="ty">Endpoint</span> = {
+    <span class="id">params</span>  {<span class="id">...</span>}
 
-    <span class="keyword">db</span> <span class="keyword">findUser</span> &amp; {
-        <span class="keyword">id</span> <span class="type">Uuid</span> = <span class="keyword">params.id</span>
+    <span class="c">// db can only use data from params</span>
+    <span class="ann">@source</span> [<span class="id">params</span>]
+    <span class="id">db</span>      <span class="ty">DbLookup</span>
+
+    <span class="c">// response can use params OR db.returns</span>
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">db.returns</span>]
+    <span class="id">response</span> {<span class="id">...</span>}
+}</pre>
+      </div>
+
+      <div>
+        <div class="box">
+          <div class="box-label ok">✓ all fields traced</div>
+          <pre>
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+
+    <span class="id">db</span> <span class="id">findUserDb</span> &amp; {
+        <span class="c">// maps params.id → db arg</span>
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>  <span class="ok">✓</span>
     }
 
-    <span class="comment">// status codes + static messages: Concrete → exempt from @source</span>
-    <span class="keyword">responses</span> [
+    <span class="id">response</span> {
+        <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>    <span class="ok">✓</span>
+        <span class="id">name</span> <span class="ty">String</span> = <span class="id">db.returns.name</span>  <span class="ok">✓</span>
+    }
+}</pre>
+        </div>
+
+        <div class="box">
+          <div class="box-label err">✗ untraced field → compile error</div>
+          <pre>
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+    <span class="id">db</span>      <span class="id">findUserDb</span> &amp; {
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>
+    }
+
+    <span class="id">response</span> {
+        <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>
+        <span class="c">// name has no = assignment</span>
+        <span class="id">name</span> <span class="ty">String</span>  <span class="er">✗ @source violation</span>
+    }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Why does this matter?</strong>
+      In a large API codebase, it's easy to accidentally include data in a response
+      that shouldn't be there (e.g. internal IDs leaking out).
+      <code>@source</code> makes the data flow explicit and machine-checked —
+      every field in a response must be justified.
+    </div>
+  </section>
+
+
+  <!-- ── 5. ANNOTATIONS ────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">5</span> Annotations</h2>
+    <p class="lead">Annotations go on the line immediately before what they annotate.</p>
+
+    <table>
+      <thead>
+        <tr><th>Annotation</th><th>Where</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>@main</code></td><td>instance</td><td>Entry point — the root binding the compiler validates from</td></tr>
+        <tr><td><code>@source [fields]</code></td><td>field in type</td><td>Data provenance: this field's values must trace back to <em>fields</em></td></tr>
+        <tr><td><code>@out</code></td><td>field in type</td><td>Output field — exempt from <code>@source</code> checks; can be referenced by callers</td></tr>
+        <tr><td><code>@assoc [T]</code></td><td>type</td><td>Instances carry typed associations (used with <code>@constraint</code>)</td></tr>
+        <tr><td><code>@constraint expr</code></td><td>field in type</td><td>Boolean predicate evaluated at validation time</td></tr>
+        <tr><td><code>@doc "…"</code></td><td>field</td><td>Implementation hint, preserved in AST for downstream tooling</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- ── 6. FULL EXAMPLE ───────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">6</span> Full example — REST API with data flow</h2>
+    <p class="lead">
+      Type the whole API domain in one file: method enum, DB layer, response shapes,
+      endpoint shape, and the concrete endpoints that exist in your system.
+      The compiler validates structure and traces every response field back to a source.
+    </p>
+
+    <div class="box">
+      <div class="box-label ilk">api.ilk</div>
+      <pre>
+<span class="c">// ── Types ───────────────────────────────────────────────────────</span>
+
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span> | <span class="str">"DELETE"</span>
+
+<span class="kw">type</span> <span class="ty">DbMethod</span> = {
+    <span class="id">name</span>    <span class="ty">Concrete&lt;String&gt;</span>   <span class="c">// instance author picks the method name</span>
+    <span class="id">args</span>    {<span class="id">...</span>}
+
+    <span class="ann">@out</span>                       <span class="c">// result flows outward to callers</span>
+    <span class="id">returns</span> {<span class="id">...</span>}
+}
+
+<span class="kw">type</span> <span class="ty">HttpResponse</span> = {
+    <span class="id">status</span>  <span class="ty">Concrete&lt;Int&gt;</span>      <span class="c">// instance author picks status code</span>
+    <span class="id">body</span>    {<span class="id">...</span>}
+}
+
+<span class="kw">type</span> <span class="ty">Endpoint</span> = {
+    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">templateVars</span>(<span class="id">path</span>), <span class="id">v</span> =&gt; <span class="id">v</span> <span class="kw">in</span> <span class="id">keys</span>(<span class="id">params</span>))
+    <span class="id">path</span>    <span class="ty">Concrete&lt;String&gt;</span>
+
+    <span class="id">method</span>  <span class="ty">HttpMethod</span>
+    <span class="id">params</span>  {<span class="id">...</span>}
+    <span class="id">body</span>    {<span class="id">...</span>}
+
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">body</span>]    <span class="c">// db args must come from request</span>
+    <span class="id">db</span>      <span class="ty">DbMethod</span>
+
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">body</span>, <span class="id">db.returns</span>]  <span class="c">// responses may use db results too</span>
+    <span class="id">responses</span> []<span class="ty">HttpResponse</span>
+}
+
+<span class="kw">type</span> <span class="ty">Api</span> = {
+    <span class="id">endpoints</span> []<span class="ty">Endpoint</span>
+}
+
+
+<span class="c">// ── Instances ───────────────────────────────────────────────────</span>
+
+<span class="id">findUser</span> = <span class="ty">DbMethod</span> {
+    <span class="id">name</span>    <span class="str">"users.findById"</span>
+    <span class="id">args</span>    {<span class="id">userId</span> <span class="ty">Uuid</span>}
+    <span class="id">returns</span> {<span class="id">id</span> <span class="ty">Uuid</span>, <span class="id">name</span> <span class="ty">String</span>}
+}
+
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">path</span>    <span class="str">"/users/{id}"</span>
+    <span class="id">method</span>  <span class="str">"GET"</span>
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+    <span class="id">body</span>    {}
+
+    <span class="id">db</span> <span class="id">findUser</span> &amp; {
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>   <span class="c">// maps request param → db arg</span>
+    }
+
+    <span class="id">responses</span> [
         {
-            <span class="keyword">status</span> <span class="number">200</span>
-            <span class="keyword">body</span> {
-                <span class="keyword">id</span>   <span class="type">Uuid</span>   = <span class="keyword">db.returns.id</span>
-                <span class="keyword">name</span> <span class="type">String</span> = <span class="keyword">db.returns.name</span>
+            <span class="id">status</span>  <span class="str">200</span>              <span class="c">// Concrete → exempt from @source</span>
+            <span class="id">body</span>    {
+                <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>
+                <span class="id">name</span> <span class="ty">String</span> = <span class="id">db.returns.name</span>
             }
         }
         {
-            <span class="keyword">status</span> <span class="number">404</span>
-            <span class="keyword">body</span> { <span class="keyword">message</span> <span class="string">"User not found"</span> }
+            <span class="id">status</span>  <span class="str">404</span>
+            <span class="id">body</span>    {<span class="id">message</span> <span class="str">"User not found"</span>}
         }
     ]
 }
 
-<span class="type">Api</span> {
-    <span class="keyword">endpoints</span> [<span class="keyword">getUser</span>]
+<span class="ann">@main</span>
+<span class="id">api</span> = <span class="ty">Api</span> {
+    <span class="id">endpoints</span> [<span class="id">getUser</span>]
+}</pre>
+    </div>
+  </section>
+
+
+  <!-- ── 7. EVENT SOURCING ──────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">7</span> Full example — event sourcing with tag constraints</h2>
+    <p class="lead">
+      <code>@assoc</code> attaches typed metadata to instances.
+      <code>@constraint</code> validates relationships at compile time —
+      here, every event in a query must carry every tag the query declares.
+    </p>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">types</div>
+        <pre>
+<span class="c">// Tag: parametrized {field String} or a unique string</span>
+<span class="kw">type</span> <span class="ty">Tag</span> = {<span class="id">_</span> <span class="ty">String</span>} | <span class="ty">Concrete&lt;String&gt;</span>
+
+<span class="c">// Event carries open fields + a timestamp</span>
+<span class="c">// Instances can declare Tag associations</span>
+<span class="ann">@assoc</span> [<span class="ty">Tag</span>]
+<span class="kw">type</span> <span class="ty">Event</span> = {<span class="id">...</span>} &amp; {<span class="id">timestamp</span> <span class="ty">Int</span>}
+
+<span class="c">// Every event must carry every listed tag</span>
+<span class="kw">type</span> <span class="ty">QueryItem</span> = {
+    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">tags</span>, <span class="id">t</span> =&gt;
+        <span class="id">forall</span>(<span class="id">eventTypes</span>, <span class="id">e</span> =&gt; <span class="id">e</span>.<span class="id">assoc</span>(<span class="id">t</span>)))
+    <span class="id">eventTypes</span> []&amp;<span class="ty">Event</span>
+    <span class="id">tags</span>       []<span class="ty">Tag</span>
+}
+
+<span class="kw">type</span> <span class="ty">Command</span> = {
+    <span class="id">fields</span> {<span class="id">...</span>}
+    <span class="ann">@source</span> [<span class="id">fields</span>]
+    <span class="id">emits</span>  []<span class="ty">Event</span>
+    <span class="id">query</span>  []<span class="ty">QueryItem</span>
+}
+
+<span class="ann">@main</span>
+<span class="kw">type</span> <span class="ty">Board</span> = {<span class="id">commands</span> []<span class="ty">Command</span>}</pre>
+      </div>
+
+      <div class="box">
+        <div class="box-label ok">instances</div>
+        <pre>
+<span class="c">// Define reusable tags</span>
+<span class="id">userIdTag</span>   = <span class="ty">Tag</span> {<span class="id">userId</span> <span class="ty">String</span>}
+<span class="id">userNameTag</span> = <span class="ty">Tag</span> {<span class="id">name</span>   <span class="ty">String</span>}
+
+<span class="c">// Event associated with both tags</span>
+<span class="id">userRegistered</span> = <span class="ty">Event</span>&lt;<span class="id">userIdTag</span>, <span class="id">userNameTag</span>&gt; {
+    <span class="id">id</span>        <span class="ty">String</span>
+    <span class="id">name</span>      <span class="ty">String</span>
+    <span class="id">timestamp</span> <span class="ty">Int</span>
+}
+
+<span class="c">// registerUser command: fields flow into emitted event</span>
+<span class="id">registerUser</span> = <span class="ty">Command</span> {
+    <span class="id">fields</span> {<span class="id">userId</span> <span class="ty">String</span>, <span class="id">name</span> <span class="ty">String</span>}
+    <span class="id">emits</span>  [
+        <span class="id">userRegistered</span> &amp; {
+            <span class="id">id</span>   <span class="ty">String</span> = <span class="id">fields.userId</span>
+            <span class="id">name</span> <span class="ty">String</span> = <span class="id">fields.name</span>
+        }
+    ]
+    <span class="id">query</span>  [
+        {
+            <span class="id">eventTypes</span> [&amp;<span class="id">userRegistered</span>]
+            <span class="id">tags</span>       [<span class="id">userIdTag</span>]
+        }
+    ]
+}
+
+<span class="ann">@main</span>
+<span class="id">board</span> = <span class="ty">Board</span> {
+    <span class="id">commands</span> [<span class="id">registerUser</span>]
 }</pre>
       </div>
     </div>
   </section>
 
-  <!-- 0b. Event Sourcing Example -->
+
+  <!-- ── BASE TYPES ─────────────────────────────────────────────── -->
   <section class="section">
-    <h2>Event Sourcing Example</h2>
-    <p>Domain commands emit events with <code>@source</code> provenance. Tags are associated via <code>@assoc</code> and validated with <code>@constraint</code>.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">dcb-board-spec.ilk</div>
-        <pre><span class="comment">// Tag: either a parametrized field or a unique string</span>
-<span class="type">Parametrized</span> {<span class="keyword">_</span> <span class="type">String</span>}
-<span class="type">Unique</span> <span class="type">Concrete&lt;String&gt;</span>
-<span class="type">Tag</span> <span class="type">Parametrized</span> | <span class="type">Unique</span>
-
-<span class="comment">// Event: open struct + timestamp, can carry Tag associations</span>
-<span class="annotation">@assoc</span> [<span class="type">Tag</span>]
-<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
-
-<span class="comment">// QueryItem: all listed events must have all listed tags</span>
-<span class="type">QueryItem</span> {
-    <span class="annotation">@constraint</span> <span class="keyword">forall</span>(<span class="keyword">tags</span>, <span class="keyword">t</span> =&gt;
-        <span class="keyword">forall</span>(<span class="keyword">eventTypes</span>, <span class="keyword">e</span> =&gt; <span class="keyword">e</span>.<span class="keyword">assoc</span>(<span class="keyword">t</span>)))
-    <span class="keyword">eventTypes</span> []<span class="type">Event</span>
-    <span class="keyword">tags</span>       []<span class="type">Tag</span>
-}
-
-<span class="comment">// Command: fields drive emits via @source</span>
-<span class="type">Command</span> {
-    <span class="keyword">fields</span> {<span class="keyword">...</span>}
-    <span class="annotation">@source</span> [<span class="keyword">fields</span>]
-    <span class="keyword">emits</span> []<span class="type">Event</span>
-    <span class="keyword">query</span> []<span class="type">QueryItem</span>
-}
-
-<span class="annotation">@main</span>
-<span class="type">Board</span> {
-    <span class="keyword">commands</span> []<span class="type">Command</span>
-}</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">dcb-board-instance.kli</div>
-        <pre><span class="comment">// Define tags</span>
-<span class="keyword">userIdTag</span>   = <span class="type">Parametrized</span> {<span class="keyword">userId</span> <span class="type">String</span>}
-<span class="keyword">userNameTag</span> = <span class="type">Parametrized</span> {<span class="keyword">name</span> <span class="type">String</span>}
-<span class="keyword">commonTag</span>   = <span class="type">Parametrized</span> {<span class="keyword">x</span> <span class="type">String</span>}
-<span class="keyword">simpleTag</span>   = <span class="type">Unique</span> <span class="string">"simple-tag"</span>
-
-<span class="comment">// Events with associated tags</span>
-<span class="keyword">userRegistered</span> = <span class="type">Event</span>&lt;<span class="keyword">userIdTag</span>, <span class="keyword">userNameTag</span>, <span class="keyword">commonTag</span>&gt; {
-    <span class="keyword">id</span>   <span class="type">String</span>
-    <span class="keyword">name</span> <span class="type">String</span>
-}
-
-<span class="keyword">other</span> = <span class="type">Event</span>&lt;<span class="keyword">commonTag</span>, <span class="keyword">simpleTag</span>&gt; {
-    <span class="keyword">hello</span> <span class="type">String</span>
-}
-
-<span class="comment">// Command with @source provenance</span>
-<span class="keyword">registerUser</span> = <span class="type">Command</span> {
-    <span class="keyword">fields</span> {<span class="keyword">id</span> <span class="type">String</span>, <span class="keyword">name</span> <span class="type">String</span>, <span class="keyword">x</span> <span class="type">String</span>}
-
-    <span class="comment">// timestamp generated, id/name implicit match</span>
-    <span class="keyword">emits</span> [<span class="keyword">userRegistered</span> &amp; {<span class="keyword">timestamp</span> <span class="type">Int*</span>}]
-
-    <span class="comment">// query: both events have commonTag ✓</span>
-    <span class="keyword">query</span> [{
-        <span class="keyword">eventTypes</span> [<span class="keyword">userRegistered</span>, <span class="keyword">other</span>]
-        <span class="keyword">tags</span>       [<span class="keyword">commonTag</span>]
-    }]
-}
-
-<span class="type">Board</span> {<span class="keyword">commands</span> [<span class="keyword">registerUser</span>]}</pre>
-      </div>
-    </div>
+    <h2><span class="num">8</span> Base types</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>*</code></td><td>Wildcard — matches any type or value</td></tr>
+        <tr><td><code>Uuid</code></td><td>UUID value</td></tr>
+        <tr><td><code>String</code></td><td>UTF-8 string</td></tr>
+        <tr><td><code>Int</code></td><td>Integer</td></tr>
+        <tr><td><code>Float</code></td><td>Floating-point number</td></tr>
+        <tr><td><code>Bool</code></td><td>Boolean (<code>true</code> / <code>false</code>)</td></tr>
+        <tr><td><code>Date</code></td><td>Calendar date</td></tr>
+        <tr><td><code>Timestamp</code></td><td>Point in time</td></tr>
+        <tr><td><code>Money</code></td><td>Monetary amount</td></tr>
+      </tbody>
+    </table>
   </section>
 
-  <!-- 1. Base Types -->
-  <section class="section">
-    <h2>Base Types & Literals</h2>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// Base types</span>
-<span class="keyword">name</span>      <span class="type">String</span>
-<span class="keyword">id</span>        <span class="type">Uuid</span>
-<span class="keyword">count</span>     <span class="type">Int</span>
-<span class="keyword">rate</span>      <span class="type">Float</span>
-<span class="keyword">active</span>    <span class="type">Bool</span>
-<span class="keyword">data</span>      <span class="type">Any</span>              <span class="comment">// anything</span>
-<span class="keyword">created</span>   <span class="type">Date</span>
-<span class="keyword">timestamp</span> <span class="type">Timestamp</span>
-<span class="keyword">price</span>     <span class="type">Money</span>
-
-<span class="comment">// Constraint levels</span>
-<span class="keyword">label</span>     <span class="type">Concrete&lt;String&gt;</span>  <span class="comment">// kli picks one</span>
-<span class="keyword">version</span>   <span class="number">1</span>                 <span class="comment">// exact match</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'bt-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'bt-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="bt-valid">
-          <pre><span class="keyword">name</span>      <span class="type">String</span>           <span class="comment">// open type</span>
-<span class="keyword">id</span>        <span class="type">Uuid</span>
-<span class="keyword">count</span>     <span class="type">Int</span>
-<span class="keyword">rate</span>      <span class="type">Float</span>
-<span class="keyword">active</span>    <span class="type">Bool</span>
-<span class="keyword">data</span>      <span class="string">"text"</span>           <span class="comment">// any type works</span>
-<span class="keyword">created</span>   <span class="type">Date</span>
-<span class="keyword">timestamp</span> <span class="type">Timestamp</span>
-<span class="keyword">price</span>     <span class="type">Money</span>
-
-<span class="keyword">label</span>     <span class="string">"webhook"</span>        <span class="comment">// concrete literal</span>
-<span class="keyword">version</span>   <span class="number">1</span>                <span class="comment">// exact match</span></pre>
-        </div>
-        <div class="pane" id="bt-invalid">
-          <pre><span class="keyword">name</span>      <span class="error">Int</span>              <span class="error-msg">// ERROR: wrong type</span>
-<span class="keyword">label</span>     <span class="error">String</span>           <span class="error-msg">// ERROR: needs literal</span>
-<span class="keyword">version</span>   <span class="error">2</span>                <span class="error-msg">// ERROR: must be 1</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 2. Value Constraints -->
-  <section class="section">
-    <h2>Value Constraints</h2>
-    <p>Three levels: Open (any value), Concrete (kli picks one), Schema-fixed (exact value). Types must match exactly — kli cannot narrow <code>String</code> to <code>"hello"</code>.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// Open: any string</span>
-<span class="keyword">name</span> <span class="type">String</span>
-
-<span class="comment">// kli-fixed: kli picks one</span>
-<span class="keyword">label</span> <span class="type">Concrete&lt;String&gt;</span>
-
-<span class="comment">// Schema-fixed: must be exactly 1</span>
-<span class="keyword">version</span> <span class="number">1</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'vc-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'vc-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="vc-valid">
-          <pre><span class="keyword">name</span>    <span class="type">String</span>       <span class="comment">// open — just type</span>
-<span class="keyword">label</span>   <span class="string">"webhook"</span>    <span class="comment">// concrete — kli picks value</span>
-<span class="keyword">version</span> <span class="number">1</span>            <span class="comment">// schema-fixed — exact match</span></pre>
-        </div>
-        <div class="pane" id="vc-invalid">
-          <pre><span class="keyword">name</span>    <span class="error">Int</span>       <span class="error-msg">// ERROR: wrong type</span>
-<span class="keyword">label</span>   <span class="error">String</span>    <span class="error-msg">// ERROR: needs literal, not open type</span>
-<span class="keyword">version</span> <span class="error">2</span>         <span class="error-msg">// ERROR: must be exactly 1</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 3. Structs -->
-  <section class="section">
-    <h2>Structs</h2>
-    <p><code>{}</code> = empty, <code>{_}</code> = exactly 1 field, <code>{_ String}</code> = 1 field typed, <code>{_, _}</code> = exactly 2, <code>{...}</code> = any number</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// cardinality patterns</span>
-<span class="type">Empty</span> {}                        <span class="comment">// zero fields</span>
-<span class="type">TagField</span> {<span class="keyword">_</span>}                   <span class="comment">// exactly 1 field</span>
-<span class="type">TypedTag</span> {<span class="keyword">_</span> <span class="type">String</span>}            <span class="comment">// 1 field, typed</span>
-<span class="type">Pair</span> {<span class="keyword">_</span>, <span class="keyword">_</span>}                    <span class="comment">// exactly 2 fields</span>
-<span class="type">TypedPair</span> {<span class="keyword">_</span> <span class="type">Int</span>, <span class="keyword">_</span> <span class="type">String</span>}   <span class="comment">// 2 fields, typed</span>
-
-<span class="comment">// open + required</span>
-<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
-
-<span class="comment">// specific fields</span>
-<span class="type">User</span> {<span class="keyword">id</span> <span class="type">Uuid</span>, <span class="keyword">name</span> <span class="type">String</span>}</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'struct-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'struct-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="struct-valid">
-          <pre><span class="keyword">empty</span> = <span class="type">Empty</span> {}
-<span class="keyword">tag</span> = <span class="type">TagField</span> {<span class="keyword">userId</span> <span class="type">String</span>}
-<span class="keyword">typed</span> = <span class="type">TypedTag</span> {<span class="keyword">x</span> <span class="type">String</span>}
-<span class="keyword">pair</span> = <span class="type">Pair</span> {<span class="keyword">a</span> <span class="type">Int</span>, <span class="keyword">b</span> <span class="type">Bool</span>}
-<span class="keyword">tpair</span> = <span class="type">TypedPair</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">String</span>}
-
-<span class="keyword">evt</span> = <span class="type">Event</span> {
-    <span class="keyword">foo</span>       <span class="type">String</span>
-    <span class="keyword">timestamp</span> <span class="type">Int</span>
-}
-
-<span class="keyword">user</span> = <span class="type">User</span> {
-    <span class="keyword">id</span>   <span class="type">Uuid</span>
-    <span class="keyword">name</span> <span class="type">String</span>
-}</pre>
-        </div>
-        <div class="pane" id="struct-invalid">
-          <pre><span class="comment">// ERROR: {_} requires exactly 1 field</span>
-<span class="keyword">tag</span> = <span class="type">TagField</span> {
-    <span class="keyword">a</span> <span class="type">String</span>
-    <span class="error">b</span> <span class="type">String</span>  <span class="error-msg">// too many fields</span>
-}
-
-<span class="comment">// ERROR: {_ String} needs String type</span>
-<span class="keyword">typed</span> = <span class="type">TypedTag</span> {<span class="keyword">x</span> <span class="error">Int</span>}  <span class="error-msg">// must be String</span>
-
-<span class="comment">// ERROR: missing required timestamp</span>
-<span class="keyword">evt</span> = <span class="type">Event</span> {
-    <span class="keyword">foo</span> <span class="type">String</span>
-}  <span class="error-msg">// missing: timestamp</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 4. Lists -->
-  <section class="section">
-    <h2>Lists</h2>
-    <p><code>[]T</code> = zero or more, <code>[N]T</code> = exactly N elements</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="keyword">events</span> []<span class="type">Event</span>    <span class="comment">// 0+ events</span>
-<span class="keyword">tags</span>   [<span class="number">3</span>]<span class="type">Tag</span>     <span class="comment">// exactly 3 tags</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'list-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'list-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="list-valid">
-          <pre><span class="keyword">events</span> [<span class="keyword">evt1</span>, <span class="keyword">evt2</span>]
-<span class="keyword">tags</span>   [<span class="keyword">tag1</span>, <span class="keyword">tag2</span>, <span class="keyword">tag3</span>]</pre>
-        </div>
-        <div class="pane" id="list-invalid">
-          <pre><span class="keyword">events</span> [<span class="keyword">evt1</span>]  <span class="comment">// OK: []T allows any count</span>
-<span class="keyword">tags</span>   [<span class="keyword">tag1</span>, <span class="keyword">tag2</span>]  <span class="error-msg">// ERROR: [3]T needs exactly 3</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 5. Blocks & Optional -->
-  <section class="section">
-    <h2>Blocks & Optional Fields</h2>
-    <p>ilk: all fields optional by default. kli: <code>?</code> marks fields that can't be relied upon</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="type">User</span> {
-    <span class="keyword">id</span>    <span class="type">Uuid</span>
-    <span class="keyword">name</span>  <span class="type">String</span>
-    <span class="keyword">email</span> <span class="type">String</span>
-}
-<span class="comment">// all fields optional by default</span>
-<span class="comment">// presence enforced by @source</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'opt-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'opt-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="opt-valid">
-          <pre><span class="keyword">fields</span> {
-    <span class="keyword">id</span>     <span class="type">String</span>
-    <span class="keyword">email?</span> <span class="type">String</span>  <span class="comment">// optional — don't rely on it</span>
-}
-
-<span class="comment">// OK: optional target ← optional source</span>
-<span class="keyword">emits</span> [<span class="keyword">evt</span> &amp; {
-    <span class="keyword">email?</span> <span class="type">String</span> = <span class="keyword">fields.email</span>
-}]</pre>
-        </div>
-        <div class="pane" id="opt-invalid">
-          <pre><span class="keyword">fields</span> {
-    <span class="keyword">email?</span> <span class="type">String</span>  <span class="comment">// optional</span>
-}
-
-<span class="comment">// ERROR: required relies on optional</span>
-<span class="keyword">emits</span> [<span class="keyword">evt</span> &amp; {
-    <span class="keyword">email</span> <span class="error">String</span> = <span class="keyword">fields.email</span>
-}]  <span class="error-msg">// fields.email is optional</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 5b. @doc Annotation -->
-  <section class="section">
-    <h2>@doc Annotation</h2>
-    <p>kli-only: hints for runtime implementation (not in ilk)</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// No ilk equivalent — kli only</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <pre><span class="annotation">@doc</span> <span class="string">"multiply qty * unitPrice"</span>
-<span class="keyword">totalAmount</span> <span class="type">Int</span> = <span class="keyword">compute</span>(<span class="keyword">fields.qty</span>, <span class="keyword">fields.unitPrice</span>)
-
-<span class="annotation">@doc</span> <span class="string">"generate UUID v4 at runtime"</span>
-<span class="keyword">correlationId</span> <span class="type">Uuid*</span></pre>
-      </div>
-    </div>
-  </section>
-
-  <!-- 6. References -->
-  <section class="section">
-    <h2>References</h2>
-    <p><code>&amp;T</code> = reference to a binding of type T (unquoted name, not string). No data flows through references — they identify <em>which</em> binding, not instantiate it.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="type">Query</span> {
-    <span class="keyword">eventTypes</span> []&amp;<span class="type">Event</span>  <span class="comment">// refs to Event bindings</span>
-}</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'ref-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'ref-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="ref-valid">
-          <pre><span class="keyword">cartCreated</span> = <span class="type">Event</span> {...}
-<span class="keyword">itemAdded</span>   = <span class="type">Event</span> {...}
-
-<span class="keyword">q</span> = <span class="type">Query</span> {
-    <span class="keyword">eventTypes</span> [<span class="keyword">cartCreated</span>, <span class="keyword">itemAdded</span>]
-}</pre>
-        </div>
-        <div class="pane" id="ref-invalid">
-          <pre><span class="comment">// ERROR: quoted string instead of binding</span>
-<span class="keyword">q</span> = <span class="type">Query</span> {
-    <span class="keyword">eventTypes</span> [<span class="error">"cartCreated"</span>]  <span class="error-msg">// must be unquoted</span>
-}
-
-<span class="comment">// ERROR: non-existent binding</span>
-<span class="keyword">q2</span> = <span class="type">Query</span> {
-    <span class="keyword">eventTypes</span> [<span class="error">unknownEvent</span>]  <span class="error-msg">// not defined</span>
-}</pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 7. Intersection -->
-  <section class="section">
-    <h2>Intersection Types</h2>
-    <p><code>A &amp; B</code> = must satisfy both; right side wins on conflict</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// open struct + required timestamp</span>
-<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
-
-<span class="comment">// conflict: right side wins</span>
-<span class="comment">// {id Uuid} & {id String} → {id String}</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'int-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'int-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="int-valid">
-          <pre><span class="keyword">evt</span> = <span class="type">Event</span> {
-    <span class="keyword">name</span>      <span class="type">String</span>
-    <span class="keyword">extra</span>     <span class="type">Bool</span>
-    <span class="keyword">timestamp</span> <span class="type">Int</span>  <span class="comment">// required by &</span>
-}</pre>
-        </div>
-        <div class="pane" id="int-invalid">
-          <pre><span class="comment">// ERROR: timestamp has wrong type</span>
-<span class="keyword">evt</span> = <span class="type">Event</span> {
-    <span class="keyword">name</span>      <span class="type">String</span>
-    <span class="keyword">timestamp</span> <span class="error">String</span>  <span class="error-msg">// must be Int</span>
-}</pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 8. Union -->
-  <section class="section">
-    <h2>Union Types</h2>
-    <p><code>A | B</code> = exactly one variant; discriminated by name</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// Named block branches</span>
-<span class="type">Success</span> { <span class="keyword">value</span> <span class="type">Bool</span> }
-<span class="type">Error</span>   { <span class="keyword">message</span> <span class="type">String</span> }
-<span class="type">Response</span> <span class="type">Success</span> | <span class="type">Error</span>
-
-<span class="comment">// Identifier-only variants</span>
-<span class="type">Status</span> <span class="type">Pending</span> | <span class="type">Active</span> | <span class="type">Archived</span>
-
-<span class="comment">// String literal union</span>
-<span class="type">HttpMethod</span> <span class="string">"GET"</span> | <span class="string">"POST"</span> | <span class="string">"PUT"</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'union-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'union-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="union-valid">
-          <pre><span class="keyword">r1</span> = <span class="type">Success</span> { <span class="keyword">value</span> <span class="keyword">true</span> }
-<span class="keyword">r2</span> = <span class="type">Error</span> { <span class="keyword">message</span> <span class="type">String</span> }
-
-<span class="keyword">s</span> = <span class="type">Active</span>
-
-<span class="keyword">method</span> <span class="string">"POST"</span></pre>
-        </div>
-        <div class="pane" id="union-invalid">
-          <pre><span class="comment">// ERROR: unknown variant</span>
-<span class="keyword">r</span> = <span class="error">Unknown</span> { <span class="keyword">x</span> <span class="type">Int</span> }  <span class="error-msg">// not Success|Error</span>
-
-<span class="comment">// ERROR: invalid literal</span>
-<span class="keyword">method</span> <span class="error">"DELETE"</span>  <span class="error-msg">// not in "GET"|"POST"|"PUT"</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 9. Associated Values -->
-  <section class="section">
-    <h2>Associated Values</h2>
-    <p><code>@assoc [T]</code> = instances can carry references to T bindings in angle brackets. Not generics — just metadata attachments for <code>@constraint</code> predicates like <code>e.assoc(t)</code>.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// Tag variants (see Union section)</span>
-<span class="type">Parametrized</span> {<span class="keyword">_</span> <span class="type">String</span>}
-<span class="type">Unique</span> <span class="type">Concrete&lt;String&gt;</span>
-<span class="type">Tag</span> <span class="type">Parametrized</span> | <span class="type">Unique</span>
-
-<span class="annotation">@assoc</span> [<span class="type">Tag</span>]
-<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'assoc-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'assoc-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="assoc-valid">
-          <pre><span class="keyword">userIdTag</span> = <span class="type">Parametrized</span> {<span class="keyword">userId</span> <span class="type">String</span>}
-<span class="keyword">commonTag</span> = <span class="type">Parametrized</span> {<span class="keyword">x</span> <span class="type">String</span>}
-
-<span class="comment">// with associations</span>
-<span class="keyword">evt</span> = <span class="type">Event</span>&lt;<span class="keyword">userIdTag</span>, <span class="keyword">commonTag</span>&gt; {
-    <span class="keyword">id</span>        <span class="type">String</span>
-    <span class="keyword">timestamp</span> <span class="type">Int</span>
-}
-
-<span class="comment">// no associations — omit brackets</span>
-<span class="keyword">other</span> = <span class="type">Event</span> {
-    <span class="keyword">x</span>         <span class="type">String</span>
-    <span class="keyword">timestamp</span> <span class="type">Int</span>
-}</pre>
-        </div>
-        <div class="pane" id="assoc-invalid">
-          <pre><span class="comment">// ERROR: wrong type in assoc</span>
-<span class="keyword">notATag</span> = <span class="type">SomeOther</span> {...}
-
-<span class="keyword">evt</span> = <span class="type">Event</span>&lt;<span class="error">notATag</span>&gt; {...}
-<span class="error-msg">// notATag is not a Tag</span>
-
-<span class="comment">// ERROR: empty brackets not allowed</span>
-<span class="keyword">evt2</span> = <span class="type">Event</span><span class="error">&lt;&gt;</span> {...}  <span class="error-msg">// omit instead</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 10. Field Origins -->
-  <section class="section">
-    <h2>Field Origins (@source)</h2>
-    <p><code>@source [fields]</code> constrains where data can come from. Each target field must trace to a source: <code>Type*</code> = generated (exempt), <code>= path</code> = mapped, <code>= compute(...)</code> = derived from multiple sources.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="type">Command</span> {
-    <span class="keyword">fields</span> {<span class="keyword">...</span>}
-
-    <span class="annotation">@source</span> [<span class="keyword">fields</span>]
-    <span class="keyword">emits</span> []<span class="type">Event</span>
-}</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'src-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'src-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="src-valid">
-          <pre><span class="keyword">cmd</span> = <span class="type">Command</span> {
-    <span class="keyword">fields</span> {
-        <span class="keyword">id</span>    <span class="type">String</span>
-        <span class="keyword">name</span>  <span class="type">String</span>
-        <span class="keyword">qty</span>   <span class="type">Int</span>
-        <span class="keyword">price</span> <span class="type">Int</span>
-    }
-
-    <span class="keyword">emits</span> [<span class="keyword">userRegistered</span> &amp; {
-        <span class="keyword">timestamp</span> <span class="type">Int*</span>           <span class="comment">// generated</span>
-        <span class="keyword">id</span>        <span class="type">String</span>         <span class="comment">// implicit match</span>
-        <span class="keyword">custId</span>    <span class="type">String</span> = <span class="keyword">fields.id</span>  <span class="comment">// mapped</span>
-        <span class="keyword">total</span>     <span class="type">Int</span> = <span class="keyword">compute</span>(<span class="keyword">fields.qty</span>, <span class="keyword">fields.price</span>)
-    }]
-}</pre>
-        </div>
-        <div class="pane" id="src-invalid">
-          <pre><span class="comment">// ERROR: String cannot narrow to Uuid</span>
-<span class="keyword">cmd</span> = <span class="type">Command</span> {
-    <span class="keyword">fields</span> {
-        <span class="keyword">id</span>   <span class="type">String</span>
-    }
-
-    <span class="keyword">emits</span> [<span class="keyword">userRegistered</span> &amp; {
-        <span class="keyword">id</span> <span class="error">Uuid</span>  <span class="error-msg">// String </: Uuid, needs compute()</span>
-    }]
-}</pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 10b. Subtyping -->
-  <section class="section">
-    <h2>Subtyping</h2>
-    <p>Closed structs require exact match. Lists and references are covariant.</p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="comment">// Closed struct — exact fields</span>
-<span class="type">Point</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">Int</span>}
-
-<span class="comment">// Open with required — width subtyping ok</span>
-<span class="type">Event</span> {<span class="keyword">...</span>} &amp; {<span class="keyword">timestamp</span> <span class="type">Int</span>}
-
-<span class="comment">// Lists covariant</span>
-<span class="keyword">events</span> []<span class="type">Event</span>
-
-<span class="comment">// References covariant</span>
-<span class="keyword">ref</span> &amp;<span class="type">Event</span></pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'sub-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'sub-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="sub-valid">
-          <pre><span class="comment">// Exact match for closed struct</span>
-<span class="keyword">p</span> = <span class="type">Point</span> {<span class="keyword">x</span> <span class="type">Int</span>, <span class="keyword">y</span> <span class="type">Int</span>}
-
-<span class="comment">// Open struct: extra fields ok</span>
-<span class="keyword">evt</span> = <span class="type">Event</span> {
-    <span class="keyword">name</span>      <span class="type">String</span>
-    <span class="keyword">timestamp</span> <span class="type">Int</span>
-}
-
-<span class="comment">// List accepts Event subtypes</span>
-<span class="keyword">events</span> [<span class="keyword">evt</span>]
-
-<span class="comment">// Ref accepts Event subtype</span>
-<span class="keyword">ref</span> <span class="keyword">evt</span></pre>
-        </div>
-        <div class="pane" id="sub-invalid">
-          <pre><span class="comment">// ERROR: extra field in closed struct</span>
-<span class="keyword">p</span> = <span class="type">Point</span> {
-    <span class="keyword">x</span> <span class="type">Int</span>
-    <span class="keyword">y</span> <span class="type">Int</span>
-    <span class="error">z</span> <span class="type">Int</span>  <span class="error-msg">// not allowed</span>
-}
-
-<span class="comment">// ERROR: missing field in closed struct</span>
-<span class="keyword">p2</span> = <span class="type">Point</span> {
-    <span class="keyword">x</span> <span class="type">Int</span>
-}  <span class="error-msg">// missing: y</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 11. Constraints -->
-  <section class="section">
-    <h2>Constraints</h2>
-    <p><code>@constraint</code> with <code>forall</code>, <code>exists</code>, <code>unique</code>, <code>count</code></p>
-    <div class="columns">
-      <div class="col">
-        <div class="col-header ilk">schema.ilk</div>
-        <pre><span class="type">QueryItem</span> {
-    <span class="annotation">@constraint</span> <span class="keyword">forall</span>(<span class="keyword">tags</span>, <span class="keyword">t</span> =&gt;
-        <span class="keyword">forall</span>(<span class="keyword">eventTypes</span>, <span class="keyword">e</span> =&gt; <span class="keyword">e</span>.<span class="keyword">assoc</span>(<span class="keyword">t</span>)))
-
-    <span class="keyword">eventTypes</span> []<span class="type">Event</span>
-    <span class="keyword">tags</span>       []<span class="type">Tag</span>
-}
-
-<span class="comment">// More constraint examples:</span>
-<span class="annotation">@constraint</span> <span class="keyword">unique</span>(<span class="keyword">items</span>, <span class="keyword">i</span> =&gt; <span class="keyword">i</span>.<span class="keyword">id</span>)
-<span class="annotation">@constraint</span> <span class="keyword">count</span>(<span class="keyword">items</span>) &gt;= <span class="number">1</span>
-<span class="annotation">@constraint</span> <span class="keyword">exists</span>(<span class="keyword">events</span>, <span class="keyword">e</span> =&gt; <span class="keyword">e</span>.<span class="keyword">priority</span>)</pre>
-      </div>
-      <div class="col">
-        <div class="col-header kli">instance.kli</div>
-        <div class="tabs">
-          <div class="tab active" onclick="showTab(this, 'con-valid')">&#10003; Valid</div>
-          <div class="tab invalid" onclick="showTab(this, 'con-invalid')">&#10007; Invalid</div>
-        </div>
-        <div class="pane active" id="con-valid">
-          <pre><span class="comment">// commonTag is associated with both events</span>
-<span class="keyword">evt1</span> = <span class="type">Event</span>&lt;<span class="keyword">commonTag</span>&gt; {...}
-<span class="keyword">evt2</span> = <span class="type">Event</span>&lt;<span class="keyword">commonTag</span>&gt; {...}
-
-<span class="keyword">q</span> = <span class="type">QueryItem</span> {
-    <span class="keyword">eventTypes</span> [<span class="keyword">evt1</span>, <span class="keyword">evt2</span>]
-    <span class="keyword">tags</span>       [<span class="keyword">commonTag</span>]
-}  <span class="comment">// all events have all tags</span></pre>
-        </div>
-        <div class="pane" id="con-invalid">
-          <pre><span class="comment">// ERROR: evt2 not associated with tag1</span>
-<span class="keyword">evt1</span> = <span class="type">Event</span>&lt;<span class="keyword">tag1</span>&gt; {...}
-<span class="keyword">evt2</span> = <span class="type">Event</span>&lt;<span class="keyword">tag2</span>&gt; {...}
-
-<span class="keyword">q</span> = <span class="type">QueryItem</span> {
-    <span class="keyword">eventTypes</span> [<span class="keyword">evt1</span>, <span class="keyword">evt2</span>]
-    <span class="keyword">tags</span>       [<span class="error">tag1</span>]
-}  <span class="error-msg">// evt2.assoc(tag1) = false</span></pre>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <footer style="margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">
-    See <a href="ilk-spec.md" style="color: var(--accent);">ilk-spec.md</a> and <a href="kli-spec.md" style="color: var(--accent);">kli-spec.md</a> for full specifications.
+  <footer>
+    ilk language — <a href="spec.md" style="color:var(--accent)">full specification</a>
   </footer>
 
-  <script>
-    function showTab(el, paneId) {
-      const container = el.closest('.col');
-      container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      container.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-      el.classList.add('active');
-      document.getElementById(paneId).classList.add('active');
-    }
-  </script>
+</div>
 </body>
 </html>

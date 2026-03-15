@@ -2,150 +2,143 @@
 layout: home
 hero:
   name: ilk
-  text: Single-file data modeling
-  tagline: Where data provenance matters
+  text: Domain modeling in one file
+  tagline: Define your types. Name your entities. Trace your data.
   actions:
     - theme: brand
       text: Language Specification
       link: /spec
+    - theme: alt
+      text: Interactive Examples
+      link: /index.html
 features:
-  - title: Data Flow Validation
-    details: Traditional schemas validate shape. ilk validates data flow — where does each field come from?
-  - title: Single File
-    details: Type declarations and instance bindings live in one .ilk file. Types define the abstract vocabulary; instances name the concrete entities.
-  - title: Not Runtime Data
-    details: A .ilk file is a domain model — a catalog of named entities and structures. Runtime values live downstream.
+  - icon: 🗂️
+    title: Types and instances together
+    details: One .ilk file holds both type declarations (what shapes exist) and instance bindings (the named entities in your domain). No separate schema files — the catalog lives with the model.
+  - icon: 🔍
+    title: Data provenance, not just shape
+    details: "@source declares where a field's data must come from. Every response field must be traced back to a declared source — params, request body, or DB result. The compiler catches missing mappings."
+  - icon: ✅
+    title: Compile-time validation
+    details: Structure, data flow, and domain constraints are all checked before runtime. If a field is untraced, a path is invalid, or a constraint fails, you get a clear error at compile time.
 ---
 
-## Quick Example
+## The idea in 30 seconds
 
-### API Endpoint with Data Flow
+A `.ilk` file has two sections: **type declarations** and **instance bindings**.
+
+- **Types** define abstract shapes — what fields exist, what types they have, what constraints apply.
+- **Instances** name the concrete entities in *your* domain — not runtime values, but a typed catalog of the things your system knows about.
 
 ```ilk
-// Type declarations
-
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
-
-type DbMethod = {
-    name    Concrete<String>
-    args    {...}
-
-    @out // data flows out — exempt from @source checks
-    returns {...}
+// Type declaration
+type User = {
+    id    Uuid
+    name  String
+    role  "admin" | "guest"
 }
 
-type HttpResponse = {
-    status Concrete<Int>
-    body   {...}
+// Instance bindings — the users that exist in this domain
+adminUser = User {
+    id   Uuid
+    name String
+    role "admin"   // type-fixed: must be exactly "admin"
 }
 
+guestUser = User {
+    id   Uuid
+    name String
+    role "guest"
+}
+```
+
+## The key feature: data flow
+
+Traditional schemas validate *shape*. ilk also validates *where data comes from*.
+
+`@source` declares which upstream fields may supply data to a downstream field.
+Every open field must be explicitly mapped — the compiler checks it.
+
+```ilk
 type Endpoint = {
-    // ensure all template variables are declared in params
-    @constraint forall(templateVars(path), v => v in keys(params))
-    path    Concrete<String>
-    method  HttpMethod
     params  {...}
     body    {...}
 
-    @source [params, body]
-    db DbMethod
+    @source [params, body]       // db args must come from the request
+    db      DbMethod
 
-    @source [params, body, db.returns]
+    @source [params, body, db.returns]   // responses may use db results too
     responses []HttpResponse
 }
 
-type Api = {
-    endpoints []Endpoint
-}
-
-
-// Instance bindings
-
-findUser = DbMethod {
-    name    "users.findById"
-    args    {userId Uuid}
-    returns {id Uuid, name String}
-}
-
+// In an instance, every field assignment is checked against @source
 getUser = Endpoint {
-    path   "/users/{id}"
-    method "GET"
     params {id Uuid}
+    body   {}
 
-    // field name differs from source — explicit mapping required
-    db findUser & {
-        userId Uuid = params.id
+    db findUserDb & {
+        userId Uuid = params.id    // ✓ params is in @source
     }
 
     responses [
         {
-            status 200
+            status 200             // Concrete<Int> — exempt from @source
             body {
-                id   Uuid   = db.returns.id
-                name String = db.returns.name
+                id   Uuid   = db.returns.id     // ✓
+                name String = db.returns.name   // ✓
             }
         }
         {
             status 404
-            body {
-                error  "User not found"
-                userId Uuid = params.id
-            }
+            body {message "User not found"}     // ✓ literal — exempt
         }
     ]
 }
-
-@main
-api = Api {
-    endpoints [getUser]
-}
 ```
 
-## Quick Reference
+## Quick reference
 
-### Base Types
-`*` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
+### Value constraint levels
 
-### Value Constraints
-| type | instance | meaning |
-|------|----------|---------|
-| `String` | `String` | open - any value at runtime |
-| `Concrete<String>` | `"hello"` | instance-fixed - author picks one |
-| `"hello"` | `"hello"` | type-fixed - exact match |
+| Type form | Instance form | Meaning |
+|-----------|---------------|---------|
+| `String` | `String` | Open — any value at runtime |
+| `Concrete<String>` | `"webhook"` | Instance-fixed — instance author picks one |
+| `"POST"` | `"POST"` | Type-fixed — must match exactly |
 
 ### Structs
 ```ilk
-{_}              // exactly 1 field (= {_ *})
+{_}              // exactly 1 field of any name/type
 {_ String}       // exactly 1 field, type String
-{_, _}           // exactly 2 fields
-{...}            // any fields
-{id Uuid}        // specific fields
+{...}            // any fields (open)
+{id Uuid}        // specific named fields
 {...} & {id Uuid} // any fields + required id
 ```
 
-### Lists & References
+### Lists
 ```ilk
-[]Event          // 0+ events
-[3]Tag           // exactly 3
-[1..]Tag         // 1+ tags
-[2..5]Tag        // 2 to 5 tags
-[..10]Tag        // 0 to 10 tags
-&Event           // reference to binding (no data flow)
+[]Event      // 0+ elements
+[3]Tag       // exactly 3
+[1..]Tag     // 1 or more
+[2..5]Tag    // 2 to 5
+[..10]Tag    // up to 10
+&Event       // reference to a binding (no data flow)
+[]&Event     // list of references
 ```
 
 ### Unions
 ```ilk
 type HttpMethod = "GET" | "POST" | "PUT"   // literal union
 type Status = Pending | Active | Archived  // identifier union
-type Response = Success | Error            // block union
+type Tag = {_ String} | Concrete<String>   // mixed
 ```
 
 ### Annotations
-| Annotation | Target | Purpose |
-|------------|--------|---------|
-| `@main` | instance | entry point for validation |
-| `@assoc [T]` | type | instances carry refs to T |
-| `@source [fields]` | field/list | data provenance constraint |
-| `@out` | field | output field - exempt from @source, can be referenced |
-| `@constraint expr` | type | boolean predicate |
-| `@doc "..."` | field | implementation hint |
+| Annotation | Purpose |
+|------------|---------|
+| `@main` | Entry point — compiler validates from here |
+| `@source [fields]` | Data provenance: values must trace back to *fields* |
+| `@out` | Output field — exempt from `@source`, can be referenced by callers |
+| `@assoc [T]` | Instances carry typed associations (used with `@constraint`) |
+| `@constraint expr` | Boolean predicate validated at compile time |
+| `@doc "…"` | Implementation hint, preserved in AST |
