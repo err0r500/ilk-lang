@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "cp ../ilk-spec.md ../kli-spec.md .",
-    "predev": "cp ../ilk-spec.md ../kli-spec.md .",
+    "prebuild": "cp ../spec.md ./ilk-spec.md",
+    "predev": "cp ../spec.md ./ilk-spec.md",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview"
