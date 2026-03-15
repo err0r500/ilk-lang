@@ -1,0 +1,29 @@
+{
+  "grammars": [
+    {
+      "name": "ilk",
+      "camelcase": "Ilk",
+      "scope": "source.ilk",
+      "path": ".",
+      "file-types": [
+        "ilk"
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for ilk",
+    "links": {
+      "repository": "https://github.com/tree-sitter/tree-sitter-ilk"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "python": true,
+    "rust": true,
+    "swift": true
+  }
+}

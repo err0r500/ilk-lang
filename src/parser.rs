@@ -1,5 +1,5 @@
+use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::ilk::ast::*;
 use crate::span::{Spanned, S};
 use chumsky::prelude::*;
 use std::path::Path;
@@ -7,58 +7,11 @@ use std::path::Path;
 type ParserInput<'a> = &'a str;
 type ParserExtra<'a> = extra::Err<Rich<'a, char>>;
 
+// ============= Common Parsers =============
+
 fn ident<'a>() -> impl Parser<'a, ParserInput<'a>, S<String>, ParserExtra<'a>> + Clone {
     text::ident()
         .map_with(|s: &str, e| Spanned::from_simple(s.to_string(), e.span()))
-}
-
-fn base_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    choice((
-        just("*").to(BaseType::Wildcard),
-        just("Uuid").to(BaseType::Uuid),
-        just("String").to(BaseType::String),
-        just("Int").to(BaseType::Int),
-        just("Float").to(BaseType::Float),
-        just("Bool").to(BaseType::Bool),
-        just("Date").to(BaseType::Date),
-        just("Timestamp").to(BaseType::Timestamp),
-        just("Money").to(BaseType::Money),
-    ))
-    .map(TypeExpr::Base)
-    .map_with(|t, e| Spanned::from_simple(t, e.span()))
-}
-
-fn lit_string<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    just('"')
-        .ignore_then(none_of('"').repeated().to_slice())
-        .then_ignore(just('"'))
-        .map(|s: &str| TypeExpr::LitString(s.to_string()))
-        .map_with(|t, e| Spanned::from_simple(t, e.span()))
-}
-
-fn lit_int<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    just('-')
-        .or_not()
-        .then(text::int(10))
-        .to_slice()
-        .map(|s: &str| TypeExpr::LitInt(s.parse().unwrap()))
-        .map_with(|t, e| Spanned::from_simple(t, e.span()))
-}
-
-fn lit_bool<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    choice((just("true").to(true), just("false").to(false)))
-        .map(TypeExpr::LitBool)
-        .map_with(|t, e| Spanned::from_simple(t, e.span()))
-}
-
-fn concrete<'a>(
-    type_expr: impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone,
-) -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    just("Concrete<")
-        .ignore_then(type_expr)
-        .then_ignore(just('>'))
-        .map(|t| TypeExpr::Concrete(Box::new(t)))
-        .map_with(|t, e| Spanned::from_simple(t, e.span()))
 }
 
 fn ws<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone {
@@ -77,7 +30,6 @@ fn ws_nl<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone 
     .ignored()
 }
 
-// Separator for struct fields and list elements: whitespace, then comma or newline, then whitespace
 fn sep<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone {
     ws_nl()
         .then(just(',').or_not())
@@ -85,26 +37,72 @@ fn sep<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone {
         .ignored()
 }
 
+// ============= Type Expression Parsers =============
+
+fn base_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    choice((
+        just("*").to(BaseType::Wildcard),
+        just("Uuid").to(BaseType::Uuid),
+        just("String").to(BaseType::String),
+        just("Int").to(BaseType::Int),
+        just("Float").to(BaseType::Float),
+        just("Bool").to(BaseType::Bool),
+        just("Date").to(BaseType::Date),
+        just("Timestamp").to(BaseType::Timestamp),
+        just("Money").to(BaseType::Money),
+    ))
+    .map(TypeExpr::Base)
+    .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
+fn lit_string_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    just('"')
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .map(|s: &str| TypeExpr::LitString(s.to_string()))
+        .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
+fn lit_int_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    just('-')
+        .or_not()
+        .then(text::int(10))
+        .to_slice()
+        .map(|s: &str| TypeExpr::LitInt(s.parse().expect("valid int literal from parser")))
+        .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
+fn lit_bool_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    choice((just("true").to(true), just("false").to(false)))
+        .map(TypeExpr::LitBool)
+        .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
+fn concrete<'a>(
+    type_expr: impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone,
+) -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    just("Concrete<")
+        .ignore_then(type_expr)
+        .then_ignore(just('>'))
+        .map(|t| TypeExpr::Concrete(Box::new(t)))
+        .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
 fn cardinality<'a>() -> impl Parser<'a, ParserInput<'a>, Cardinality, ParserExtra<'a>> + Clone {
-    let num = text::int(10).map(|s: &str| s.parse::<usize>().unwrap());
+    let num = text::int(10).map(|s: &str| s.parse::<usize>().expect("valid usize from parser"));
 
     choice((
-        // [N..M]
         num.clone()
             .then_ignore(just(".."))
             .then(num.clone())
             .map(|(n, m)| Cardinality::Range(n, m)),
-        // [N..]
         num.clone()
             .then_ignore(just(".."))
             .map(Cardinality::AtLeast),
-        // [..M]
         just("..")
             .ignore_then(num.clone())
             .map(Cardinality::AtMost),
-        // [N]
         num.map(Cardinality::Exact),
-        // []
         empty().to(Cardinality::Any),
     ))
 }
@@ -134,10 +132,17 @@ fn named_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra
                 *s,
                 "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
                     | "true" | "false" | "Concrete" | "forall" | "exists" | "unique" | "count"
-                    | "templateVars" | "keys" | "in"
+                    | "templateVars" | "keys" | "in" | "type" | "import"
             )
         })
         .map(|s: &str| TypeExpr::Named(s.to_string()))
+        .map_with(|t, e| Spanned::from_simple(t, e.span()))
+}
+
+fn refinable_ref<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
+    just('-')
+        .ignore_then(text::ident())
+        .map(|s: &str| TypeExpr::RefinableRef(s.to_string()))
         .map_with(|t, e| Spanned::from_simple(t, e.span()))
 }
 
@@ -156,8 +161,7 @@ fn source_path<'a>() -> impl Parser<'a, ParserInput<'a>, S<SourcePath>, ParserEx
         .map_with(|p, e| Spanned::from_simple(p, e.span()))
 }
 
-fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, ParserExtra<'a>> + Clone
-{
+fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, ParserExtra<'a>> + Clone {
     recursive(|expr| {
         let atom = choice((
             just("true")
@@ -170,7 +174,7 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                 .or_not()
                 .then(text::int(10))
                 .to_slice()
-                .map(|s: &str| ConstraintExpr::Int(s.parse().unwrap()))
+                .map(|s: &str| ConstraintExpr::Int(s.parse().expect("valid int literal from parser")))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("forall(")
                 .ignore_then(ident())
@@ -183,7 +187,6 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                     ConstraintExpr::ForAll(col.node, var.node, Box::new(body))
                 })
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
-            // forall with expression collection (e.g., forall(templateVars(path), v => ...))
             just("forall(")
                 .ignore_then(just("templateVars("))
                 .ignore_then(expr.clone())
@@ -249,7 +252,6 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
         ));
 
-        // Handle field access and method calls like e.assoc(t)
         let postfix = atom.foldl(
             choice((
                 just(".assoc(")
@@ -281,7 +283,6 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
             },
         );
 
-        // Comparison operators
         let cmp = postfix.clone().foldl(
             ws()
                 .ignore_then(choice((
@@ -312,7 +313,6 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
             },
         );
 
-        // Logical AND
         let and = cmp.clone().foldl(
             ws()
                 .ignore_then(just("&&"))
@@ -325,7 +325,6 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
             },
         );
 
-        // Logical OR
         and.clone().foldl(
             ws()
                 .ignore_then(just("||"))
@@ -391,7 +390,7 @@ fn annotation<'a>() -> impl Parser<'a, ParserInput<'a>, S<Annotation>, ParserExt
     ))
 }
 
-fn field<'a>(
+fn type_field<'a>(
     type_expr: impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone,
 ) -> impl Parser<'a, ParserInput<'a>, S<Field>, ParserExtra<'a>> + Clone {
     annotation()
@@ -399,10 +398,12 @@ fn field<'a>(
         .repeated()
         .collect::<Vec<_>>()
         .then(ident())
+        .then(just('!').or_not().map(|o| o.is_none()))
         .then_ignore(ws())
         .then(type_expr)
-        .map(|((annotations, name), ty)| Field {
+        .map(|(((annotations, name), optional), ty)| Field {
             name,
+            optional,
             ty,
             annotations,
         })
@@ -412,7 +413,6 @@ fn field<'a>(
 fn struct_type<'a>(
     type_expr: impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone + 'a,
 ) -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    // Anonymous struct: {_}, {_ Type}, {_, _}, etc.
     let anon_field = just('_')
         .ignore_then(ws().ignore_then(type_expr.clone()).or_not());
 
@@ -429,21 +429,18 @@ fn struct_type<'a>(
         .map(|fields: Vec<_>| TypeExpr::Struct(StructKind::Anonymous(fields)))
         .map_with(|t, e| Spanned::from_simple(t, e.span()));
 
-    // Open struct: {...}
     let open_struct = just("{...}")
         .to(TypeExpr::Struct(StructKind::Open(vec![])))
         .map_with(|t, e| Spanned::from_simple(t, e.span()));
 
-    // Empty struct: {}
     let empty_struct = just("{}")
         .to(TypeExpr::Struct(StructKind::Closed(vec![])))
         .map_with(|t, e| Spanned::from_simple(t, e.span()));
 
-    // Named fields struct
     let named_struct = just('{')
         .ignore_then(ws_nl())
         .ignore_then(
-            field(type_expr)
+            type_field(type_expr)
                 .separated_by(sep())
                 .allow_trailing()
                 .collect::<Vec<_>>(),
@@ -459,9 +456,10 @@ fn struct_type<'a>(
 pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
     recursive(|type_expr| {
         let atom = choice((
-            lit_bool(),
-            lit_string(),
-            lit_int(),
+            lit_bool_type(),
+            lit_string_type(),
+            refinable_ref(),  // -TypeName (before lit_int to avoid conflict with negative numbers)
+            lit_int_type(),
             concrete(type_expr.clone()),
             base_type(),
             reference(),
@@ -470,7 +468,6 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
             named_type(),
         ));
 
-        // Handle intersection (& binds tighter than |)
         let intersection = atom.clone().foldl(
             ws()
                 .ignore_then(just('&'))
@@ -486,7 +483,6 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
             },
         );
 
-        // Handle union
         intersection.clone().foldl(
             ws()
                 .ignore_then(just('|'))
@@ -495,7 +491,6 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
                 .repeated(),
             |left, right| {
                 let span = left.span.start..right.span.end;
-                // Flatten unions
                 let mut variants = match left.node {
                     TypeExpr::Union(v) => v,
                     _ => vec![left],
@@ -510,36 +505,345 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
     })
 }
 
-fn block<'a>() -> impl Parser<'a, ParserInput<'a>, S<Block>, ParserExtra<'a>> + Clone {
+// ============= Value Parsers (Instance-level) =============
+
+fn lit_string_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('"')
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .map(|s: &str| Value::LitString(s.to_string()))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn lit_int_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('-')
+        .or_not()
+        .then(text::int(10))
+        .to_slice()
+        .map(|s: &str| Value::LitInt(s.parse().expect("valid int literal from parser")))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn lit_bool_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    choice((just("true").to(true), just("false").to(false)))
+        .map(Value::LitBool)
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn type_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    choice((
+        just("Uuid").to("Uuid"),
+        just("String").to("String"),
+        just("Int").to("Int"),
+        just("Float").to("Float"),
+        just("Bool").to("Bool"),
+        just("Date").to("Date"),
+        just("Timestamp").to("Timestamp"),
+        just("Money").to("Money"),
+    ))
+    .map(|s| Value::TypeRef(s.to_string()))
+    .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn dot_path<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<String>, ParserExtra<'a>> + Clone {
+    ident()
+        .separated_by(just('.'))
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(|parts| parts.into_iter().map(|p| p.node).collect())
+}
+
+fn field_origin<'a>() -> impl Parser<'a, ParserInput<'a>, FieldOrigin, ParserExtra<'a>> + Clone {
+    choice((
+        just('*').to(FieldOrigin::Generated),
+        just(" = compute(")
+            .ignore_then(
+                dot_path()
+                    .separated_by(just(',').then(ws()))
+                    .at_least(1)
+                    .collect::<Vec<_>>(),
+            )
+            .then_ignore(just(')'))
+            .map(FieldOrigin::Computed),
+        just(" = ")
+            .ignore_then(dot_path())
+            .map(FieldOrigin::Mapped),
+        empty().to(FieldOrigin::None),
+    ))
+}
+
+fn instance_field<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone,
+) -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
+    let doc = just("@doc")
+        .ignore_then(ws())
+        .ignore_then(just('"'))
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .then_ignore(ws_nl())
+        .or_not();
+
+    doc.then(ident())
+        .then(just('?').or_not().map(|o| o.is_some()))
+        .then_ignore(ws())
+        .then(value)
+        .then(field_origin())
+        .map(|((((doc, name), optional), value), origin)| InstanceField {
+            name,
+            optional,
+            value,
+            origin,
+            doc: doc.map(|s: &str| s.to_string()),
+        })
+        .map_with(|f, e| Spanned::from_simple(f, e.span()))
+}
+
+fn instance_struct<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone + 'a,
+) -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('{')
+        .ignore_then(ws_nl())
+        .ignore_then(
+            instance_field(value)
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(ws_nl())
+        .then_ignore(just('}'))
+        .map(Value::Struct)
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
+    let simple_value = choice((type_ref_value(), lit_int_value(), lit_string_value(), lit_bool_value()));
+
+    let doc = just("@doc")
+        .ignore_then(ws())
+        .ignore_then(just('"'))
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .then_ignore(ws_nl())
+        .or_not();
+
+    doc.then(ident())
+        .then(just('?').or_not().map(|o| o.is_some()))
+        .then_ignore(ws())
+        .then(simple_value)
+        .then(field_origin())
+        .map(|((((doc, name), optional), value), origin)| InstanceField {
+            name,
+            optional,
+            value,
+            origin,
+            doc: doc.map(|s: &str| s.to_string()),
+        })
+        .map_with(|f, e| Spanned::from_simple(f, e.span()))
+}
+
+fn list_element<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone + 'a,
+) -> impl Parser<'a, ParserInput<'a>, S<ListElement>, ParserExtra<'a>> + Clone {
+    let refinement = ident()
+        .then_ignore(ws())
+        .then_ignore(just('&'))
+        .then_ignore(ws())
+        .then_ignore(just('{'))
+        .then_ignore(ws_nl())
+        .then(
+            refinement_field()
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(ws_nl())
+        .then_ignore(just('}'))
+        .map(|(name, fields)| ListElement::Refinement(name.node, fields))
+        .map_with(|e, ex| Spanned::from_simple(e, ex.span()));
+
+    let anon_struct = value
+        .clone()
+        .map(|v| ListElement::Value(v.node))
+        .map_with(|e, ex| Spanned::from_simple(e, ex.span()));
+
+    let binding_ref = ident()
+        .map(|n| ListElement::BindingRef(n.node))
+        .map_with(|e, ex| Spanned::from_simple(e, ex.span()));
+
+    choice((refinement, anon_struct, binding_ref))
+}
+
+fn instance_list<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone + 'a,
+) -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('[')
+        .ignore_then(ws_nl())
+        .ignore_then(
+            list_element(value)
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(ws_nl())
+        .then_ignore(just(']'))
+        .map(Value::List)
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    text::ident()
+        .filter(|s: &&str| {
+            !matches!(
+                *s,
+                "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
+                    | "true" | "false" | "type" | "import"
+            )
+        })
+        .map(|s: &str| Value::BindingRef(s.to_string()))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
+pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    recursive(|value| {
+        choice((
+            lit_bool_value(),
+            lit_string_value(),
+            lit_int_value(),
+            type_ref_value(),
+            instance_struct(value.clone()),
+            instance_list(value.clone()),
+            // Variant: TypeName value
+            ident()
+                .then_ignore(ws())
+                .then(value.clone())
+                .map(|(name, body)| Value::Variant(name.node, Box::new(body)))
+                .map_with(|v, e| Spanned::from_simple(v, e.span())),
+            binding_ref_value(),
+        ))
+    })
+}
+
+// ============= Top-Level Item Parsers =============
+
+fn assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone {
+    just('<')
+        .ignore_then(
+            ident()
+                .separated_by(just(',').then(ws()))
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(just('>'))
+        .or_not()
+        .map(|o| o.unwrap_or_default())
+}
+
+// type Name = TypeExpr
+fn type_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
     annotation()
         .then_ignore(ws_nl())
         .repeated()
         .collect::<Vec<_>>()
+        .then_ignore(just("type"))
+        .then_ignore(ws())
         .then(ident())
         .then_ignore(ws())
+        .then_ignore(just('='))
+        .then_ignore(ws())
         .then(type_expr())
-        .map(|((annotations, name), body)| Block {
-            name,
-            annotations,
-            body,
+        .map(|((annotations, name), body)| {
+            Item::TypeDecl(TypeDecl {
+                name,
+                annotations,
+                body,
+            })
         })
-        .map_with(|b, e| Spanned::from_simple(b, e.span()))
+        .map_with(|i, e| Spanned::from_simple(i, e.span()))
 }
 
-pub fn ilk_file<'a>() -> impl Parser<'a, ParserInput<'a>, IlkFile, ParserExtra<'a>> {
+// name = TypeName<assocs> body
+fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
+    let doc = just("@doc")
+        .ignore_then(ws())
+        .ignore_then(just('"'))
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .then_ignore(ws_nl())
+        .or_not();
+
+    // Collect @main and @doc annotations
+    let main_ann = just("@main")
+        .then_ignore(ws_nl())
+        .or_not()
+        .map(|o| o.is_some());
+
+    main_ann
+        .then(doc)
+        .then(ident())
+        .then_ignore(ws())
+        .then_ignore(just('='))
+        .then_ignore(ws())
+        .then(ident())
+        .then(assocs())
+        .then_ignore(ws())
+        .then(value())
+        .map(|(((((is_main, doc), name), type_name), assocs), body)| {
+            let annotations = if is_main {
+                vec![Spanned::new(Annotation::Main, 0..0)]
+            } else {
+                vec![]
+            };
+            Item::Instance(Instance {
+                name,
+                type_name,
+                assocs,
+                body,
+                annotations,
+                doc: doc.map(|s: &str| s.to_string()),
+            })
+        })
+        .map_with(|i, e| Spanned::from_simple(i, e.span()))
+}
+
+// import "path" [as alias]
+fn import<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
+    just("import")
+        .ignore_then(ws())
+        .ignore_then(just('"'))
+        .ignore_then(none_of('"').repeated().to_slice())
+        .then_ignore(just('"'))
+        .map_with(|s: &str, e| Spanned::from_simple(s.to_string(), e.span()))
+        .then(
+            ws()
+                .ignore_then(just("as"))
+                .ignore_then(ws())
+                .ignore_then(ident())
+                .or_not(),
+        )
+        .map(|(path, alias)| {
+            Item::Import(Import { path, alias })
+        })
+        .map_with(|i, e| Spanned::from_simple(i, e.span()))
+}
+
+fn item<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
+    choice((import(), type_decl(), instance()))
+}
+
+pub fn file<'a>() -> impl Parser<'a, ParserInput<'a>, File, ParserExtra<'a>> {
     ws_nl()
         .ignore_then(
-            block()
+            item()
                 .separated_by(ws_nl())
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )
         .then_ignore(ws_nl())
-        .map(|blocks| IlkFile { blocks })
+        .map(|items| File { items })
 }
 
-pub fn parse_ilk(src: &str, file: &Path) -> Result<IlkFile, Vec<Diagnostic>> {
-    ilk_file()
+pub fn parse(src: &str, path: &Path) -> Result<File, Vec<Diagnostic>> {
+    file()
         .parse(src)
         .into_result()
         .map_err(|errs| {
@@ -548,7 +852,7 @@ pub fn parse_ilk(src: &str, file: &Path) -> Result<IlkFile, Vec<Diagnostic>> {
                     Diagnostic::error(
                         e.span().into_range(),
                         e.to_string(),
-                        file.to_path_buf(),
+                        path.to_path_buf(),
                     )
                 })
                 .collect()
@@ -559,269 +863,139 @@ pub fn parse_ilk(src: &str, file: &Path) -> Result<IlkFile, Vec<Diagnostic>> {
 mod tests {
     use super::*;
 
-    fn parse(s: &str) -> S<TypeExpr> {
+    fn parse_type(s: &str) -> S<TypeExpr> {
         type_expr().parse(s).into_result().unwrap()
     }
 
-    fn parse_c(s: &str) -> S<ConstraintExpr> {
-        constraint_expr().parse(s).into_result().unwrap()
+    fn parse_value(s: &str) -> S<Value> {
+        value().parse(s).into_result().unwrap()
     }
 
-    // Phase 2.1: Base types & literals
+    fn parse_file(s: &str) -> File {
+        file().parse(s).into_result().unwrap()
+    }
+
+    // Type parsing tests
     #[test]
     fn test_wildcard() {
-        assert!(matches!(parse("*").node, TypeExpr::Base(BaseType::Wildcard)));
+        assert!(matches!(parse_type("*").node, TypeExpr::Base(BaseType::Wildcard)));
     }
 
     #[test]
     fn test_base_types() {
-        assert!(matches!(parse("String").node, TypeExpr::Base(BaseType::String)));
-        assert!(matches!(parse("Int").node, TypeExpr::Base(BaseType::Int)));
-        assert!(matches!(parse("Uuid").node, TypeExpr::Base(BaseType::Uuid)));
-        assert!(matches!(parse("Float").node, TypeExpr::Base(BaseType::Float)));
-        assert!(matches!(parse("Bool").node, TypeExpr::Base(BaseType::Bool)));
-        assert!(matches!(parse("Date").node, TypeExpr::Base(BaseType::Date)));
-        assert!(matches!(parse("Timestamp").node, TypeExpr::Base(BaseType::Timestamp)));
-        assert!(matches!(parse("Money").node, TypeExpr::Base(BaseType::Money)));
+        assert!(matches!(parse_type("String").node, TypeExpr::Base(BaseType::String)));
+        assert!(matches!(parse_type("Int").node, TypeExpr::Base(BaseType::Int)));
     }
 
     #[test]
     fn test_concrete() {
-        let t = parse("Concrete<String>");
+        let t = parse_type("Concrete<String>");
         assert!(matches!(t.node, TypeExpr::Concrete(_)));
     }
 
     #[test]
-    fn test_literals() {
-        assert!(matches!(parse("\"hello\"").node, TypeExpr::LitString(s) if s == "hello"));
-        assert!(matches!(parse("42").node, TypeExpr::LitInt(42)));
-        assert!(matches!(parse("-5").node, TypeExpr::LitInt(-5)));
-        assert!(matches!(parse("true").node, TypeExpr::LitBool(true)));
-        assert!(matches!(parse("false").node, TypeExpr::LitBool(false)));
-    }
-
-    // Phase 2.2: Structs
-    #[test]
-    fn test_empty_struct() {
-        assert!(matches!(parse("{}").node, TypeExpr::Struct(StructKind::Closed(f)) if f.is_empty()));
-    }
-
-    #[test]
-    fn test_open_struct() {
-        assert!(matches!(parse("{...}").node, TypeExpr::Struct(StructKind::Open(_))));
-    }
-
-    #[test]
-    fn test_anonymous_struct() {
-        assert!(matches!(parse("{_}").node, TypeExpr::Struct(StructKind::Anonymous(v)) if v.len() == 1 && v[0].is_none()));
-        assert!(matches!(parse("{_ String}").node, TypeExpr::Struct(StructKind::Anonymous(v)) if v.len() == 1 && v[0].is_some()));
-        assert!(matches!(parse("{_, _}").node, TypeExpr::Struct(StructKind::Anonymous(v)) if v.len() == 2));
-    }
-
-    #[test]
-    fn test_named_struct() {
-        let t = parse("{x Int}");
-        if let TypeExpr::Struct(StructKind::Closed(fields)) = t.node {
-            assert_eq!(fields.len(), 1);
-            assert_eq!(fields[0].node.name.node, "x");
+    fn test_union() {
+        let t = parse_type("A | B");
+        if let TypeExpr::Union(variants) = t.node {
+            assert_eq!(variants.len(), 2);
         } else {
-            panic!("Expected closed struct");
+            panic!("Expected union");
         }
     }
 
     #[test]
-    fn test_multiline_struct() {
-        let t = parse("{\n  x Int\n  y String\n}");
-        if let TypeExpr::Struct(StructKind::Closed(fields)) = t.node {
-            assert_eq!(fields.len(), 2);
-        } else {
-            panic!("Expected closed struct");
-        }
-    }
-
-    // Phase 2.3: Lists
-    #[test]
-    fn test_list_any() {
-        let t = parse("[]Event");
-        assert!(matches!(t.node, TypeExpr::List(Cardinality::Any, _)));
+    fn test_refinable_ref() {
+        let t = parse_type("-Event");
+        assert!(matches!(t.node, TypeExpr::RefinableRef(name) if name == "Event"));
     }
 
     #[test]
-    fn test_list_exact() {
-        let t = parse("[3]Tag");
-        assert!(matches!(t.node, TypeExpr::List(Cardinality::Exact(3), _)));
-    }
-
-    #[test]
-    fn test_list_at_least() {
-        let t = parse("[1..]Tag");
-        assert!(matches!(t.node, TypeExpr::List(Cardinality::AtLeast(1), _)));
-    }
-
-    #[test]
-    fn test_list_at_most() {
-        let t = parse("[..10]Tag");
-        assert!(matches!(t.node, TypeExpr::List(Cardinality::AtMost(10), _)));
-    }
-
-    #[test]
-    fn test_list_range() {
-        let t = parse("[2..5]Tag");
-        assert!(matches!(t.node, TypeExpr::List(Cardinality::Range(2, 5), _)));
-    }
-
-    // Phase 2.4: References
-    #[test]
-    fn test_reference() {
-        assert!(matches!(parse("&Event").node, TypeExpr::Reference(n) if n == "Event"));
-    }
-
-    #[test]
-    fn test_list_of_refs() {
-        let t = parse("[]&Event");
-        if let TypeExpr::List(Cardinality::Any, inner) = t.node {
-            assert!(matches!(inner.node, TypeExpr::Reference(_)));
+    fn test_refinable_ref_in_list() {
+        let t = parse_type("[]-Event");
+        if let TypeExpr::List(_, elem) = t.node {
+            assert!(matches!(elem.node, TypeExpr::RefinableRef(name) if name == "Event"));
         } else {
             panic!("Expected list");
         }
     }
 
-    // Phase 2.5: Union & Intersection
+    // Value parsing tests
     #[test]
-    fn test_union() {
-        let t = parse("A | B");
-        if let TypeExpr::Union(variants) = t.node {
-            assert_eq!(variants.len(), 2);
+    fn test_value_type_ref() {
+        assert!(matches!(parse_value("String").node, Value::TypeRef(s) if s == "String"));
+    }
+
+    #[test]
+    fn test_value_struct() {
+        let v = parse_value("{x String}");
+        if let Value::Struct(fields) = v.node {
+            assert_eq!(fields.len(), 1);
         } else {
-            panic!("Expected union");
+            panic!("Expected struct");
         }
     }
 
+    // File parsing tests
     #[test]
-    fn test_union_three() {
-        let t = parse("A | B | C");
-        if let TypeExpr::Union(variants) = t.node {
-            assert_eq!(variants.len(), 3);
-        } else {
-            panic!("Expected union");
-        }
+    fn test_type_decl() {
+        let f = parse_file("type Foo = {x Int}");
+        assert_eq!(f.type_decls().count(), 1);
     }
 
     #[test]
-    fn test_intersection() {
-        let t = parse("A & B");
-        assert!(matches!(t.node, TypeExpr::Intersection(_, _)));
+    fn test_instance() {
+        let f = parse_file("foo = Foo {x Int}");
+        assert_eq!(f.instances().count(), 1);
     }
 
     #[test]
-    fn test_intersection_open_struct() {
-        let t = parse("{...} & {x Int}");
-        assert!(matches!(t.node, TypeExpr::Intersection(_, _)));
+    fn test_instance_with_assocs() {
+        let f = parse_file("foo = Foo<a, b> {x Int}");
+        let inst = f.instances().next().unwrap();
+        assert_eq!(inst.assocs.len(), 2);
     }
 
     #[test]
-    fn test_precedence_union_intersection() {
-        // & binds tighter than |
-        let t = parse("A | B & C");
-        if let TypeExpr::Union(variants) = &t.node {
-            assert_eq!(variants.len(), 2);
-            assert!(matches!(&variants[0].node, TypeExpr::Named(n) if n == "A"));
-            assert!(matches!(&variants[1].node, TypeExpr::Intersection(_, _)));
-        } else {
-            panic!("Expected union");
-        }
-    }
-
-    // Phase 2.8: Constraints
-    #[test]
-    fn test_constraint_bool() {
-        assert!(matches!(parse_c("true").node, ConstraintExpr::Bool(true)));
-        assert!(matches!(parse_c("false").node, ConstraintExpr::Bool(false)));
+    fn test_import() {
+        let f = parse_file("import \"./base.ilk\"");
+        assert_eq!(f.imports().count(), 1);
     }
 
     #[test]
-    fn test_constraint_var() {
-        assert!(matches!(parse_c("x").node, ConstraintExpr::Var(n) if n == "x"));
+    fn test_import_with_alias() {
+        let f = parse_file("import \"./base.ilk\" as base");
+        let imp = f.imports().next().unwrap();
+        assert!(imp.alias.is_some());
     }
 
     #[test]
-    fn test_constraint_field_access() {
-        let c = parse_c("x.field");
-        assert!(matches!(c.node, ConstraintExpr::FieldAccess(_, f) if f == "field"));
+    fn test_main_instance() {
+        let f = parse_file("@main\nboard = Board {x Int}");
+        let inst = f.instances().next().unwrap();
+        assert!(inst.annotations.iter().any(|a| matches!(a.node, Annotation::Main)));
     }
 
     #[test]
-    fn test_constraint_forall() {
-        let c = parse_c("forall(col, x => true)");
-        assert!(matches!(c.node, ConstraintExpr::ForAll(col, var, _) if col == "col" && var == "x"));
-    }
+    fn test_full_file() {
+        let src = r#"
+type Tag = {_ String}
 
-    #[test]
-    fn test_constraint_exists() {
-        let c = parse_c("exists(tags, t => t.active)");
-        assert!(matches!(c.node, ConstraintExpr::Exists(_, _, _)));
-    }
+@assoc [Tag]
+type Event = {...} & {timestamp Int}
 
-    #[test]
-    fn test_constraint_unique() {
-        let c = parse_c("unique(items, i => i.id)");
-        assert!(matches!(c.node, ConstraintExpr::Unique(_, _, _)));
-    }
+tag1 = Tag {x String}
 
-    #[test]
-    fn test_constraint_count() {
-        let c = parse_c("count(tags)");
-        assert!(matches!(c.node, ConstraintExpr::Count(n) if n == "tags"));
-    }
+ev = Event<tag1> {
+    id String
+}
 
-    #[test]
-    fn test_constraint_assoc() {
-        let c = parse_c("e.assoc(t)");
-        assert!(matches!(c.node, ConstraintExpr::Assoc(_, _)));
-    }
-
-    #[test]
-    fn test_constraint_template_vars() {
-        let c = parse_c("templateVars(path)");
-        assert!(matches!(c.node, ConstraintExpr::TemplateVars(_)));
-    }
-
-    #[test]
-    fn test_constraint_keys() {
-        let c = parse_c("keys(params)");
-        assert!(matches!(c.node, ConstraintExpr::Keys(_)));
-    }
-
-    #[test]
-    fn test_constraint_operators() {
-        assert!(matches!(parse_c("a && b").node, ConstraintExpr::And(_, _)));
-        assert!(matches!(parse_c("a || b").node, ConstraintExpr::Or(_, _)));
-        assert!(matches!(parse_c("!a").node, ConstraintExpr::Not(_)));
-        assert!(matches!(parse_c("a == b").node, ConstraintExpr::Eq(_, _)));
-        assert!(matches!(parse_c("a != b").node, ConstraintExpr::Ne(_, _)));
-        assert!(matches!(parse_c("x in set").node, ConstraintExpr::In(_, _)));
-        assert!(matches!(parse_c("count(x) >= 1").node, ConstraintExpr::Ge(_, _)));
-    }
-
-    #[test]
-    fn test_constraint_complex() {
-        let c = parse_c("forall(tags, t => forall(events, e => e.assoc(t)))");
-        assert!(matches!(c.node, ConstraintExpr::ForAll(_, _, _)));
-    }
-
-    #[test]
-    fn test_constraint_template_vars_complex() {
-        let c = parse_c("forall(templateVars(path), v => v in keys(params))");
-        assert!(matches!(c.node, ConstraintExpr::ForAllExpr(_, _, _)));
-    }
-
-    // Phase 2.9: Full ilk file
-    #[test]
-    fn test_parse_dcb_board_spec() {
-        let src = std::fs::read_to_string("examples/dcb-board-spec.ilk").unwrap();
-        let result = parse_ilk(&src, Path::new("examples/dcb-board-spec.ilk"));
-        assert!(result.is_ok(), "Parse error: {:?}", result.err());
-        let file = result.unwrap();
-        assert!(!file.blocks.is_empty());
+@main
+board = Board {
+    events [ev]
+}
+"#;
+        let f = parse_file(src);
+        assert_eq!(f.type_decls().count(), 2);
+        assert_eq!(f.instances().count(), 3);
     }
 }

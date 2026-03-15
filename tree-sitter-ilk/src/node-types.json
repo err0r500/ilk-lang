@@ -12,7 +12,39 @@
           "named": true
         },
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         },
         {
@@ -74,6 +106,10 @@
           "named": true
         },
         {
+          "type": "refinable_ref",
+          "named": true
+        },
+        {
           "type": "struct_type",
           "named": true
         }
@@ -116,56 +152,6 @@
     "fields": {}
   },
   {
-    "type": "binding",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      },
-      "type": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      },
-      "value": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "value",
-            "named": true
-          }
-        ]
-      }
-    },
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "assoc_list",
-          "named": true
-        },
-        {
-          "type": "string",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
     "type": "binding_ref",
     "named": true,
     "fields": {},
@@ -175,42 +161,6 @@
       "types": [
         {
           "type": "identifier",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "block",
-    "named": true,
-    "fields": {
-      "body": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "type_expr",
-            "named": true
-          }
-        ]
-      },
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      }
-    },
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "annotation",
           "named": true
         }
       ]
@@ -245,7 +195,43 @@
       "required": true,
       "types": [
         {
-          "type": "type_expr",
+          "type": "base_type",
+          "named": true
+        },
+        {
+          "type": "concrete_type",
+          "named": true
+        },
+        {
+          "type": "intersection_type",
+          "named": true
+        },
+        {
+          "type": "list_type",
+          "named": true
+        },
+        {
+          "type": "literal_type",
+          "named": true
+        },
+        {
+          "type": "named_type",
+          "named": true
+        },
+        {
+          "type": "reference_type",
+          "named": true
+        },
+        {
+          "type": "refinable_ref",
+          "named": true
+        },
+        {
+          "type": "struct_type",
+          "named": true
+        },
+        {
+          "type": "union_type",
           "named": true
         }
       ]
@@ -260,7 +246,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         }
       ]
@@ -275,7 +293,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         },
         {
@@ -291,21 +341,6 @@
     "fields": {},
     "children": {
       "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "constraint_expr",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "constraint_expr",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
       "required": true,
       "types": [
         {
@@ -356,7 +391,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         },
         {
@@ -398,7 +465,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         }
       ]
@@ -413,7 +512,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         }
       ]
@@ -428,7 +559,39 @@
       "required": true,
       "types": [
         {
-          "type": "constraint_expr",
+          "type": "constraint_and",
+          "named": true
+        },
+        {
+          "type": "constraint_call",
+          "named": true
+        },
+        {
+          "type": "constraint_comparison",
+          "named": true
+        },
+        {
+          "type": "constraint_field_access",
+          "named": true
+        },
+        {
+          "type": "constraint_literal",
+          "named": true
+        },
+        {
+          "type": "constraint_not",
+          "named": true
+        },
+        {
+          "type": "constraint_or",
+          "named": true
+        },
+        {
+          "type": "constraint_paren",
+          "named": true
+        },
+        {
+          "type": "constraint_var",
           "named": true
         }
       ]
@@ -444,6 +607,108 @@
       "types": [
         {
           "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "doc_annotation",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "string",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "base_type",
+            "named": true
+          },
+          {
+            "type": "concrete_type",
+            "named": true
+          },
+          {
+            "type": "intersection_type",
+            "named": true
+          },
+          {
+            "type": "list_type",
+            "named": true
+          },
+          {
+            "type": "literal_type",
+            "named": true
+          },
+          {
+            "type": "named_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "refinable_ref",
+            "named": true
+          },
+          {
+            "type": "struct_type",
+            "named": true
+          },
+          {
+            "type": "union_type",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "annotation",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "field_list",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "field",
           "named": true
         }
       ]
@@ -469,7 +734,33 @@
     }
   },
   {
-    "type": "ilk_field",
+    "type": "import_stmt",
+    "named": true,
+    "fields": {
+      "alias": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "path": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "string",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "instance",
     "named": true,
     "fields": {
       "name": {
@@ -487,7 +778,37 @@
         "required": true,
         "types": [
           {
-            "type": "type_expr",
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "binding_ref",
+            "named": true
+          },
+          {
+            "type": "list_value",
+            "named": true
+          },
+          {
+            "type": "literal_value",
+            "named": true
+          },
+          {
+            "type": "struct_value",
+            "named": true
+          },
+          {
+            "type": "type_ref",
+            "named": true
+          },
+          {
+            "type": "variant_value",
             "named": true
           }
         ]
@@ -498,22 +819,15 @@
       "required": false,
       "types": [
         {
-          "type": "annotation",
+          "type": "assoc_list",
           "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "ilk_field_list",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
+        },
         {
-          "type": "ilk_field",
+          "type": "doc_annotation",
+          "named": true
+        },
+        {
+          "type": "main_annotation",
           "named": true
         }
       ]
@@ -528,7 +842,43 @@
       "required": true,
       "types": [
         {
-          "type": "type_expr",
+          "type": "base_type",
+          "named": true
+        },
+        {
+          "type": "concrete_type",
+          "named": true
+        },
+        {
+          "type": "intersection_type",
+          "named": true
+        },
+        {
+          "type": "list_type",
+          "named": true
+        },
+        {
+          "type": "literal_type",
+          "named": true
+        },
+        {
+          "type": "named_type",
+          "named": true
+        },
+        {
+          "type": "reference_type",
+          "named": true
+        },
+        {
+          "type": "refinable_ref",
+          "named": true
+        },
+        {
+          "type": "struct_type",
+          "named": true
+        },
+        {
+          "type": "union_type",
           "named": true
         }
       ]
@@ -543,11 +893,31 @@
       "required": true,
       "types": [
         {
+          "type": "binding_ref",
+          "named": true
+        },
+        {
+          "type": "list_value",
+          "named": true
+        },
+        {
+          "type": "literal_value",
+          "named": true
+        },
+        {
           "type": "refinement",
           "named": true
         },
         {
-          "type": "value",
+          "type": "struct_value",
+          "named": true
+        },
+        {
+          "type": "type_ref",
+          "named": true
+        },
+        {
+          "type": "variant_value",
           "named": true
         }
       ]
@@ -602,6 +972,10 @@
         },
         {
           "type": "reference_type",
+          "named": true
+        },
+        {
+          "type": "refinable_ref",
           "named": true
         },
         {
@@ -733,6 +1107,21 @@
     }
   },
   {
+    "type": "refinable_ref",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "refinement",
     "named": true,
     "fields": {},
@@ -776,11 +1165,15 @@
       "required": false,
       "types": [
         {
-          "type": "binding",
+          "type": "import_stmt",
           "named": true
         },
         {
-          "type": "block",
+          "type": "instance",
+          "named": true
+        },
+        {
+          "type": "type_decl",
           "named": true
         }
       ]
@@ -814,7 +1207,7 @@
           "named": true
         },
         {
-          "type": "ilk_field_list",
+          "type": "field_list",
           "named": true
         }
       ]
@@ -836,11 +1229,98 @@
     }
   },
   {
-    "type": "type_expr",
+    "type": "type_decl",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "base_type",
+            "named": true
+          },
+          {
+            "type": "concrete_type",
+            "named": true
+          },
+          {
+            "type": "intersection_type",
+            "named": true
+          },
+          {
+            "type": "list_type",
+            "named": true
+          },
+          {
+            "type": "literal_type",
+            "named": true
+          },
+          {
+            "type": "named_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "refinable_ref",
+            "named": true
+          },
+          {
+            "type": "struct_type",
+            "named": true
+          },
+          {
+            "type": "union_type",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "annotation",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "type_ref",
     "named": true,
     "fields": {},
     "children": {
       "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "base_type",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "union_type",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
       "required": true,
       "types": [
         {
@@ -872,76 +1352,15 @@
           "named": true
         },
         {
+          "type": "refinable_ref",
+          "named": true
+        },
+        {
           "type": "struct_type",
           "named": true
         },
         {
           "type": "union_type",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "type_ref",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "base_type",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "union_type",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "type_expr",
-          "named": true
-        }
-      ]
-    }
-  },
-  {
-    "type": "value",
-    "named": true,
-    "fields": {},
-    "children": {
-      "multiple": false,
-      "required": true,
-      "types": [
-        {
-          "type": "binding_ref",
-          "named": true
-        },
-        {
-          "type": "list_value",
-          "named": true
-        },
-        {
-          "type": "literal_value",
-          "named": true
-        },
-        {
-          "type": "struct_value",
-          "named": true
-        },
-        {
-          "type": "type_ref",
-          "named": true
-        },
-        {
-          "type": "variant_value",
           "named": true
         }
       ]
@@ -966,7 +1385,27 @@
         "required": true,
         "types": [
           {
-            "type": "value",
+            "type": "binding_ref",
+            "named": true
+          },
+          {
+            "type": "list_value",
+            "named": true
+          },
+          {
+            "type": "literal_value",
+            "named": true
+          },
+          {
+            "type": "struct_value",
+            "named": true
+          },
+          {
+            "type": "type_ref",
+            "named": true
+          },
+          {
+            "type": "variant_value",
             "named": true
           }
         ]
@@ -977,11 +1416,11 @@
       "required": false,
       "types": [
         {
-          "type": "field_origin",
+          "type": "doc_annotation",
           "named": true
         },
         {
-          "type": "string",
+          "type": "field_origin",
           "named": true
         }
       ]
@@ -1011,11 +1450,31 @@
       "required": true,
       "types": [
         {
+          "type": "binding_ref",
+          "named": true
+        },
+        {
           "type": "identifier",
           "named": true
         },
         {
-          "type": "value",
+          "type": "list_value",
+          "named": true
+        },
+        {
+          "type": "literal_value",
+          "named": true
+        },
+        {
+          "type": "struct_value",
+          "named": true
+        },
+        {
+          "type": "type_ref",
+          "named": true
+        },
+        {
+          "type": "variant_value",
           "named": true
         }
       ]
@@ -1051,6 +1510,10 @@
   },
   {
     "type": ",",
+    "named": false
+  },
+  {
+    "type": "-",
     "named": false
   },
   {
@@ -1154,6 +1617,10 @@
     "named": false
   },
   {
+    "type": "as",
+    "named": false
+  },
+  {
     "type": "assoc",
     "named": false
   },
@@ -1194,6 +1661,10 @@
     "named": true
   },
   {
+    "type": "import",
+    "named": false
+  },
+  {
     "type": "in",
     "named": false
   },
@@ -1204,6 +1675,10 @@
   {
     "type": "main",
     "named": false
+  },
+  {
+    "type": "main_annotation",
+    "named": true
   },
   {
     "type": "number",
@@ -1227,6 +1702,10 @@
   },
   {
     "type": "true",
+    "named": false
+  },
+  {
+    "type": "type",
     "named": false
   },
   {

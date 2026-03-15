@@ -1,75 +1,128 @@
 use clap::{Parser, Subcommand};
 use ilk::error::Diagnostic;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
 #[derive(Parser)]
 #[command(name = "ilk")]
-#[command(about = "ilk/kli compiler and validator")]
+#[command(about = "ilk compiler and validator")]
 struct Cli {
+    /// Output in JSON format for tooling integration
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Validate a kli file against an ilk schema
+    /// Validate an ilk file
     Check {
-        /// Path to the ilk schema file
-        schema: PathBuf,
-        /// Path to the kli instance file
-        instance: PathBuf,
+        /// Path to the ilk file
+        file: PathBuf,
     },
-    /// Watch files and re-validate on changes
+    /// Watch file and re-validate on changes
     Watch {
-        /// Path to the ilk schema file
-        schema: PathBuf,
-        /// Path to the kli instance file
-        instance: PathBuf,
+        /// Path to the ilk file
+        file: PathBuf,
     },
     /// Parse a file and dump the AST
     Parse {
         /// Path to the file to parse
         file: PathBuf,
     },
+    /// Output the compiled AST as JSON
+    Json {
+        /// Path to the ilk file
+        file: PathBuf,
+        /// Pretty-print the JSON output
+        #[arg(long)]
+        pretty: bool,
+    },
+}
+
+#[derive(Serialize)]
+struct JsonOutput {
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl JsonOutput {
+    fn success() -> Self {
+        Self {
+            success: true,
+            message: Some("Validation passed".to_string()),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn error(diagnostics: Vec<Diagnostic>) -> Self {
+        Self {
+            success: false,
+            message: None,
+            diagnostics,
+        }
+    }
+
+    fn print(&self) {
+        println!("{}", serde_json::to_string(self).unwrap());
+    }
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Check { schema, instance } => {
-            run_check(&schema, &instance);
+        Commands::Check { file } => {
+            run_check(&file, cli.json);
         }
-        Commands::Watch { schema, instance } => {
-            run_watch(&schema, &instance);
+        Commands::Watch { file } => {
+            run_watch(&file, cli.json);
         }
         Commands::Parse { file } => {
-            run_parse(&file);
+            run_parse(&file, cli.json);
+        }
+        Commands::Json { file, pretty } => {
+            run_json(&file, pretty);
         }
     }
 }
 
-fn run_check(schema: &PathBuf, instance: &PathBuf) {
-    match ilk::validate_files(schema, instance) {
+fn run_check(file: &PathBuf, json: bool) {
+    match ilk::validate_file(file) {
         Ok(()) => {
-            println!("Validation passed");
+            if json {
+                JsonOutput::success().print();
+            } else {
+                println!("Validation passed");
+            }
             std::process::exit(0);
         }
         Err(errors) => {
-            print_errors(&errors, schema, instance);
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
+                print_errors(&errors, file);
+            }
             std::process::exit(1);
         }
     }
 }
 
-fn run_watch(schema: &PathBuf, instance: &PathBuf) {
-    println!("Watching {} and {}", schema.display(), instance.display());
+fn run_watch(file: &PathBuf, json: bool) {
+    if !json {
+        println!("Watching {}", file.display());
+    }
 
     // Initial validation
-    run_validation(schema, instance);
+    run_validation(file, json);
 
     let (tx, rx) = channel();
 
@@ -84,11 +137,8 @@ fn run_watch(schema: &PathBuf, instance: &PathBuf) {
     .expect("Failed to create watcher");
 
     watcher
-        .watch(schema, RecursiveMode::NonRecursive)
-        .expect("Failed to watch schema");
-    watcher
-        .watch(instance, RecursiveMode::NonRecursive)
-        .expect("Failed to watch instance");
+        .watch(file, RecursiveMode::NonRecursive)
+        .expect("Failed to watch file");
 
     loop {
         match rx.recv() {
@@ -97,8 +147,10 @@ fn run_watch(schema: &PathBuf, instance: &PathBuf) {
                 std::thread::sleep(Duration::from_millis(100));
                 while rx.try_recv().is_ok() {}
 
-                println!("\n--- Re-validating ---");
-                run_validation(schema, instance);
+                if !json {
+                    println!("\n--- Re-validating ---");
+                }
+                run_validation(file, json);
             }
             Err(e) => {
                 eprintln!("Watch error: {}", e);
@@ -108,62 +160,81 @@ fn run_watch(schema: &PathBuf, instance: &PathBuf) {
     }
 }
 
-fn run_validation(schema: &PathBuf, instance: &PathBuf) {
-    match ilk::validate_files(schema, instance) {
+fn run_validation(file: &PathBuf, json: bool) {
+    match ilk::validate_file(file) {
         Ok(()) => {
-            println!("Validation passed");
+            if json {
+                JsonOutput::success().print();
+            } else {
+                println!("Validation passed");
+            }
         }
         Err(errors) => {
-            print_errors(&errors, schema, instance);
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
+                print_errors(&errors, file);
+            }
         }
     }
 }
 
-fn run_parse(file: &PathBuf) {
+fn run_parse(file: &PathBuf, json: bool) {
     let src = std::fs::read_to_string(file).expect("Failed to read file");
 
-    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-    match ext {
-        "ilk" => match ilk::ilk::parse_ilk(&src, file) {
-            Ok(ast) => {
+    match ilk::parser::parse(&src, file) {
+        Ok(ast) => {
+            if json {
+                // For parse, just output success with the debug AST as message
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "success": true,
+                        "ast": format!("{:#?}", ast)
+                    })
+                );
+            } else {
                 println!("{:#?}", ast);
             }
-            Err(errors) => {
+        }
+        Err(errors) => {
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
                 for err in errors {
                     eprintln!("{}", err.to_report(&src));
                 }
-                std::process::exit(1);
             }
-        },
-        "kli" => match ilk::kli::parse_kli(&src, file) {
-            Ok(ast) => {
-                println!("{:#?}", ast);
-            }
-            Err(errors) => {
-                for err in errors {
-                    eprintln!("{}", err.to_report(&src));
-                }
-                std::process::exit(1);
-            }
-        },
-        _ => {
-            eprintln!("Unknown file extension: {}", ext);
             std::process::exit(1);
         }
     }
 }
 
-fn print_errors(errors: &[Diagnostic], schema: &PathBuf, instance: &PathBuf) {
-    let ilk_src = std::fs::read_to_string(schema).unwrap_or_default();
-    let kli_src = std::fs::read_to_string(instance).unwrap_or_default();
+fn run_json(file: &PathBuf, pretty: bool) {
+    let src = std::fs::read_to_string(file).expect("Failed to read file");
+
+    match ilk::parse(&src, file) {
+        Ok(ast) => {
+            let output = if pretty {
+                serde_json::to_string_pretty(&ast).unwrap()
+            } else {
+                serde_json::to_string(&ast).unwrap()
+            };
+            println!("{}", output);
+        }
+        Err(errors) => {
+            for err in &errors {
+                eprintln!("{}", err.to_report(&src));
+            }
+            std::process::exit(1);
+        }
+    }
+}
+
+fn print_errors(errors: &[Diagnostic], file: &PathBuf) {
+    let src = std::fs::read_to_string(file).unwrap_or_default();
 
     for err in errors {
-        let src = if err.file == *schema {
-            &ilk_src
-        } else {
-            &kli_src
-        };
-        eprintln!("{}", err.to_report(src));
+        eprintln!("{}", err.to_report(&src));
     }
 }

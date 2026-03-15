@@ -1,0 +1,132 @@
+// Type declarations
+
+// A tag is a single-field String struct, or a unique concrete string
+type Tag = {_ String} | Concrete<String>
+
+@assoc [Tag]
+type Event = {...} & {timestamp Int}
+
+type QueryItem = {
+    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
+    eventTypes! []&Event
+    tags! []Tag
+}
+
+type Command = {
+    fields! {...}
+
+    @source [fields]
+    query! []QueryItem
+
+    @source [fields]
+    emits! []Event
+
+}
+
+type HttpResponse = {
+    status! Concrete<Int>
+    body! {...}
+}
+
+type HttpEndpoint = {
+    method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+
+    @constraint forall(templateVars(path), v => v in keys(params))
+    path! Concrete<String>
+    params {...}
+    body {...}
+
+    responses! []HttpResponse
+}
+
+type ChangeSlice = {
+    name! Concrete<String>
+    endpoint! HttpEndpoint
+
+    @source [endpoint.params, endpoint.body]
+    command! Command
+
+    scenarios []CommandScenario
+}
+
+type CommandScenario = {
+    name! Concrete<String>
+
+    given! []-Event
+    when! Command
+    then! []-Event
+}
+
+type Board = {
+    changes! []ChangeSlice
+}
+
+
+// Instance bindings
+
+userIdTag   = Tag {userId String}
+userNameTag = Tag {name String}
+
+userRegistered = Event<userIdTag, userNameTag> {
+    id Uuid
+    name String
+    ts Timestamp
+}
+
+registerUser = ChangeSlice {
+    name "registerUser"
+
+    endpoint {
+        path "/users/{id}"
+        method "POST"
+        params {
+            id Uuid
+        }
+        body {
+            name String
+        }
+
+        responses [
+            {status 201, body {id Uuid, name String}}
+            {status 404, body {}}
+        ]
+    }
+
+    command {
+        fields {
+             id Uuid = endpoint.params.id
+             name String = endpoint.body.name
+        }
+
+        query [
+            {
+                eventTypes [userRegistered],
+                tags [userIdTag & {userId Uuid = fields.id}]
+            },
+            {
+                eventTypes [userRegistered],
+                tags [userNameTag & {name String = fields.name}]
+            }
+        ]
+
+        emits [userRegistered & {ts Timestamp*}]
+    }
+
+    scenarios [
+        {
+            name "happy path",
+            given [userRegistered & {id 123}, userRegistered]
+            when {
+                fields {id Uuid, name String}
+                query []
+                emits [userRegistered & {ts Timestamp*}]
+            }
+            then [userRegistered & {id "123"}]
+        }
+    ]
+}
+
+@main
+board = Board {
+    changes [registerUser]
+}

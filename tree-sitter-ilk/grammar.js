@@ -12,8 +12,13 @@ const PREC = {
   ASSOC_CALL: 8,
 };
 
+// Helper: comma-or-newline separated list (1+)
+function commaSep1(rule) {
+  return seq(rule, repeat(seq(optional(","), rule)), optional(","));
+}
+
 module.exports = grammar({
-  name: "ilk_kli",
+  name: "ilk",
 
   extras: ($) => [/\s/, $.comment],
 
@@ -22,7 +27,7 @@ module.exports = grammar({
   rules: {
     source_file: ($) => repeat($._definition),
 
-    _definition: ($) => choice($.block, $.binding),
+    _definition: ($) => choice($.type_decl, $.instance, $.import_stmt),
 
     // ===================
     // Comments
@@ -41,7 +46,7 @@ module.exports = grammar({
     boolean: ($) => choice("true", "false"),
 
     // ===================
-    // Base Types (ilk)
+    // Base Types
     // ===================
     base_type: ($) =>
       choice(
@@ -57,9 +62,10 @@ module.exports = grammar({
       ),
 
     // ===================
-    // Type Expressions (ilk)
+    // Type Expressions
+    // _type_expr is anonymous (hidden node) - no wrapper in CST
     // ===================
-    type_expr: ($) =>
+    _type_expr: ($) =>
       choice(
         $.union_type,
         $.intersection_type,
@@ -72,6 +78,7 @@ module.exports = grammar({
         $.concrete_type,
         $.list_type,
         $.reference_type,
+        $.refinable_ref,
         $.struct_type,
         $.named_type,
         $.literal_type
@@ -82,7 +89,7 @@ module.exports = grammar({
     literal_type: ($) => choice($.string, $.number, $.boolean),
 
     concrete_type: ($) =>
-      seq("Concrete", "<", $.type_expr, ">"),
+      seq("Concrete", "<", $._type_expr, ">"),
 
     list_type: ($) => seq("[", optional($.cardinality), "]", $._primary_type),
 
@@ -96,38 +103,39 @@ module.exports = grammar({
 
     reference_type: ($) => seq("&", $.identifier),
 
+    // -TypeName: a type reference that allows value-level refinement
+    refinable_ref: ($) => seq("-", $.identifier),
+
     struct_type: ($) =>
       seq(
         "{",
         optional(choice(
-          "...",                  // open struct {…}
-          $.anonymous_fields,     // {_ Type, _ Type}
-          $.ilk_field_list       // closed struct {x Int, y String}
+          "...",                // open struct {…}
+          $.anonymous_fields,  // {_ Type, _ Type}
+          $.field_list         // closed struct {x Int, y String}
         )),
         "}"
       ),
 
-    anonymous_fields: ($) =>
-      seq($.anonymous_field, repeat(seq(choice(",", /\r?\n/), $.anonymous_field))),
+    anonymous_fields: ($) => commaSep1($.anonymous_field),
 
     anonymous_field: ($) => seq("_", optional($._primary_type)),
 
-    ilk_field_list: ($) =>
-      seq($.ilk_field, repeat(seq(choice(",", /\r?\n/), $.ilk_field))),
+    field_list: ($) => commaSep1($.field),
 
-    ilk_field: ($) =>
+    field: ($) =>
       seq(
         repeat($.annotation),
         field("name", $.identifier),
         optional("?"),
-        field("type", $.type_expr)
+        field("type", $._type_expr)
       ),
 
     union_type: ($) =>
-      prec.left(PREC.UNION, seq($.type_expr, "|", $.type_expr)),
+      prec.left(PREC.UNION, seq($._type_expr, "|", $._type_expr)),
 
     intersection_type: ($) =>
-      prec.right(PREC.INTERSECTION, seq($.type_expr, "&", $.type_expr)),
+      prec.right(PREC.INTERSECTION, seq($._type_expr, "&", $._type_expr)),
 
     // ===================
     // Annotations
@@ -140,23 +148,22 @@ module.exports = grammar({
           "out",
           seq("assoc", "[", $.annotation_args, "]"),
           seq("source", "[", $.source_args, "]"),
-          seq("constraint", $.constraint_expr),
+          seq("constraint", $._constraint_expr),
           seq("doc", $.string)
         )
       ),
 
-    annotation_args: ($) =>
-      seq($.identifier, repeat(seq(choice(",", /\r?\n/), $.identifier))),
+    annotation_args: ($) => commaSep1($.identifier),
 
-    source_args: ($) =>
-      seq($.source_path, repeat(seq(choice(",", /\r?\n/), $.source_path))),
+    source_args: ($) => commaSep1($.source_path),
 
     source_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
 
     // ===================
-    // Constraint Expressions (ilk)
+    // Constraint Expressions
+    // _constraint_expr is anonymous (hidden node) - no wrapper in CST
     // ===================
-    constraint_expr: ($) =>
+    _constraint_expr: ($) =>
       choice(
         $.constraint_or,
         $.constraint_and,
@@ -166,21 +173,21 @@ module.exports = grammar({
       ),
 
     constraint_or: ($) =>
-      prec.left(PREC.OR, seq($.constraint_expr, "||", $.constraint_expr)),
+      prec.left(PREC.OR, seq($._constraint_expr, "||", $._constraint_expr)),
 
     constraint_and: ($) =>
-      prec.left(PREC.AND, seq($.constraint_expr, "&&", $.constraint_expr)),
+      prec.left(PREC.AND, seq($._constraint_expr, "&&", $._constraint_expr)),
 
     constraint_not: ($) =>
-      prec.right(PREC.NOT, seq("!", $.constraint_expr)),
+      prec.right(PREC.NOT, seq("!", $._constraint_expr)),
 
     constraint_comparison: ($) =>
       prec.left(
         PREC.COMPARISON,
         seq(
-          $.constraint_expr,
+          $._constraint_expr,
           choice("==", "!=", "<", "<=", ">", ">=", "in"),
-          $.constraint_expr
+          $._constraint_expr
         )
       ),
 
@@ -193,7 +200,7 @@ module.exports = grammar({
         $.constraint_paren
       ),
 
-    constraint_paren: ($) => seq("(", $.constraint_expr, ")"),
+    constraint_paren: ($) => seq("(", $._constraint_expr, ")"),
 
     constraint_call: ($) =>
       choice(
@@ -201,61 +208,75 @@ module.exports = grammar({
         seq(
           choice("forall", "exists", "unique"),
           "(",
-          $.constraint_expr,
+          $._constraint_expr,
           ",",
           $.identifier,
           "=>",
-          $.constraint_expr,
+          $._constraint_expr,
           ")"
         ),
         // count(col)
-        seq("count", "(", $.constraint_expr, ")"),
+        seq("count", "(", $._constraint_expr, ")"),
         // templateVars(str)
-        seq("templateVars", "(", $.constraint_expr, ")"),
+        seq("templateVars", "(", $._constraint_expr, ")"),
         // keys(struct)
-        seq("keys", "(", $.constraint_expr, ")"),
-        // e.assoc(t) - needs high precedence to bind tighter than field access
-        prec.left(PREC.ASSOC_CALL, seq($.constraint_expr, ".", "assoc", "(", $.constraint_expr, ")"))
+        seq("keys", "(", $._constraint_expr, ")"),
+        // e.assoc(t)
+        prec.left(PREC.ASSOC_CALL, seq($._constraint_expr, ".", "assoc", "(", $._constraint_expr, ")"))
       ),
 
     constraint_field_access: ($) =>
-      prec.left(PREC.FIELD_ACCESS, seq($.constraint_expr, ".", $.identifier)),
+      prec.left(PREC.FIELD_ACCESS, seq($._constraint_expr, ".", $.identifier)),
 
     constraint_var: ($) => $.identifier,
 
     constraint_literal: ($) => choice($.boolean, $.number, $.string),
 
     // ===================
-    // Blocks (ilk definitions)
+    // Top-Level Items
     // ===================
-    // Block: Name TypeExpr (no = sign)
-    block: ($) =>
+
+    // type Name = TypeExpr
+    type_decl: ($) =>
       seq(
         repeat($.annotation),
+        "type",
         field("name", $.identifier),
-        field("body", $.type_expr)
+        "=",
+        field("body", $._type_expr)
       ),
 
-    // ===================
-    // Bindings (kli definitions)
-    // ===================
-    // Binding: name = TypeName value
-    binding: ($) =>
+    // [@main] [@doc "..."] name = TypeName<assocs?> value
+    instance: ($) =>
       seq(
-        optional(seq("@doc", $.string)),
+        optional($.main_annotation),
+        optional($.doc_annotation),
         field("name", $.identifier),
         "=",
         field("type", $.identifier),
         optional($.assoc_list),
-        field("value", $.value)
+        field("value", $._value)
       ),
 
-    assoc_list: ($) => seq("<", $.identifier, repeat(seq(",", $.identifier)), ">"),
+    main_annotation: ($) => "@main",
+
+    doc_annotation: ($) => seq("@doc", $.string),
+
+    assoc_list: ($) => seq("<", commaSep1($.identifier), ">"),
+
+    // import "path" [as alias]
+    import_stmt: ($) =>
+      seq(
+        "import",
+        field("path", $.string),
+        optional(seq("as", field("alias", $.identifier)))
+      ),
 
     // ===================
-    // Values (kli)
+    // Values (instance-level)
+    // _value is anonymous (hidden node) - no wrapper in CST
     // ===================
-    value: ($) =>
+    _value: ($) =>
       choice(
         $.struct_value,
         $.list_value,
@@ -274,45 +295,41 @@ module.exports = grammar({
     struct_value: ($) =>
       seq("{", optional($.value_field_list), "}"),
 
-    value_field_list: ($) =>
-      seq($.value_field, repeat(seq(choice(",", /\r?\n/), $.value_field))),
+    value_field_list: ($) => commaSep1($.value_field),
 
     value_field: ($) =>
       seq(
-        optional(seq("@doc", $.string)),
+        optional($.doc_annotation),
         field("name", $.identifier),
         optional("?"),
-        field("value", $.value),
+        field("value", $._value),
         optional($.field_origin)
       ),
 
     field_origin: ($) =>
       choice(
-        "*",                                           // generated
-        seq("=", $.origin_path),                       // mapped
-        seq("=", "compute", "(", $.origin_paths, ")") // computed
+        "*",                                            // generated
+        seq("=", $.origin_path),                        // mapped
+        seq("=", "compute", "(", $.origin_paths, ")")   // computed
       ),
 
     origin_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
 
-    origin_paths: ($) => seq($.origin_path, repeat(seq(",", $.origin_path))),
+    origin_paths: ($) => commaSep1($.origin_path),
 
     list_value: ($) =>
       seq("[", optional($.list_elements), "]"),
 
-    list_elements: ($) =>
-      seq($.list_element, repeat(seq(choice(",", /\r?\n/), $.list_element))),
+    list_elements: ($) => commaSep1($.list_element),
 
     list_element: ($) =>
       choice(
-        // Refinement: binding & { origins }
         $.refinement,
-        // Plain value or reference
-        $.value
+        $._value
       ),
 
     refinement: ($) => seq($.identifier, "&", $.struct_value),
 
-    variant_value: ($) => seq($.identifier, $.value),
+    variant_value: ($) => seq($.identifier, $._value),
   },
 });

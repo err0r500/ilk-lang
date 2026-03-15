@@ -1,0 +1,322 @@
+================================================================================
+Simple instance
+================================================================================
+
+tag = Parametrized {userId String}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
+
+================================================================================
+Instance with literal
+================================================================================
+
+simpleTag = Unique "simple-tag"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (literal_value
+      (string))))
+
+================================================================================
+Instance with associations
+================================================================================
+
+userRegistered = Event<userIdTag, commonTag> {
+    id String,
+    name String
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (assoc_list
+      (identifier)
+      (identifier))
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
+
+================================================================================
+Field origins - generated
+================================================================================
+
+event = Event {
+    timestamp Int*
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin))))))
+
+================================================================================
+Field origins - mapped
+================================================================================
+
+event = Event {
+    customerId Uuid = fields.userId
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_path
+              (identifier)
+              (identifier))))))))
+
+================================================================================
+Field origins - computed
+================================================================================
+
+event = Event {
+    total Int = compute(fields.qty, fields.price)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_paths
+              (origin_path
+                (identifier)
+                (identifier))
+              (origin_path
+                (identifier)
+                (identifier)))))))))
+
+================================================================================
+Optional fields
+================================================================================
+
+event = Event {
+    email? String
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
+
+================================================================================
+List values
+================================================================================
+
+cmd = Command {
+    emits [userRegistered, other]
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (binding_ref
+                  (identifier)))
+              (list_element
+                (binding_ref
+                  (identifier))))))))))
+
+================================================================================
+Inline refinements
+================================================================================
+
+cmd = Command {
+    emits [userRegistered & {
+        timestamp Int*
+    }]
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (refinement
+                  (identifier)
+                  (struct_value
+                    (value_field_list
+                      (value_field
+                        (identifier)
+                        (type_ref
+                          (base_type))
+                        (field_origin)))))))))))))
+
+================================================================================
+Main annotation
+================================================================================
+
+@main
+board = Board {commands [cmd]}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (main_annotation)
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (list_value
+            (list_elements
+              (list_element
+                (binding_ref
+                  (identifier))))))))))
+
+================================================================================
+Doc annotation on instance
+================================================================================
+
+@doc "Implementation hint"
+total = Event {x String}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (doc_annotation
+      (string))
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (identifier)
+          (type_ref
+            (base_type)))))))
+
+================================================================================
+Doc annotation on field
+================================================================================
+
+ev = Event {
+    @doc "multiply qty * price"
+    amount Int = compute(fields.qty, fields.price)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    (identifier)
+    (identifier)
+    (struct_value
+      (value_field_list
+        (value_field
+          (doc_annotation
+            (string))
+          (identifier)
+          (type_ref
+            (base_type))
+          (field_origin
+            (origin_paths
+              (origin_path
+                (identifier)
+                (identifier))
+              (origin_path
+                (identifier)
+                (identifier)))))))))
+
+================================================================================
+Import statement
+================================================================================
+
+import "./base-types.ilk"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_stmt
+    (string)))
+
+================================================================================
+Import with alias
+================================================================================
+
+import "./common-tags.ilk" as tags
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_stmt
+    (string)
+    (identifier)))

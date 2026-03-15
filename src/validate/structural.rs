@@ -1,86 +1,65 @@
+use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::ilk::ast::*;
-use crate::ilk::TypeEnv;
-use crate::kli::ast::*;
+use crate::resolve::TypeEnv;
 use crate::span::{Span, S};
-use std::collections::HashMap;
 use std::path::Path;
+
+fn format_type(ty: &TypeExpr) -> String {
+    match ty {
+        TypeExpr::Base(b) => format!("{:?}", b),
+        TypeExpr::Named(n) => n.clone(),
+        TypeExpr::Concrete(inner) => format!("Concrete<{}>", format_type(&inner.node)),
+        TypeExpr::Reference(n) => format!("&{}", n),
+        TypeExpr::List(_, inner) => format!("[]{}", format_type(&inner.node)),
+        TypeExpr::LitString(s) => format!("\"{}\"", s),
+        TypeExpr::LitInt(i) => format!("{}", i),
+        TypeExpr::LitBool(b) => format!("{}", b),
+        _ => "?".to_string(),
+    }
+}
 
 pub struct ValidationContext<'a> {
     pub env: &'a TypeEnv,
-    pub bindings: HashMap<String, &'a S<Binding>>,
     pub path: &'a Path,
 }
 
 impl<'a> ValidationContext<'a> {
-    pub fn new(env: &'a TypeEnv, kli: &'a KliFile, path: &'a Path) -> Self {
-        let mut bindings = HashMap::new();
-        for binding in &kli.bindings {
-            bindings.insert(binding.node.name.node.clone(), binding);
-        }
-        Self {
-            env,
-            bindings,
-            path,
-        }
+    pub fn new(env: &'a TypeEnv, path: &'a Path) -> Self {
+        Self { env, path }
+    }
+
+    pub fn get_instance(&self, name: &str) -> Option<&Instance> {
+        self.env.get_instance(name).map(|s| &s.node)
     }
 }
 
 pub fn validate_structural(
     ctx: &ValidationContext,
-    kli: &KliFile,
+    file: &File,
     errors: &mut Vec<Diagnostic>,
 ) {
-    let main = match ctx.env.main() {
-        Some(m) => m,
-        None => {
-            errors.push(Diagnostic::error(0..0, "No @main block in schema", ctx.path));
-            return;
-        }
-    };
+    // Validate each instance against its type
+    for inst in file.instances() {
+        let type_name = &inst.type_name.node;
 
-    // The main block should be a struct that contains all the bindings
-    validate_main_against_bindings(ctx, main, kli, errors);
-}
-
-fn validate_main_against_bindings(
-    ctx: &ValidationContext,
-    _main: &S<Block>,
-    kli: &KliFile,
-    errors: &mut Vec<Diagnostic>,
-) {
-    // Find the main binding that matches @main type
-    for binding in &kli.bindings {
-        let type_name = &binding.node.type_name.node;
-
-        // Check if the type exists
-        if let Some(block) = ctx.env.get(type_name) {
-            validate_value_against_type(ctx, &binding.node.body, &block.node.body, errors);
+        if let Some(type_decl) = ctx.env.get_type(type_name) {
+            validate_value_against_type(ctx, &inst.body, &type_decl.node.body, errors);
 
             // Validate associations
-            validate_associations(ctx, binding, block, errors);
-        } else {
-            // Check if it's a base type (shouldn't happen for bindings typically)
-            if !is_base_type(type_name) {
-                errors.push(Diagnostic::error(
-                    binding.node.type_name.span.clone(),
-                    format!("Unknown type: {}", type_name),
-                    ctx.path,
-                ));
-            }
+            validate_associations(ctx, inst, &type_decl.node, errors);
         }
+        // Unknown type errors are already caught in resolve
     }
 }
 
 fn validate_associations(
     ctx: &ValidationContext,
-    binding: &S<Binding>,
-    block: &S<Block>,
+    inst: &Instance,
+    type_decl: &TypeDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
     // Find @assoc annotation
-    let assoc_types: Vec<&String> = block
-        .node
+    let assoc_types: Vec<&String> = type_decl
         .annotations
         .iter()
         .filter_map(|a| match &a.node {
@@ -90,11 +69,11 @@ fn validate_associations(
         .flatten()
         .collect();
 
-    for assoc in &binding.node.assocs {
-        // Check that the referenced binding exists
-        if let Some(assoc_binding) = ctx.bindings.get(&assoc.node) {
-            // Check that the binding's type is in the @assoc list
-            let assoc_type = &assoc_binding.node.type_name.node;
+    for assoc in &inst.assocs {
+        // Check that the referenced instance exists
+        if let Some(assoc_inst) = ctx.get_instance(&assoc.node) {
+            // Check that the instance's type is in the @assoc list
+            let assoc_type = &assoc_inst.type_name.node;
             if !assoc_types.iter().any(|t| type_matches_assoc(*t, assoc_type, ctx.env)) {
                 errors.push(Diagnostic::error(
                     assoc.span.clone(),
@@ -108,24 +87,24 @@ fn validate_associations(
         } else {
             errors.push(Diagnostic::error(
                 assoc.span.clone(),
-                format!("Unknown binding in association: {}", assoc.node),
+                format!("Unknown instance in association: {}", assoc.node),
                 ctx.path,
             ));
         }
     }
 }
 
-fn type_matches_assoc(assoc_type: &str, binding_type: &str, env: &TypeEnv) -> bool {
-    if assoc_type == binding_type {
+fn type_matches_assoc(assoc_type: &str, instance_type: &str, env: &TypeEnv) -> bool {
+    if assoc_type == instance_type {
         return true;
     }
 
-    // Check if binding_type is a variant of assoc_type (union)
-    if let Some(block) = env.get(assoc_type) {
-        if let TypeExpr::Union(variants) = &block.node.body.node {
+    // Check if instance_type is a variant of assoc_type (union)
+    if let Some(type_decl) = env.get_type(assoc_type) {
+        if let TypeExpr::Union(variants) = &type_decl.node.body.node {
             for variant in variants {
                 if let TypeExpr::Named(name) = &variant.node {
-                    if name == binding_type {
+                    if name == instance_type {
                         return true;
                     }
                 }
@@ -138,58 +117,58 @@ fn type_matches_assoc(assoc_type: &str, binding_type: &str, env: &TypeEnv) -> bo
 
 fn validate_value_against_type(
     ctx: &ValidationContext,
-    value: &S<KliValue>,
+    value: &S<Value>,
     ty: &S<TypeExpr>,
     errors: &mut Vec<Diagnostic>,
 ) {
     match (&value.node, &ty.node) {
         // Type references
-        (KliValue::TypeRef(kli_type), TypeExpr::Base(base)) => {
-            if !type_ref_matches_base(kli_type, base) {
+        (Value::TypeRef(val_type), TypeExpr::Base(base)) => {
+            if !type_ref_matches_base(val_type, base) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    format!("Type mismatch: expected {:?}, got {}", base, kli_type),
+                    format!("Type mismatch: expected {:?}, got {}", base, val_type),
                     ctx.path,
                 ));
             }
         }
 
-        // Open type - kli must use same type ref
-        (KliValue::TypeRef(_), TypeExpr::Named(_)) => {
-            // TypeRef against named type - this is valid for open types
+        // Open type - value must use same type ref
+        (Value::TypeRef(_), TypeExpr::Named(_)) => {
+            // TypeRef against named type - valid for open types
         }
 
-        // Concrete type - kli must provide a literal
-        (KliValue::LitString(_), TypeExpr::Concrete(inner)) => {
+        // Concrete type - must provide a literal
+        (Value::LitString(_), TypeExpr::Concrete(inner)) => {
             if !matches!(&inner.node, TypeExpr::Base(BaseType::String)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "String literal doesn't match Concrete type",
+                    format!("String literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }
         }
-        (KliValue::LitInt(_), TypeExpr::Concrete(inner)) => {
+        (Value::LitInt(_), TypeExpr::Concrete(inner)) => {
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Int)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "Int literal doesn't match Concrete type",
+                    format!("Int literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }
         }
-        (KliValue::LitBool(_), TypeExpr::Concrete(inner)) => {
+        (Value::LitBool(_), TypeExpr::Concrete(inner)) => {
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Bool)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    "Bool literal doesn't match Concrete type",
+                    format!("Bool literal doesn't match expected type {}", format_type(&ty.node)),
                     ctx.path,
                 ));
             }
         }
 
         // Schema-fixed literals - must match exactly
-        (KliValue::LitString(s), TypeExpr::LitString(expected)) => {
+        (Value::LitString(s), TypeExpr::LitString(expected)) => {
             if s != expected {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -198,7 +177,7 @@ fn validate_value_against_type(
                 ));
             }
         }
-        (KliValue::LitInt(n), TypeExpr::LitInt(expected)) => {
+        (Value::LitInt(n), TypeExpr::LitInt(expected)) => {
             if n != expected {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -207,7 +186,7 @@ fn validate_value_against_type(
                 ));
             }
         }
-        (KliValue::LitBool(b), TypeExpr::LitBool(expected)) => {
+        (Value::LitBool(b), TypeExpr::LitBool(expected)) => {
             if b != expected {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -218,7 +197,7 @@ fn validate_value_against_type(
         }
 
         // Literal against open type - error
-        (KliValue::LitString(_), TypeExpr::Base(BaseType::String)) => {
+        (Value::LitString(_), TypeExpr::Base(BaseType::String)) => {
             errors.push(Diagnostic::error(
                 value.span.clone(),
                 "Cannot use literal for open String type - use String type ref",
@@ -227,25 +206,25 @@ fn validate_value_against_type(
         }
 
         // Structs
-        (KliValue::Struct(kli_fields), TypeExpr::Struct(kind)) => {
-            validate_struct(ctx, kli_fields, kind, &value.span, errors);
+        (Value::Struct(val_fields), TypeExpr::Struct(kind)) => {
+            validate_struct(ctx, val_fields, kind, &value.span, errors);
         }
 
         // Lists
-        (KliValue::List(elements), TypeExpr::List(card, elem_ty)) => {
+        (Value::List(elements), TypeExpr::List(card, elem_ty)) => {
             validate_list(ctx, elements, card, elem_ty, &value.span, errors);
         }
 
         // References
-        (KliValue::BindingRef(name), TypeExpr::Reference(expected_type)) => {
-            if let Some(binding) = ctx.bindings.get(name) {
-                let binding_type = &binding.node.type_name.node;
-                if !type_matches_ref(binding_type, expected_type, ctx.env) {
+        (Value::BindingRef(name), TypeExpr::Reference(expected_type)) => {
+            if let Some(inst) = ctx.get_instance(name) {
+                let inst_type = &inst.type_name.node;
+                if !type_matches_ref(inst_type, expected_type, ctx.env) {
                     errors.push(Diagnostic::error(
                         value.span.clone(),
                         format!(
                             "Reference type mismatch: {} is type {}, expected {}",
-                            name, binding_type, expected_type
+                            name, inst_type, expected_type
                         ),
                         ctx.path,
                     ));
@@ -253,7 +232,7 @@ fn validate_value_against_type(
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    format!("Unknown binding: {}", name),
+                    format!("Unknown instance: {}", name),
                     ctx.path,
                 ));
             }
@@ -281,34 +260,29 @@ fn validate_value_against_type(
 
         // Intersections
         (_, TypeExpr::Intersection(left, right)) => {
-            // Check if left is open struct - if so, only validate required fields from right
             if matches!(&left.node, TypeExpr::Struct(StructKind::Open(_))) {
                 // Open struct on left - extra fields allowed
-                // Just check that required fields from right are present and valid
-                if let (KliValue::Struct(kli_fields), TypeExpr::Struct(StructKind::Closed(ilk_fields))) =
+                if let (Value::Struct(val_fields), TypeExpr::Struct(StructKind::Closed(type_fields))) =
                     (&value.node, &right.node)
                 {
-                    for ilk_field in ilk_fields {
-                        let name = &ilk_field.node.name.node;
-                        if let Some(kli_field) =
-                            kli_fields.iter().find(|f| &f.node.name.node == name)
+                    for type_field in type_fields {
+                        let name = &type_field.node.name.node;
+                        if let Some(val_field) =
+                            val_fields.iter().find(|f| &f.node.name.node == name)
                         {
                             validate_value_against_type(
                                 ctx,
-                                &kli_field.node.value,
-                                &ilk_field.node.ty,
+                                &val_field.node.value,
+                                &type_field.node.ty,
                                 errors,
                             );
                         }
-                        // If field not present, it's optional by default in ilk
                     }
                 } else {
-                    // Fallback to checking both sides
                     validate_value_against_type(ctx, value, left, errors);
                     validate_value_against_type(ctx, value, right, errors);
                 }
             } else {
-                // Both sides have strict requirements
                 validate_value_against_type(ctx, value, left, errors);
                 validate_value_against_type(ctx, value, right, errors);
             }
@@ -316,15 +290,22 @@ fn validate_value_against_type(
 
         // Named types - resolve and validate
         (_, TypeExpr::Named(name)) => {
-            if let Some(block) = ctx.env.get(name) {
-                validate_value_against_type(ctx, value, &block.node.body, errors);
+            if let Some(type_decl) = ctx.env.get_type(name) {
+                validate_value_against_type(ctx, value, &type_decl.node.body, errors);
             }
         }
 
-        // Variant (kli) against block (ilk)
-        (KliValue::Variant(variant_name, body), _) => {
-            if let Some(block) = ctx.env.get(variant_name) {
-                validate_value_against_type(ctx, body, &block.node.body, errors);
+        // RefinableRef - same as Named but allows concrete refinements
+        (_, TypeExpr::RefinableRef(name)) => {
+            if let Some(type_decl) = ctx.env.get_type(name) {
+                validate_value_against_type(ctx, value, &type_decl.node.body, errors);
+            }
+        }
+
+        // Variant value against type
+        (Value::Variant(variant_name, body), _) => {
+            if let Some(type_decl) = ctx.env.get_type(variant_name) {
+                validate_value_against_type(ctx, body, &type_decl.node.body, errors);
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -345,58 +326,72 @@ fn validate_value_against_type(
 
 fn validate_struct(
     ctx: &ValidationContext,
-    kli_fields: &[S<KliField>],
+    val_fields: &[S<InstanceField>],
     kind: &StructKind,
     span: &Span,
     errors: &mut Vec<Diagnostic>,
 ) {
     match kind {
-        StructKind::Closed(ilk_fields) => {
-            // Check all kli fields are in ilk
-            for kli_field in kli_fields {
-                let name = &kli_field.node.name.node;
-                if let Some(ilk_field) = ilk_fields.iter().find(|f| &f.node.name.node == name) {
+        StructKind::Closed(type_fields) => {
+            // Check all value fields are in type
+            for val_field in val_fields {
+                let name = &val_field.node.name.node;
+                if let Some(type_field) = type_fields.iter().find(|f| &f.node.name.node == name) {
                     validate_value_against_type(
                         ctx,
-                        &kli_field.node.value,
-                        &ilk_field.node.ty,
+                        &val_field.node.value,
+                        &type_field.node.ty,
                         errors,
                     );
                 } else {
                     errors.push(Diagnostic::error(
-                        kli_field.node.name.span.clone(),
+                        val_field.node.name.span.clone(),
                         format!("Extra field not in schema: {}", name),
+                        ctx.path,
+                    ));
+                }
+            }
+
+            // Check all required type fields are present
+            for type_field in type_fields {
+                if type_field.node.optional {
+                    continue;
+                }
+                let name = &type_field.node.name.node;
+                if !val_fields.iter().any(|f| &f.node.name.node == name) {
+                    errors.push(Diagnostic::error(
+                        span.clone(),
+                        format!("Missing required field: {}", name),
                         ctx.path,
                     ));
                 }
             }
         }
 
-        StructKind::Open(ilk_fields) => {
+        StructKind::Open(type_fields) => {
             // Check required fields are present and match
-            for ilk_field in ilk_fields {
-                let name = &ilk_field.node.name.node;
-                if let Some(kli_field) = kli_fields.iter().find(|f| &f.node.name.node == name) {
+            for type_field in type_fields {
+                let name = &type_field.node.name.node;
+                if let Some(val_field) = val_fields.iter().find(|f| &f.node.name.node == name) {
                     validate_value_against_type(
                         ctx,
-                        &kli_field.node.value,
-                        &ilk_field.node.ty,
+                        &val_field.node.value,
+                        &type_field.node.ty,
                         errors,
                     );
                 }
-                // Open structs don't require fields
             }
         }
 
         StructKind::Anonymous(types) => {
             // Check cardinality
-            if kli_fields.len() != types.len() {
+            if val_fields.len() != types.len() {
                 errors.push(Diagnostic::error(
                     span.clone(),
                     format!(
                         "Wrong field count: expected {}, got {}",
                         types.len(),
-                        kli_fields.len()
+                        val_fields.len()
                     ),
                     ctx.path,
                 ));
@@ -404,9 +399,9 @@ fn validate_struct(
             }
 
             // Check field types if specified
-            for (kli_field, ty) in kli_fields.iter().zip(types.iter()) {
+            for (val_field, ty) in val_fields.iter().zip(types.iter()) {
                 if let Some(expected_ty) = ty {
-                    validate_value_against_type(ctx, &kli_field.node.value, expected_ty, errors);
+                    validate_value_against_type(ctx, &val_field.node.value, expected_ty, errors);
                 }
             }
         }
@@ -415,7 +410,7 @@ fn validate_struct(
 
 fn validate_list(
     ctx: &ValidationContext,
-    elements: &[S<KliListElement>],
+    elements: &[S<ListElement>],
     card: &Cardinality,
     elem_ty: &S<TypeExpr>,
     span: &Span,
@@ -443,21 +438,25 @@ fn validate_list(
     // Check each element
     for elem in elements {
         match &elem.node {
-            KliListElement::Value(v) => {
+            ListElement::Value(v) => {
                 let spanned = S::new(v.clone(), elem.span.clone());
                 validate_value_against_type(ctx, &spanned, elem_ty, errors);
             }
-            KliListElement::BindingRef(name) => {
-                if let Some(binding) = ctx.bindings.get(name) {
-                    let binding_type = &binding.node.type_name.node;
-                    // Check binding type matches list element type
-                    if let TypeExpr::Named(expected) = &elem_ty.node {
-                        if !type_matches_ref(binding_type, expected, ctx.env) {
+            ListElement::BindingRef(name) => {
+                if let Some(inst) = ctx.get_instance(name) {
+                    let inst_type = &inst.type_name.node;
+                    let expected = match &elem_ty.node {
+                        TypeExpr::Named(t) => Some(t),
+                        TypeExpr::RefinableRef(t) => Some(t),
+                        _ => None,
+                    };
+                    if let Some(expected) = expected {
+                        if !type_matches_ref(inst_type, expected, ctx.env) {
                             errors.push(Diagnostic::error(
                                 elem.span.clone(),
                                 format!(
                                     "List element type mismatch: {} is {}, expected {}",
-                                    name, binding_type, expected
+                                    name, inst_type, expected
                                 ),
                                 ctx.path,
                             ));
@@ -466,21 +465,96 @@ fn validate_list(
                 } else {
                     errors.push(Diagnostic::error(
                         elem.span.clone(),
-                        format!("Unknown binding in list: {}", name),
+                        format!("Unknown instance in list: {}", name),
                         ctx.path,
                     ));
                 }
             }
-            KliListElement::Refinement(name, _fields) => {
-                // Refinements are handled in @source validation
-                if !ctx.bindings.contains_key(name) {
+            ListElement::Refinement(name, fields) => {
+                if let Some(inst) = ctx.get_instance(name) {
+                    let inst_type = &inst.type_name.node;
+
+                    // Check type matches (for RefinableRef, extract the inner type name)
+                    let expected_type = match &elem_ty.node {
+                        TypeExpr::RefinableRef(t) => t,
+                        TypeExpr::Named(t) => t,
+                        _ => {
+                            errors.push(Diagnostic::error(
+                                elem.span.clone(),
+                                "Refinement on non-named type",
+                                ctx.path,
+                            ));
+                            continue;
+                        }
+                    };
+
+                    if !type_matches_ref(inst_type, expected_type, ctx.env) {
+                        errors.push(Diagnostic::error(
+                            elem.span.clone(),
+                            format!(
+                                "Refinement type mismatch: {} is {}, expected {}",
+                                name, inst_type, expected_type
+                            ),
+                            ctx.path,
+                        ));
+                    }
+
+                    // Validate refinement fields against the instance's actual fields
+                    let is_refinable = matches!(&elem_ty.node, TypeExpr::RefinableRef(_));
+                    validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, errors);
+                } else {
                     errors.push(Diagnostic::error(
                         elem.span.clone(),
-                        format!("Unknown binding in refinement: {}", name),
+                        format!("Unknown instance in refinement: {}", name),
                         ctx.path,
                     ));
                 }
             }
+        }
+    }
+}
+
+fn validate_refinement_fields_against_instance(
+    ctx: &ValidationContext,
+    fields: &[S<InstanceField>],
+    inst: &Instance,
+    is_refinable: bool,
+    errors: &mut Vec<Diagnostic>,
+) {
+    // Get fields from the instance's body
+    let inst_fields = match &inst.body.node {
+        Value::Struct(f) => f,
+        _ => return,
+    };
+
+    for field in fields {
+        let field_name = &field.node.name.node;
+        if let Some(inst_field) = inst_fields.iter().find(|f| &f.node.name.node == field_name) {
+            // Check if refinement value is a concrete literal
+            let is_concrete = matches!(
+                &field.node.value.node,
+                Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_)
+            );
+
+            // Check if the instance field expects an open type (TypeRef like String, Int)
+            let is_open_type = matches!(&inst_field.node.value.node, Value::TypeRef(_));
+
+            if is_concrete && is_open_type && !is_refinable {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!(
+                        "Cannot use concrete value for open type field '{}' - type is not refinable (use -{})",
+                        field_name, inst.type_name.node
+                    ),
+                    ctx.path,
+                ));
+            }
+        } else {
+            errors.push(Diagnostic::error(
+                field.node.name.span.clone(),
+                format!("Unknown field in refinement: {}", field_name),
+                ctx.path,
+            ));
         }
     }
 }
@@ -499,17 +573,17 @@ fn type_ref_matches_base(type_ref: &str, base: &BaseType) -> bool {
     }
 }
 
-fn type_matches_ref(binding_type: &str, expected_type: &str, env: &TypeEnv) -> bool {
-    if binding_type == expected_type {
+fn type_matches_ref(inst_type: &str, expected_type: &str, env: &TypeEnv) -> bool {
+    if inst_type == expected_type {
         return true;
     }
 
-    // Check if binding_type is a variant of expected_type (union)
-    if let Some(block) = env.get(expected_type) {
-        if let TypeExpr::Union(variants) = &block.node.body.node {
+    // Check if inst_type is a variant of expected_type (union)
+    if let Some(type_decl) = env.get_type(expected_type) {
+        if let TypeExpr::Union(variants) = &type_decl.node.body.node {
             for variant in variants {
                 if let TypeExpr::Named(name) = &variant.node {
-                    if name == binding_type {
+                    if name == inst_type {
                         return true;
                     }
                 }
@@ -520,135 +594,145 @@ fn type_matches_ref(binding_type: &str, expected_type: &str, env: &TypeEnv) -> b
     false
 }
 
-fn is_base_type(name: &str) -> bool {
-    matches!(
-        name,
-        "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ilk::{parse_ilk, resolve};
-    use crate::kli::parse_kli;
+    use crate::parser::parse;
+    use crate::resolve::resolve;
     use std::path::Path;
 
-    fn validate_pair(ilk_src: &str, kli_src: &str) -> Vec<Diagnostic> {
-        let ilk = parse_ilk(ilk_src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&ilk, Path::new("test.ilk")).unwrap();
-        let kli = parse_kli(kli_src, Path::new("test.kli")).unwrap();
-        let ctx = ValidationContext::new(&env, &kli, Path::new("test.kli"));
+    fn validate_src(src: &str) -> Vec<Diagnostic> {
+        let file = parse(src, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_structural(&ctx, &kli, &mut errors);
+        validate_structural(&ctx, &file, &mut errors);
         errors
     }
 
     #[test]
     fn test_type_match() {
-        let errors = validate_pair(
-            "@main\nFoo {x String}",
-            "foo = Foo {x String}",
+        let errors = validate_src(
+            "type Foo = {x String}\nfoo = Foo {x String}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_type_mismatch() {
-        let errors = validate_pair(
-            "@main\nFoo {x Int}",
-            "foo = Foo {x String}",
+        let errors = validate_src(
+            "type Foo = {x Int}\nfoo = Foo {x String}",
         );
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_concrete_type() {
-        let errors = validate_pair(
-            "@main\nFoo {x Concrete<String>}",
-            "foo = Foo {x \"hello\"}",
+        let errors = validate_src(
+            "type Foo = {x Concrete<String>}\nfoo = Foo {x \"hello\"}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_vs_open() {
-        let errors = validate_pair(
-            "@main\nFoo {x String}",
-            "foo = Foo {x \"hello\"}",
+        let errors = validate_src(
+            "type Foo = {x String}\nfoo = Foo {x \"hello\"}",
         );
         assert!(!errors.is_empty()); // literal can't satisfy open type
     }
 
     #[test]
     fn test_schema_fixed_literal() {
-        let errors = validate_pair(
-            "@main\nFoo {x \"hello\"}",
-            "foo = Foo {x \"hello\"}",
+        let errors = validate_src(
+            "type Foo = {x \"hello\"}\nfoo = Foo {x \"hello\"}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_mismatch() {
-        let errors = validate_pair(
-            "@main\nFoo {x \"hello\"}",
-            "foo = Foo {x \"world\"}",
+        let errors = validate_src(
+            "type Foo = {x \"hello\"}\nfoo = Foo {x \"world\"}",
         );
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_extra_field() {
-        let errors = validate_pair(
-            "@main\nFoo {x Int}",
-            "foo = Foo {x Int, y Int}",
+        let errors = validate_src(
+            "type Foo = {x Int}\nfoo = Foo {x Int, y Int}",
         );
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_open_struct() {
-        let errors = validate_pair(
-            "@main\nFoo {...}",
-            "foo = Foo {x Int, y String}",
+        let errors = validate_src(
+            "type Foo = {...}\nfoo = Foo {x Int, y String}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct() {
-        let errors = validate_pair(
-            "@main\nFoo {_}",
-            "foo = Foo {a String}",
+        let errors = validate_src(
+            "type Foo = {_}\nfoo = Foo {a String}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct_wrong_count() {
-        let errors = validate_pair(
-            "@main\nFoo {_}",
-            "foo = Foo {a Int, b Int}",
+        let errors = validate_src(
+            "type Foo = {_}\nfoo = Foo {a Int, b Int}",
         );
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_list_any() {
-        let errors = validate_pair(
-            "Item {x Int}\n@main\nFoo {items []Item}",
-            "i1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
+        let errors = validate_src(
+            "type Item = {x Int}\ntype Foo = {items []Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_list_cardinality() {
-        let errors = validate_pair(
-            "Item {x Int}\n@main\nFoo {items [3]Item}",
-            "i1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
+        let errors = validate_src(
+            "type Item = {x Int}\ntype Foo = {items [3]Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
         );
         assert!(!errors.is_empty()); // expected 3, got 2
+    }
+
+    #[test]
+    fn test_refinable_ref_allows_concrete() {
+        let errors = validate_src(r#"
+type Event = {...} & {timestamp Int}
+type Command = {
+    emits []-Event
+}
+ev = Event {id String}
+cmd = Command {
+    emits [ev & {id "123"}]
+}
+"#);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_non_refinable_rejects_concrete() {
+        let errors = validate_src(r#"
+type Event = {...} & {timestamp Int}
+type Command = {
+    emits []Event
+}
+ev = Event {id String}
+cmd = Command {
+    emits [ev & {id "123"}]
+}
+"#);
+        assert!(!errors.is_empty()); // should error: concrete value on non-refinable
     }
 }
