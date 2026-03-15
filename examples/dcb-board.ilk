@@ -8,57 +8,57 @@ type Event = {...} & {timestamp Int}
 
 type QueryItem = {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
-    eventTypes []&Event
-    tags []Tag
+    eventTypes! []&Event
+    tags! []Tag
 }
 
 type Command = {
-    fields {...}
+    fields! {...}
 
     @source [fields]
-    query []QueryItem
+    query! []QueryItem
 
     @source [fields]
-    emits []Event
+    emits! []Event
 
 }
 
 type HttpResponse = {
-    status Concrete<Int>
-    body {...}
+    status! Concrete<Int>
+    body! {...}
 }
 
 type HttpEndpoint = {
-    method "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+    method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
 
     @constraint forall(templateVars(path), v => v in keys(params))
-    path Concrete<String>
+    path! Concrete<String>
     params {...}
     body {...}
 
-    responses []HttpResponse
+    responses! []HttpResponse
 }
 
 type ChangeSlice = {
-    name Concrete<String>
-    endpoint HttpEndpoint
+    name! Concrete<String>
+    endpoint! HttpEndpoint
 
     @source [endpoint.params, endpoint.body]
-    command Command
+    command! Command
 
     scenarios []CommandScenario
 }
 
 type CommandScenario = {
-    name Concrete<String>
+    name! Concrete<String>
 
-    given []-Event
-    when Command
-    then []-Event
+    given! []-Event
+    when! Command
+    then! []-Event
 }
 
 type Board = {
-    changes []ChangeSlice
+    changes! []ChangeSlice
 }
 
 
@@ -83,7 +83,7 @@ registerUser = ChangeSlice {
             id Uuid
         }
         body {
-            name String
+            name? String
         }
 
         responses [

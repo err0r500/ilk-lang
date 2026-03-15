@@ -398,7 +398,7 @@ fn type_field<'a>(
         .repeated()
         .collect::<Vec<_>>()
         .then(ident())
-        .then(just('?').or_not().map(|o| o.is_some()))
+        .then(just('!').or_not().map(|o| o.is_none()))
         .then_ignore(ws())
         .then(type_expr)
         .map(|(((annotations, name), optional), ty)| Field {
