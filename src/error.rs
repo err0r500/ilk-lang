@@ -1,8 +1,10 @@
 use crate::span::Span;
 use ariadne::{Color, Label, Report, ReportKind, Source};
+use serde::Serialize;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Severity {
     Error,
     Warning,
@@ -14,6 +16,22 @@ pub struct Diagnostic {
     pub span: Span,
     pub message: String,
     pub file: PathBuf,
+}
+
+impl Serialize for Diagnostic {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Diagnostic", 5)?;
+        s.serialize_field("severity", &self.severity)?;
+        s.serialize_field("start", &self.span.start)?;
+        s.serialize_field("end", &self.span.end)?;
+        s.serialize_field("message", &self.message)?;
+        s.serialize_field("file", &self.file)?;
+        s.end()
+    }
 }
 
 impl Diagnostic {

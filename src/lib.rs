@@ -68,6 +68,27 @@ impl Default for Compiler {
     }
 }
 
+/// Parse source code into an AST
+pub fn parse(src: &str, path: &Path) -> Result<File, Vec<Diagnostic>> {
+    parser::parse(src, path)
+}
+
+/// Compile source code (parse + resolve + validate)
+pub fn compile(src: &str, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
+    let file = parser::parse(src, path)?;
+    let env = resolve::resolve(&file, path)?;
+    let ctx = validate::ValidationContext::new(&env, path);
+    let mut errors = Vec::new();
+    validate::validate_structural(&ctx, &file, &mut errors);
+    validate::validate_source(&ctx, &file, &mut errors);
+    validate::validate_constraints(&ctx, &file, &mut errors);
+    if errors.is_empty() {
+        Ok(env)
+    } else {
+        Err(errors)
+    }
+}
+
 /// Convenience function to validate a single file
 pub fn validate_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
     let src = std::fs::read_to_string(path).map_err(|e| {

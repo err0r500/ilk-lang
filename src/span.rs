@@ -1,4 +1,5 @@
 use chumsky::span::SimpleSpan;
+use serde::Serialize;
 use std::ops::Range;
 
 pub type Span = Range<usize>;
@@ -7,6 +8,20 @@ pub type Span = Range<usize>;
 pub struct Spanned<T> {
     pub node: T,
     pub span: Span,
+}
+
+impl<T: Serialize> Serialize for Spanned<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut s = serializer.serialize_struct("Spanned", 3)?;
+        s.serialize_field("node", &self.node)?;
+        s.serialize_field("start", &self.span.start)?;
+        s.serialize_field("end", &self.span.end)?;
+        s.end()
+    }
 }
 
 impl<T> Spanned<T> {

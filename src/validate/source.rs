@@ -230,6 +230,19 @@ fn validate_field_source(
         for nested in nested_fields {
             // Skip fields with own @source or open struct type (declarations)
             if fields_to_skip.contains(&nested.node.name.node) {
+                // Still validate mappings inside source fields against parent source
+                if let Value::Struct(inner) = &nested.node.value.node {
+                    for inner_field in inner {
+                        // Only validate fields with explicit mappings - declarations should not
+                        // be checked against parent source (they're source roots themselves)
+                        match &inner_field.node.origin {
+                            FieldOrigin::Mapped(_) | FieldOrigin::Computed(_) => {
+                                validate_refinement_field(ctx, inner_field, sources, parent_fields, errors);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 continue;
             }
             validate_refinement_field(ctx, nested, sources, parent_fields, errors);

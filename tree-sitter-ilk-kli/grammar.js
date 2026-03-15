@@ -12,6 +12,11 @@ const PREC = {
   ASSOC_CALL: 8,
 };
 
+// Helper: comma-or-newline separated list (1+)
+function commaSep1(rule) {
+  return seq(rule, repeat(seq(optional(","), rule)), optional(","));
+}
+
 module.exports = grammar({
   name: "ilk_kli",
 
@@ -112,13 +117,11 @@ module.exports = grammar({
         "}"
       ),
 
-    anonymous_fields: ($) =>
-      seq($.anonymous_field, repeat(seq(",", $.anonymous_field))),
+    anonymous_fields: ($) => commaSep1($.anonymous_field),
 
     anonymous_field: ($) => seq("_", optional($._primary_type)),
 
-    field_list: ($) =>
-      seq($.field, repeat(seq(",", $.field))),
+    field_list: ($) => commaSep1($.field),
 
     field: ($) =>
       seq(
@@ -150,11 +153,9 @@ module.exports = grammar({
         )
       ),
 
-    annotation_args: ($) =>
-      seq($.identifier, repeat(seq(",", $.identifier))),
+    annotation_args: ($) => commaSep1($.identifier),
 
-    source_args: ($) =>
-      seq($.source_path, repeat(seq(",", $.source_path))),
+    source_args: ($) => commaSep1($.source_path),
 
     source_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
 
@@ -261,7 +262,7 @@ module.exports = grammar({
 
     doc_annotation: ($) => seq("@doc", $.string),
 
-    assoc_list: ($) => seq("<", $.identifier, repeat(seq(",", $.identifier)), ">"),
+    assoc_list: ($) => seq("<", commaSep1($.identifier), ">"),
 
     // import "path" [as alias]
     import_stmt: ($) =>
@@ -294,8 +295,7 @@ module.exports = grammar({
     struct_value: ($) =>
       seq("{", optional($.value_field_list), "}"),
 
-    value_field_list: ($) =>
-      seq($.value_field, repeat(seq(",", $.value_field))),
+    value_field_list: ($) => commaSep1($.value_field),
 
     value_field: ($) =>
       seq(
@@ -315,13 +315,12 @@ module.exports = grammar({
 
     origin_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
 
-    origin_paths: ($) => seq($.origin_path, repeat(seq(",", $.origin_path))),
+    origin_paths: ($) => commaSep1($.origin_path),
 
     list_value: ($) =>
       seq("[", optional($.list_elements), "]"),
 
-    list_elements: ($) =>
-      seq($.list_element, repeat(seq(",", $.list_element))),
+    list_elements: ($) => commaSep1($.list_element),
 
     list_element: ($) =>
       choice(

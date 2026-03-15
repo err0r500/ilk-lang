@@ -208,6 +208,7 @@ Improvement Plan
 5. Add --version flag to CLI
 
 1 Week
+2. Add fuzzing infrastructure with cargo-fuzz
 
 1. Implement basic import resolution (single-file imports, no cycles)
 2. Add fuzzing infrastructure with cargo-fuzz

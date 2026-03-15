@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use ilk::error::Diagnostic;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -9,6 +10,10 @@ use std::time::Duration;
 #[command(name = "ilk")]
 #[command(about = "ilk compiler and validator")]
 struct Cli {
+    /// Output in JSON format for tooling integration
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -30,6 +35,45 @@ enum Commands {
         /// Path to the file to parse
         file: PathBuf,
     },
+    /// Output the compiled AST as JSON
+    Json {
+        /// Path to the ilk file
+        file: PathBuf,
+        /// Pretty-print the JSON output
+        #[arg(long)]
+        pretty: bool,
+    },
+}
+
+#[derive(Serialize)]
+struct JsonOutput {
+    success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<Diagnostic>,
+}
+
+impl JsonOutput {
+    fn success() -> Self {
+        Self {
+            success: true,
+            message: Some("Validation passed".to_string()),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn error(diagnostics: Vec<Diagnostic>) -> Self {
+        Self {
+            success: false,
+            message: None,
+            diagnostics,
+        }
+    }
+
+    fn print(&self) {
+        println!("{}", serde_json::to_string(self).unwrap());
+    }
 }
 
 fn main() {
@@ -37,35 +81,48 @@ fn main() {
 
     match cli.command {
         Commands::Check { file } => {
-            run_check(&file);
+            run_check(&file, cli.json);
         }
         Commands::Watch { file } => {
-            run_watch(&file);
+            run_watch(&file, cli.json);
         }
         Commands::Parse { file } => {
-            run_parse(&file);
+            run_parse(&file, cli.json);
+        }
+        Commands::Json { file, pretty } => {
+            run_json(&file, pretty);
         }
     }
 }
 
-fn run_check(file: &PathBuf) {
+fn run_check(file: &PathBuf, json: bool) {
     match ilk::validate_file(file) {
         Ok(()) => {
-            println!("Validation passed");
+            if json {
+                JsonOutput::success().print();
+            } else {
+                println!("Validation passed");
+            }
             std::process::exit(0);
         }
         Err(errors) => {
-            print_errors(&errors, file);
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
+                print_errors(&errors, file);
+            }
             std::process::exit(1);
         }
     }
 }
 
-fn run_watch(file: &PathBuf) {
-    println!("Watching {}", file.display());
+fn run_watch(file: &PathBuf, json: bool) {
+    if !json {
+        println!("Watching {}", file.display());
+    }
 
     // Initial validation
-    run_validation(file);
+    run_validation(file, json);
 
     let (tx, rx) = channel();
 
@@ -90,8 +147,10 @@ fn run_watch(file: &PathBuf) {
                 std::thread::sleep(Duration::from_millis(100));
                 while rx.try_recv().is_ok() {}
 
-                println!("\n--- Re-validating ---");
-                run_validation(file);
+                if !json {
+                    println!("\n--- Re-validating ---");
+                }
+                run_validation(file, json);
             }
             Err(e) => {
                 eprintln!("Watch error: {}", e);
@@ -101,26 +160,70 @@ fn run_watch(file: &PathBuf) {
     }
 }
 
-fn run_validation(file: &PathBuf) {
+fn run_validation(file: &PathBuf, json: bool) {
     match ilk::validate_file(file) {
         Ok(()) => {
-            println!("Validation passed");
+            if json {
+                JsonOutput::success().print();
+            } else {
+                println!("Validation passed");
+            }
         }
         Err(errors) => {
-            print_errors(&errors, file);
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
+                print_errors(&errors, file);
+            }
         }
     }
 }
 
-fn run_parse(file: &PathBuf) {
+fn run_parse(file: &PathBuf, json: bool) {
     let src = std::fs::read_to_string(file).expect("Failed to read file");
 
     match ilk::parser::parse(&src, file) {
         Ok(ast) => {
-            println!("{:#?}", ast);
+            if json {
+                // For parse, just output success with the debug AST as message
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "success": true,
+                        "ast": format!("{:#?}", ast)
+                    })
+                );
+            } else {
+                println!("{:#?}", ast);
+            }
         }
         Err(errors) => {
-            for err in errors {
+            if json {
+                JsonOutput::error(errors).print();
+            } else {
+                for err in errors {
+                    eprintln!("{}", err.to_report(&src));
+                }
+            }
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_json(file: &PathBuf, pretty: bool) {
+    let src = std::fs::read_to_string(file).expect("Failed to read file");
+
+    match ilk::parse(&src, file) {
+        Ok(ast) => {
+            let output = if pretty {
+                serde_json::to_string_pretty(&ast).unwrap()
+            } else {
+                serde_json::to_string(&ast).unwrap()
+            };
+            println!("{}", output);
+        }
+        Err(errors) => {
+            for err in &errors {
                 eprintln!("{}", err.to_report(&src));
             }
             std::process::exit(1);

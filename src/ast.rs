@@ -1,8 +1,10 @@
 use crate::span::S;
+use serde::Serialize;
 
 // ============= Type-Level AST (formerly ilk/ast.rs) =============
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BaseType {
     Wildcard,
     Uuid,
@@ -15,7 +17,8 @@ pub enum BaseType {
     Money,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Cardinality {
     Any,             // []
     Exact(usize),    // [N]
@@ -24,14 +27,15 @@ pub enum Cardinality {
     Range(usize, usize), // [N..M]
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum StructKind {
     Closed(Vec<S<Field>>),           // {x Int, y String}
     Open(Vec<S<Field>>),             // {...} or {...} & {x Int}
     Anonymous(Vec<Option<S<TypeExpr>>>), // {_}, {_ String}, {_, _}
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Field {
     pub name: S<String>,
     pub optional: bool,  // ilk uses this for optional fields in kli validation
@@ -39,7 +43,8 @@ pub struct Field {
     pub annotations: Vec<S<Annotation>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TypeExpr {
     Base(BaseType),
     Concrete(Box<S<TypeExpr>>),
@@ -55,13 +60,15 @@ pub enum TypeExpr {
     Intersection(Box<S<TypeExpr>>, Box<S<TypeExpr>>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SourcePath {
     Simple(String),
     Dotted(Vec<String>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Annotation {
     Main,
     Assoc(Vec<S<String>>),
@@ -71,7 +78,8 @@ pub enum Annotation {
     Doc(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ConstraintExpr {
     Bool(bool),
     Var(String),
@@ -99,7 +107,8 @@ pub enum ConstraintExpr {
 
 // ============= Instance-Level AST (formerly kli/ast.rs) =============
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FieldOrigin {
     None,                     // No annotation - implicit name match
     Generated,                // Type*
@@ -107,7 +116,7 @@ pub enum FieldOrigin {
     Computed(Vec<Vec<String>>), // Type = compute(path1, path2)
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InstanceField {
     pub name: S<String>,
     pub optional: bool,
@@ -116,7 +125,8 @@ pub struct InstanceField {
     pub doc: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Value {
     TypeRef(String),                       // String, Int, etc.
     LitString(String),                     // "hello"
@@ -128,7 +138,8 @@ pub enum Value {
     Variant(String, Box<S<Value>>),        // VariantName body
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ListElement {
     Value(Value),
     BindingRef(String),
@@ -137,14 +148,14 @@ pub enum ListElement {
 
 // ============= Unified Top-Level Items =============
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TypeDecl {
     pub name: S<String>,
     pub annotations: Vec<S<Annotation>>,
     pub body: S<TypeExpr>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Instance {
     pub name: S<String>,
     pub type_name: S<String>,
@@ -154,20 +165,21 @@ pub struct Instance {
     pub doc: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Import {
     pub path: S<String>,
     pub alias: Option<S<String>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Item {
     TypeDecl(TypeDecl),
     Instance(Instance),
     Import(Import),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct File {
     pub items: Vec<S<Item>>,
 }

@@ -43,7 +43,7 @@ type ChangeSlice = {
     name Concrete<String>
     endpoint HttpEndpoint
 
-    @source [endpoint]
+    @source [endpoint.params, endpoint.body]
     command Command
 
     scenarios []CommandScenario
@@ -81,21 +81,20 @@ registerUser = ChangeSlice {
         method "POST"
         params {
             id Uuid
-        }
-
-        body {
             name String
         }
+        body {}
 
         responses [
             {status 201, body {id Uuid, name String}}
+            {status 404, body {}}
         ]
     }
 
     command {
         fields {
              id Uuid = endpoint.params.id
-             name String = endpoint.body.name
+             name String = endpoint.params.name
         }
 
         query [
