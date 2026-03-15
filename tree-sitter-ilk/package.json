@@ -1,0 +1,33 @@
+{
+  "name": "tree-sitter-ilk",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for ilk",
+  "main": "bindings/node",
+  "tree-sitter": [
+    {
+      "scope": "source.ilk",
+      "file-types": ["ilk"]
+    }
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "keywords": [
+    "tree-sitter",
+    "parser",
+    "ilk"
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**"
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.7"
+  }
+}

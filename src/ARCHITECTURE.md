@@ -2,7 +2,8 @@
 
 ## Overview
 
-Single-pass compiler for data modeling. Unified AST handles both type declarations and instances (merged from old ilk + kli).
+Single-pass compiler for data modeling.
+Unified AST handles both type declarations and instances (merged from old ilk + kli).
 
 ## Pipeline Detail
 

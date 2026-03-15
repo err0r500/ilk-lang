@@ -18,7 +18,7 @@ function commaSep1(rule) {
 }
 
 module.exports = grammar({
-  name: "ilk_kli",
+  name: "ilk",
 
   extras: ($) => [/\s/, $.comment],
 

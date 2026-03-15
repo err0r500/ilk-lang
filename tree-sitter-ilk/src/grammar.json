@@ -1,6 +1,6 @@
 {
   "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/grammar.schema.json",
-  "name": "ilk_kli",
+  "name": "ilk",
   "rules": {
     "source_file": {
       "type": "REPEAT",
