@@ -1,54 +1,48 @@
 ---
 layout: home
 hero:
-  name: ilk / kli
-  text: Two-level data modeling
+  name: ilk
+  text: Single-file data modeling
   tagline: Where data provenance matters
   actions:
     - theme: brand
-      text: ilk Schema Language
-      link: /ilk-spec
-    - theme: alt
-      text: kli Domain Model
-      link: /kli-spec
+      text: Language Specification
+      link: /spec
 features:
   - title: Data Flow Validation
-    details: Traditional schemas validate shape. ilk/kli validates data flow — where does each field come from?
-  - title: Two-Level System
-    details: ilk (.ilk) defines abstract vocabulary with @source constraints. kli (.kli) instantiates it with concrete entities.
+    details: Traditional schemas validate shape. ilk validates data flow — where does each field come from?
+  - title: Single File
+    details: Type declarations and instance bindings live in one .ilk file. Types define the abstract vocabulary; instances name the concrete entities.
   - title: Not Runtime Data
-    details: Neither level holds runtime data. A .kli file is a domain model — a catalog of named entities and structures.
+    details: A .ilk file is a domain model — a catalog of named entities and structures. Runtime values live downstream.
 ---
 
 ## Quick Example
 
 ### API Endpoint with Data Flow
 
-<div class="code-compare">
-
 ```ilk
-// we define the vocabulary for our API schema in .ilk
+// Type declarations
 
-HttpMethod GET | POST | PUT | DELETE
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
 
-DbMethod {
+type DbMethod = {
     name    Concrete<String>
     args    {...}
 
-    @out // this field won't be check for @source constraints
+    @out // data flows out — exempt from @source checks
     returns {...}
 }
 
-HttpResponse {
+type HttpResponse = {
     status Concrete<Int>
-    body {...}
+    body   {...}
 }
 
-Endpoint {
-    // ensure that all fields used in path template are declared as params
+type Endpoint = {
+    // ensure all template variables are declared in params
     @constraint forall(templateVars(path), v => v in keys(params))
     path    Concrete<String>
-
     method  HttpMethod
     params  {...}
     body    {...}
@@ -60,43 +54,38 @@ Endpoint {
     responses []HttpResponse
 }
 
-@main
-Api {
+type Api = {
     endpoints []Endpoint
 }
-```
 
-```kli
-// then implement it in .kli-spec
+
+// Instance bindings
 
 findUser = DbMethod {
     name    "users.findById"
     args    {userId Uuid}
-
     returns {id Uuid, name String}
 }
 
 getUser = Endpoint {
-    path   "/users/{id}" // template variable "id" is actually declared in params
-    method GET // one of the HttpMethod literals
+    path   "/users/{id}"
+    method "GET"
     params {id Uuid}
 
+    // field name differs from source — explicit mapping required
     db findUser & {
-        // because field name doen't match,
-        // we have to explicitly tell the validator where to find userId
-        userId = params.id
+        userId Uuid = params.id
     }
 
-    // uses data from params and db.returns to construct responses
     responses [
-        HttpResponse {
+        {
             status 200
             body {
                 id   Uuid   = db.returns.id
                 name String = db.returns.name
             }
         }
-        HttpResponse {
+        {
             status 404
             body {
                 error  "User not found"
@@ -106,12 +95,11 @@ getUser = Endpoint {
     ]
 }
 
-Api {
+@main
+api = Api {
     endpoints [getUser]
 }
 ```
-
-</div>
 
 ## Quick Reference
 
@@ -119,15 +107,15 @@ Api {
 `*` `Uuid` `String` `Int` `Float` `Bool` `Date` `Timestamp` `Money`
 
 ### Value Constraints
-| ilk | kli | meaning |
-|-----|-----|---------|
+| type | instance | meaning |
+|------|----------|---------|
 | `String` | `String` | open - any value at runtime |
-| `Concrete<String>` | `"hello"` | kli-fixed - author picks one |
-| `"hello"` | `"hello"` | schema-fixed - exact match |
+| `Concrete<String>` | `"hello"` | instance-fixed - author picks one |
+| `"hello"` | `"hello"` | type-fixed - exact match |
 
 ### Structs
 ```ilk
-{_}              // exactly 1 field (= {_ Any})
+{_}              // exactly 1 field (= {_ *})
 {_ String}       // exactly 1 field, type String
 {_, _}           // exactly 2 fields
 {...}            // any fields
@@ -147,17 +135,17 @@ Api {
 
 ### Unions
 ```ilk
-HttpMethod "GET" | "POST" | "PUT"   // literal union
-Status Pending | Active | Archived  // identifier union
-Response Success | Error            // block union
+type HttpMethod = "GET" | "POST" | "PUT"   // literal union
+type Status = Pending | Active | Archived  // identifier union
+type Response = Success | Error            // block union
 ```
 
 ### Annotations
 | Annotation | Target | Purpose |
 |------------|--------|---------|
-| `@main` | block | entry point for .kli validation |
-| `@assoc [T]` | block | instances carry refs to T |
+| `@main` | instance | entry point for validation |
+| `@assoc [T]` | type | instances carry refs to T |
 | `@source [fields]` | field/list | data provenance constraint |
 | `@out` | field | output field - exempt from @source, can be referenced |
-| `@constraint expr` | block | boolean predicate |
-| `@doc "..."` | field (kli) | implementation hint |
+| `@constraint expr` | type | boolean predicate |
+| `@doc "..."` | field | implementation hint |
