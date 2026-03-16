@@ -106,7 +106,7 @@ fn find_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<Span> {
                             return env.get_instance(name).map(|i| i.span.clone());
                         }
                     }
-                    ListElement::Refinement(name, fields) => {
+                    ListElement::Refinement(name, _assocs, fields) => {
                         if elem.span.contains(&offset) {
                             // Check if on the binding name part
                             // For now, just resolve the binding

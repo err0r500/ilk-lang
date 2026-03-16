@@ -279,12 +279,16 @@ module.exports = grammar({
     _value: ($) =>
       choice(
         $.struct_value,
+        $.assoc_struct_value,
         $.list_value,
         $.type_ref,
         $.literal_value,
         $.binding_ref,
         $.variant_value
       ),
+
+    assoc_struct_value: ($) =>
+      prec(1, seq($.assoc_list, $.struct_value)),
 
     type_ref: ($) => $.base_type,
 
@@ -313,7 +317,11 @@ module.exports = grammar({
         seq("=", "compute", "(", $.origin_paths, ")")   // computed
       ),
 
-    origin_path: ($) => seq($.identifier, repeat(seq(".", $.identifier))),
+    origin_path: ($) =>
+      choice(
+        seq($.identifier, repeat(seq(".", $.identifier))),
+        seq("$assoc", repeat1(seq(".", $.identifier)))
+      ),
 
     origin_paths: ($) => commaSep1($.origin_path),
 

@@ -29,6 +29,16 @@ fn validate_struct_sources(
     type_decl: &TypeDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
+    validate_struct_sources_with_assocs(ctx, inst_fields, type_decl, &[], errors);
+}
+
+fn validate_struct_sources_with_assocs(
+    ctx: &ValidationContext,
+    inst_fields: &[S<InstanceField>],
+    type_decl: &TypeDecl,
+    parent_assocs: &[S<String>],
+    errors: &mut Vec<Diagnostic>,
+) {
     // Get the struct fields from the type body
     let type_fields = match &type_decl.body.node {
         TypeExpr::Struct(StructKind::Closed(f) | StructKind::Open(f)) => f.as_slice(),
@@ -36,23 +46,24 @@ fn validate_struct_sources(
             let mut all_fields = Vec::new();
             collect_struct_fields(&left.node, &mut all_fields);
             collect_struct_fields(&right.node, &mut all_fields);
-            validate_intersection_struct_sources(ctx, inst_fields, &all_fields, errors);
+            validate_intersection_struct_sources_with_assocs(ctx, inst_fields, &all_fields, parent_assocs, errors);
             return;
         }
         _ => return,
     };
 
-    validate_type_fields_sources(ctx, inst_fields, type_fields, errors);
+    validate_type_fields_sources_with_assocs(ctx, inst_fields, type_fields, parent_assocs, errors);
 }
 
-fn validate_type_fields_sources(
+fn validate_type_fields_sources_with_assocs(
     ctx: &ValidationContext,
     inst_fields: &[S<InstanceField>],
     type_fields: &[S<Field>],
+    parent_assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
     let refs: Vec<&S<Field>> = type_fields.iter().collect();
-    validate_fields_sources_inner(ctx, inst_fields, &refs, errors);
+    validate_fields_sources_inner_with_assocs(ctx, inst_fields, &refs, parent_assocs, errors);
 }
 
 fn get_type_name_from_type_expr(type_expr: &TypeExpr) -> Option<String> {
@@ -75,19 +86,21 @@ fn collect_struct_fields<'a>(ty: &'a TypeExpr, fields: &mut Vec<&'a S<Field>>) {
     }
 }
 
-fn validate_intersection_struct_sources(
+fn validate_intersection_struct_sources_with_assocs(
     ctx: &ValidationContext,
     inst_fields: &[S<InstanceField>],
     type_fields: &[&S<Field>],
+    parent_assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
-    validate_fields_sources_inner(ctx, inst_fields, type_fields, errors);
+    validate_fields_sources_inner_with_assocs(ctx, inst_fields, type_fields, parent_assocs, errors);
 }
 
-fn validate_fields_sources_inner(
+fn validate_fields_sources_inner_with_assocs(
     ctx: &ValidationContext,
     inst_fields: &[S<InstanceField>],
     type_fields: &[&S<Field>],
+    parent_assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
     for type_field in type_fields {
@@ -100,7 +113,13 @@ fn validate_fields_sources_inner(
 
         if let Some(sources) = source_ann {
             if let Some(inst_field) = inst_fields.iter().find(|f| &f.node.name.node == field_name) {
-                validate_field_source(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, errors);
+                // Use field's own assocs if present, otherwise use parent assocs
+                let active_assocs = if inst_field.node.assocs.is_empty() {
+                    parent_assocs
+                } else {
+                    &inst_field.node.assocs
+                };
+                validate_field_source_with_assocs(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, active_assocs, errors);
             }
         }
 
@@ -109,7 +128,13 @@ fn validate_fields_sources_inner(
             if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
                 if let Some(nested_type_name) = get_type_name_from_type_expr(&type_field.node.ty.node) {
                     if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
-                        validate_struct_sources(ctx, nested_inst_fields, &nested_type_decl.node, errors);
+                        // Use field's assocs if present, otherwise pass parent assocs
+                        let nested_assocs = if inst_field.node.assocs.is_empty() {
+                            parent_assocs
+                        } else {
+                            &inst_field.node.assocs
+                        };
+                        validate_struct_sources_with_assocs(ctx, nested_inst_fields, &nested_type_decl.node, nested_assocs, errors);
                     }
                 }
             }
@@ -126,14 +151,22 @@ fn is_reference_list(ty: &TypeExpr) -> bool {
     }
 }
 
-fn validate_field_source(
+fn validate_field_source_with_assocs(
     ctx: &ValidationContext,
     inst_field: &S<InstanceField>,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
     field_type: &TypeExpr,
+    parent_assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
+    // Get assocs: field's own assocs take precedence over parent assocs
+    let assocs: &[S<String>] = if !inst_field.node.assocs.is_empty() {
+        &inst_field.node.assocs
+    } else {
+        parent_assocs
+    };
+
     // Only validate lists (refinements and inline elements)
     // Nested struct values are handled by recursive validate_struct_sources
     if let Value::List(elements) = &inst_field.node.value.node {
@@ -143,10 +176,12 @@ fn validate_field_source(
 
         for elem in elements {
             match &elem.node {
-                ListElement::Refinement(_name, ref_fields) => {
+                ListElement::Refinement(_name, elem_assocs, ref_fields) => {
+                    // Use element-level assocs if present, otherwise field-level
+                    let active_assocs = if elem_assocs.is_empty() { assocs } else { elem_assocs };
                     // Refinements introduce inline modifications that need source validation
                     for ref_field in ref_fields {
-                        validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, errors);
                     }
                 }
                 ListElement::BindingRef(name) => {
@@ -158,7 +193,7 @@ fn validate_field_source(
                     if let Some(ref_inst) = ctx.get_instance(name) {
                         if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, assocs, errors);
                             }
                         }
                     }
@@ -167,7 +202,7 @@ fn validate_field_source(
                     Value::Struct(fields) => {
                         // Inline structs need source validation
                         for field in fields {
-                            validate_refinement_field(ctx, field, sources, parent_fields, errors);
+                            validate_refinement_field(ctx, field, sources, parent_fields, assocs, errors);
                         }
                     }
                     Value::BindingRef(name) => {
@@ -180,7 +215,7 @@ fn validate_field_source(
                             if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
                                     validate_refinement_field(
-                                        ctx, ref_field, sources, parent_fields, errors,
+                                        ctx, ref_field, sources, parent_fields, assocs, errors,
                                     );
                                 }
                             }
@@ -196,24 +231,13 @@ fn validate_field_source(
         let fields_to_skip = get_fields_to_skip(field_type, ctx);
 
         for nested in nested_fields {
-            // Skip fields with own @source or open struct type (declarations)
+            // Skip fields with own @source or @out annotation - they're validated separately
             if fields_to_skip.contains(&nested.node.name.node) {
-                // Still validate mappings inside source fields against parent source
-                if let Value::Struct(inner) = &nested.node.value.node {
-                    for inner_field in inner {
-                        // Only validate fields with explicit mappings - declarations should not
-                        // be checked against parent source (they're source roots themselves)
-                        match &inner_field.node.origin {
-                            FieldOrigin::Mapped(_) | FieldOrigin::Computed(_) => {
-                                validate_refinement_field(ctx, inner_field, sources, parent_fields, errors);
-                            }
-                            _ => {}
-                        }
-                    }
-                }
                 continue;
             }
-            validate_refinement_field(ctx, nested, sources, parent_fields, errors);
+            // Use nested field's assocs if present, otherwise use parent assocs
+            let nested_assocs = if nested.node.assocs.is_empty() { assocs } else { &nested.node.assocs };
+            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
         }
     }
 }
@@ -276,28 +300,31 @@ fn validate_refinement_field(
     field: &S<InstanceField>,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
+    assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
     let name = &field.node.name.node;
+    // Use field's own assocs if present, otherwise use passed-in assocs
+    let active_assocs = if field.node.assocs.is_empty() { assocs } else { &field.node.assocs };
 
     match &field.node.origin {
         FieldOrigin::Generated => {
             // Exempt - no check needed
         }
         FieldOrigin::Mapped(path) => {
-            if !source_allows_path(sources, path) {
+            if !source_allows_path(sources, path, active_assocs) {
                 errors.push(Diagnostic::error(
                     field.span.clone(),
                     format!("Source path '{}' not allowed by @source", path.join(".")),
                     ctx.path,
                 ));
             } else {
-                validate_source_path(ctx, path, field, parent_fields, errors);
+                validate_source_path(ctx, path, field, parent_fields, active_assocs, errors);
             }
         }
         FieldOrigin::Computed(paths) => {
             for path in paths {
-                if !source_allows_path(sources, path) {
+                if !source_allows_path(sources, path, active_assocs) {
                     errors.push(Diagnostic::error(
                         field.span.clone(),
                         format!("Compute path '{}' not allowed by @source", path.join(".")),
@@ -310,7 +337,7 @@ fn validate_refinement_field(
             // If this is a struct, validate children recursively
             if let Value::Struct(nested_fields) = &field.node.value.node {
                 for nested in nested_fields {
-                    validate_refinement_field(ctx, nested, sources, parent_fields, errors);
+                    validate_refinement_field(ctx, nested, sources, parent_fields, active_assocs, errors);
                 }
                 // Don't error on parent - child errors are sufficient
                 return;
@@ -327,14 +354,15 @@ fn validate_refinement_field(
                         ListElement::BindingRef(_) => {
                             // Skip - no type context to know if this is a reference list
                         }
-                        ListElement::Refinement(_, ref_fields) => {
+                        ListElement::Refinement(_, elem_assocs, ref_fields) => {
+                            let ref_assocs = if elem_assocs.is_empty() { active_assocs } else { elem_assocs };
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, parent_fields, errors);
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_assocs, errors);
                             }
                         }
                         ListElement::Value(Value::Struct(fields)) => {
                             for f in fields {
-                                validate_refinement_field(ctx, f, sources, parent_fields, errors);
+                                validate_refinement_field(ctx, f, sources, parent_fields, active_assocs, errors);
                             }
                         }
                         ListElement::Value(Value::BindingRef(_)) => {
@@ -346,7 +374,7 @@ fn validate_refinement_field(
                 return;
             }
 
-            let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
+            let found = check_implicit_source(ctx, field, sources, parent_fields, active_assocs, errors);
             if !found {
                 if !is_concrete_value(&field.node.value) {
                     errors.push(Diagnostic::error(
@@ -362,7 +390,24 @@ fn validate_refinement_field(
 
 /// Check if any source path is a prefix of the given path
 /// e.g., @source [endpoint.params] allows endpoint.params.id but not endpoint.method
-fn source_allows_path(sources: &[S<SourcePath>], path: &[String]) -> bool {
+/// Also handles $assoc paths when assocs context is available
+fn source_allows_path(sources: &[S<SourcePath>], path: &[String], assocs: &[S<String>]) -> bool {
+    // Handle $assoc paths: if path starts with $assoc and we have @source [assoc],
+    // check that the instance name is in the assocs list
+    if path.first().map(|s| s.as_str()) == Some("$assoc") {
+        // Check if @source includes "assoc"
+        let has_assoc_source = sources.iter().any(|s| {
+            matches!(&s.node, SourcePath::Simple(name) if name == "assoc")
+        });
+        if has_assoc_source {
+            // Check the instance name (path[1]) is in assocs
+            if let Some(inst_name) = path.get(1) {
+                return assocs.iter().any(|a| &a.node == inst_name);
+            }
+        }
+        return false;
+    }
+
     sources.iter().any(|s| {
         let source_parts: Vec<&str> = match &s.node {
             SourcePath::Simple(name) => vec![name.as_str()],
@@ -379,8 +424,15 @@ fn validate_source_path(
     path: &[String],
     field: &S<InstanceField>,
     parent_fields: &[S<InstanceField>],
+    assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) {
+    // Handle $assoc paths: $assoc.instanceName.fieldPath
+    if path.first().map(|s| s.as_str()) == Some("$assoc") {
+        validate_assoc_source_path(ctx, path, field, assocs, errors);
+        return;
+    }
+
     let mut current_fields = parent_fields;
     let mut source_field: Option<&S<InstanceField>> = None;
     let mut source_optional = false;
@@ -440,6 +492,121 @@ fn validate_source_path(
     }
 }
 
+/// Validate $assoc paths: $assoc.instanceName.fieldPath
+fn validate_assoc_source_path(
+    ctx: &ValidationContext,
+    path: &[String],
+    field: &S<InstanceField>,
+    assocs: &[S<String>],
+    errors: &mut Vec<Diagnostic>,
+) {
+    // path = ["$assoc", "instanceName", "fieldName", ...]
+    if path.len() < 3 {
+        errors.push(Diagnostic::error(
+            field.span.clone(),
+            format!("Invalid $assoc path '{}': expected $assoc.instanceName.field", path.join(".")),
+            ctx.path,
+        ));
+        return;
+    }
+
+    let inst_name = &path[1];
+
+    // Check instance name is in assocs
+    if !assocs.iter().any(|a| &a.node == inst_name) {
+        errors.push(Diagnostic::error(
+            field.span.clone(),
+            format!("Instance '{}' not in inline assocs", inst_name),
+            ctx.path,
+        ));
+        return;
+    }
+
+    // Get the instance
+    let inst = match ctx.get_instance(inst_name) {
+        Some(i) => i,
+        None => {
+            errors.push(Diagnostic::error(
+                field.span.clone(),
+                format!("Unknown instance in $assoc path: {}", inst_name),
+                ctx.path,
+            ));
+            return;
+        }
+    };
+
+    // Navigate through instance body for remaining path segments
+    let remaining_path = &path[2..];
+    let inst_fields = match &inst.body.node {
+        Value::Struct(fields) => fields,
+        _ => {
+            errors.push(Diagnostic::error(
+                field.span.clone(),
+                format!("Instance '{}' is not a struct", inst_name),
+                ctx.path,
+            ));
+            return;
+        }
+    };
+
+    let mut current_fields: &[S<InstanceField>] = inst_fields;
+    let mut source_field: Option<&S<InstanceField>> = None;
+    let mut source_optional = false;
+
+    for (i, segment) in remaining_path.iter().enumerate() {
+        if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
+            if f.node.optional {
+                source_optional = true;
+            }
+            if i < remaining_path.len() - 1 {
+                if let Value::Struct(nested) = &f.node.value.node {
+                    current_fields = nested;
+                } else {
+                    errors.push(Diagnostic::error(
+                        field.span.clone(),
+                        format!("Source path '{}' not found", path.join(".")),
+                        ctx.path,
+                    ));
+                    return;
+                }
+            } else {
+                source_field = Some(f);
+            }
+        } else {
+            errors.push(Diagnostic::error(
+                field.span.clone(),
+                format!("Field '{}' not found in instance '{}'", segment, inst_name),
+                ctx.path,
+            ));
+            return;
+        }
+    }
+
+    // Check optionality
+    if !field.node.optional && source_optional {
+        errors.push(Diagnostic::error(
+            field.span.clone(),
+            format!("Mandatory field cannot depend on optional source '{}'", path.join(".")),
+            ctx.path,
+        ));
+    }
+
+    // Check type compatibility
+    if let Some(src) = source_field {
+        let src_type = get_value_type(&src.node.value.node);
+        let dst_type = get_value_type(&field.node.value.node);
+        if let (Some(s), Some(d)) = (src_type, dst_type) {
+            if s != d {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!("Type mismatch: source '{}' is {} but field is {}", path.join("."), s, d),
+                    ctx.path,
+                ));
+            }
+        }
+    }
+}
+
 fn get_value_type(value: &Value) -> Option<&str> {
     match value {
         Value::TypeRef(t) => Some(t),
@@ -455,15 +622,20 @@ fn check_implicit_source(
     field: &S<InstanceField>,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
+    assocs: &[S<String>],
     errors: &mut Vec<Diagnostic>,
 ) -> bool {
     let field_name = &field.node.name.node;
 
-    // Collect all matching sources
+    // Collect all matching sources from parent fields
     let matches: Vec<(&str, &S<InstanceField>)> = sources
         .iter()
         .filter_map(|source| {
             let root = source.node.root_name();
+            // Skip "assoc" source - handled separately below
+            if root == "assoc" {
+                return None;
+            }
             let source_field = parent_fields.iter().find(|f| f.node.name.node == root)?;
             if let Value::Struct(source_fields) = &source_field.node.value.node {
                 let src_field = source_fields
@@ -476,10 +648,43 @@ fn check_implicit_source(
         })
         .collect();
 
-    match matches.len() {
+    // Check if @source includes "assoc" - if so, also search assoc instances
+    let has_assoc_source = sources.iter().any(|s| {
+        matches!(&s.node, SourcePath::Simple(name) if name == "assoc")
+    });
+
+    // Store assoc matches separately (can't mix lifetimes with parent_fields)
+    let assoc_matches: Vec<(&str, &S<InstanceField>)> = if has_assoc_source {
+        assocs
+            .iter()
+            .filter_map(|assoc_name| {
+                let inst = ctx.get_instance(&assoc_name.node)?;
+                if let Value::Struct(inst_fields) = &inst.body.node {
+                    let src_field = inst_fields
+                        .iter()
+                        .find(|f| &f.node.name.node == field_name)?;
+                    Some((assoc_name.node.as_str(), src_field))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // Combine matches
+    let total_matches = matches.len() + assoc_matches.len();
+
+    match total_matches {
         0 => false,
         1 => {
-            let (root, src_field) = matches[0];
+            // Get the single match from either matches or assoc_matches
+            let (root, src_field) = if !matches.is_empty() {
+                matches[0]
+            } else {
+                assoc_matches[0]
+            };
 
             // Check optionality: mandatory field cannot depend on optional source
             if !field.node.optional && src_field.node.optional {
@@ -511,7 +716,9 @@ fn check_implicit_source(
             true
         }
         _ => {
-            let sources_list: Vec<_> = matches.iter().map(|(r, _)| *r).collect();
+            // Combine all source names for the error message
+            let mut sources_list: Vec<_> = matches.iter().map(|(r, _)| *r).collect();
+            sources_list.extend(assoc_matches.iter().map(|(r, _)| *r));
             errors.push(Diagnostic::error(
                 field.span.clone(),
                 format!(
@@ -922,5 +1129,84 @@ cmd = Cmd {
         assert!(errors[0].message.contains("Ambiguous source"));
         assert!(errors[0].message.contains("fields"));
         assert!(errors[0].message.contains("auth"));
+    }
+
+    #[test]
+    fn test_assoc_source_valid() {
+        let errors = validate_source_src(
+            r#"
+type TableSchema = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    funcName Concrete<String>
+    @source [assoc]
+    @out
+    return {...}
+}
+userTable = TableSchema {
+    id Uuid
+    name String
+}
+query = DbQuery {
+    funcName "test"
+    return <userTable> {
+        id Uuid = $assoc.userTable.id
+        name String = $assoc.userTable.name
+    }
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_assoc_source_not_in_assocs() {
+        let errors = validate_source_src(
+            r#"
+type TableSchema = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    @source [assoc]
+    @out
+    return {...}
+}
+userTable = TableSchema {name String}
+otherTable = TableSchema {name String}
+query = DbQuery {
+    return <userTable> {
+        name String = $assoc.otherTable.name
+    }
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("not allowed by @source") || errors[0].message.contains("not in inline assocs"));
+    }
+
+    #[test]
+    fn test_assoc_nested_field_with_inline_assocs() {
+        let errors = validate_source_src(
+            r#"
+type TableSchema = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    @source [assoc]
+    @out
+    return {...}
+}
+type Endpoint = {
+    query DbQuery
+}
+userTable = TableSchema {id Uuid}
+endpoint = Endpoint {
+    query <userTable> {
+        return {
+            id Uuid = $assoc.userTable.id
+        }
+    }
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 }

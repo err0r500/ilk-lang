@@ -147,7 +147,13 @@ fn refinable_ref<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
 }
 
 fn source_path<'a>() -> impl Parser<'a, ParserInput<'a>, S<SourcePath>, ParserExtra<'a>> + Clone {
-    ident()
+    // Allow $assoc as a special root identifier
+    let assoc_root = just("$assoc")
+        .map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
+
+    let path_segment = choice((assoc_root, ident()));
+
+    path_segment
         .separated_by(just('.'))
         .at_least(1)
         .collect::<Vec<_>>()
@@ -546,7 +552,13 @@ fn type_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtr
 }
 
 fn dot_path<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<String>, ParserExtra<'a>> + Clone {
-    ident()
+    // Allow $assoc as a special root identifier
+    let assoc_root = just("$assoc")
+        .map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
+
+    let path_segment = choice((assoc_root, ident()));
+
+    path_segment
         .separated_by(just('.'))
         .at_least(1)
         .collect::<Vec<_>>()
@@ -572,6 +584,22 @@ fn field_origin<'a>() -> impl Parser<'a, ParserInput<'a>, FieldOrigin, ParserExt
     ))
 }
 
+fn inline_assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone {
+    just('<')
+        .ignore_then(ws())
+        .ignore_then(
+            ident()
+                .separated_by(just(',').then(ws()))
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
+        .then_ignore(ws())
+        .then_ignore(just('>'))
+        .then_ignore(ws())
+        .or_not()
+        .map(|o| o.unwrap_or_default())
+}
+
 fn instance_field<'a>(
     value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone,
 ) -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
@@ -586,11 +614,13 @@ fn instance_field<'a>(
     doc.then(ident())
         .then(just('?').or_not().map(|o| o.is_some()))
         .then_ignore(ws())
+        .then(inline_assocs())
         .then(value)
         .then(field_origin())
-        .map(|((((doc, name), optional), value), origin)| InstanceField {
+        .map(|(((((doc, name), optional), assocs), value), origin)| InstanceField {
             name,
             optional,
+            assocs,
             value,
             origin,
             doc: doc.map(|s: &str| s.to_string()),
@@ -629,11 +659,13 @@ fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, 
     doc.then(ident())
         .then(just('?').or_not().map(|o| o.is_some()))
         .then_ignore(ws())
+        .then(inline_assocs())
         .then(simple_value)
         .then(field_origin())
-        .map(|((((doc, name), optional), value), origin)| InstanceField {
+        .map(|(((((doc, name), optional), assocs), value), origin)| InstanceField {
             name,
             optional,
+            assocs,
             value,
             origin,
             doc: doc.map(|s: &str| s.to_string()),
@@ -646,6 +678,7 @@ fn list_element<'a>(
 ) -> impl Parser<'a, ParserInput<'a>, S<ListElement>, ParserExtra<'a>> + Clone {
     let refinement = ident()
         .then_ignore(ws())
+        .then(inline_assocs())
         .then_ignore(just('&'))
         .then_ignore(ws())
         .then_ignore(just('{'))
@@ -658,7 +691,7 @@ fn list_element<'a>(
         )
         .then_ignore(ws_nl())
         .then_ignore(just('}'))
-        .map(|(name, fields)| ListElement::Refinement(name.node, fields))
+        .map(|((name, assocs), fields)| ListElement::Refinement(name.node, assocs, fields))
         .map_with(|e, ex| Spanned::from_simple(e, ex.span()));
 
     let anon_struct = value

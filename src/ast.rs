@@ -138,6 +138,7 @@ pub enum FieldOrigin {
 pub struct InstanceField {
     pub name: S<String>,
     pub optional: bool,
+    pub assocs: Vec<S<String>>,  // inline assocs: fieldName <inst1, inst2> {...}
     pub value: S<Value>,
     pub origin: FieldOrigin,
     pub doc: Option<String>,
@@ -161,7 +162,7 @@ pub enum Value {
 pub enum ListElement {
     Value(Value),
     BindingRef(String),
-    Refinement(String, Vec<S<InstanceField>>), // binding & {field origins}
+    Refinement(String, Vec<S<String>>, Vec<S<InstanceField>>), // binding <assocs> & {field origins}
 }
 
 // ============= Unified Top-Level Items =============

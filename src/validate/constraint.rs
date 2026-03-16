@@ -383,7 +383,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
                         value_to_eval_value(&spanned, ctx)
                     }
                     ListElement::BindingRef(name) => EvalValue::BindingRef(name.clone()),
-                    ListElement::Refinement(name, _) => EvalValue::BindingRef(name.clone()),
+                    ListElement::Refinement(name, _, _) => EvalValue::BindingRef(name.clone()),
                 })
                 .collect();
             EvalValue::List(vals)

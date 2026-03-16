@@ -134,7 +134,7 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
                     ListElement::BindingRef(name) => {
                         return env.get_instance(name).map(|i| format_instance_hover(&i.node));
                     }
-                    ListElement::Refinement(name, fields) => {
+                    ListElement::Refinement(name, _assocs, fields) => {
                         if let Some(inst) = env.get_instance(name) {
                             // Check if hovering on the name part (rough heuristic)
                             let name_end_approx = elem.span.start + name.len();

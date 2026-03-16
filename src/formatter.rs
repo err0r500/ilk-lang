@@ -583,6 +583,16 @@ impl<'a> Formatter<'a> {
             if field.node.optional {
                 self.write("?");
             }
+            if !field.node.assocs.is_empty() {
+                self.write(" <");
+                for (i, a) in field.node.assocs.iter().enumerate() {
+                    if i > 0 {
+                        self.write(", ");
+                    }
+                    self.write(&a.node);
+                }
+                self.write(">");
+            }
             self.write(" ");
             self.format_value(&field.node.value);
             self.format_field_origin(&field.node.origin);
@@ -655,8 +665,18 @@ impl<'a> Formatter<'a> {
                     self.format_value(&tmp);
                 }
                 ListElement::BindingRef(s) => self.write(s),
-                ListElement::Refinement(name, fields) => {
+                ListElement::Refinement(name, assocs, fields) => {
                     self.write(name);
+                    if !assocs.is_empty() {
+                        self.write(" <");
+                        for (i, a) in assocs.iter().enumerate() {
+                            if i > 0 {
+                                self.write(", ");
+                            }
+                            self.write(&a.node);
+                        }
+                        self.write(">");
+                    }
                     self.write(" & ");
                     self.format_refinement_fields(fields);
                 }
@@ -687,6 +707,16 @@ impl<'a> Formatter<'a> {
             self.write(&field.node.name.node);
             if field.node.optional {
                 self.write("?");
+            }
+            if !field.node.assocs.is_empty() {
+                self.write(" <");
+                for (j, a) in field.node.assocs.iter().enumerate() {
+                    if j > 0 {
+                        self.write(", ");
+                    }
+                    self.write(&a.node);
+                }
+                self.write(">");
             }
             self.write(" ");
             self.format_value(&field.node.value);

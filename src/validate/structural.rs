@@ -98,6 +98,67 @@ fn type_matches_assoc(assoc_type: &str, instance_type: &str, env: &TypeEnv) -> b
     type_matches_ref(instance_type, assoc_type, env)
 }
 
+/// Validate inline assocs on an instance field against the field's type declaration
+fn validate_inline_assocs(
+    ctx: &ValidationContext,
+    field: &S<InstanceField>,
+    field_type: &S<TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    // If no inline assocs, nothing to validate
+    if field.node.assocs.is_empty() {
+        return;
+    }
+
+    // Get the @assoc annotation from the field's type (resolve Named types)
+    let assoc_types = get_assoc_types_from_type(&field_type.node, ctx.env);
+
+    for assoc in &field.node.assocs {
+        // Check that the referenced instance exists
+        if let Some(assoc_inst) = ctx.get_instance(&assoc.node) {
+            let assoc_type = &assoc_inst.type_name.node;
+            // If we found @assoc types, check the instance matches
+            if !assoc_types.is_empty() && !assoc_types.iter().any(|t| type_matches_assoc(t, assoc_type, ctx.env)) {
+                errors.push(Diagnostic::error(
+                    assoc.span.clone(),
+                    format!(
+                        "Inline association {} (type {}) not allowed - expected one of {:?}",
+                        assoc.node, assoc_type, assoc_types
+                    ),
+                    ctx.path,
+                ));
+            }
+        } else {
+            errors.push(Diagnostic::error(
+                assoc.span.clone(),
+                format!("Unknown instance in inline association: {}", assoc.node),
+                ctx.path,
+            ));
+        }
+    }
+}
+
+/// Get @assoc type names from a type expression
+fn get_assoc_types_from_type(ty: &TypeExpr, env: &TypeEnv) -> Vec<String> {
+    match ty {
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
+            if let Some(type_decl) = env.get_type(name) {
+                type_decl.node.annotations
+                    .iter()
+                    .filter_map(|a| match &a.node {
+                        Annotation::Assoc(types) => Some(types.iter().map(|t| t.node.clone()).collect::<Vec<_>>()),
+                        _ => None,
+                    })
+                    .flatten()
+                    .collect()
+            } else {
+                vec![]
+            }
+        }
+        _ => vec![],
+    }
+}
+
 fn validate_value_against_type(
     ctx: &ValidationContext,
     value: &S<Value>,
@@ -326,6 +387,8 @@ fn validate_struct(
                         &type_field.node.ty,
                         errors,
                     );
+                    // Validate inline assocs
+                    validate_inline_assocs(ctx, val_field, &type_field.node.ty, errors);
                 } else {
                     errors.push(Diagnostic::error(
                         val_field.node.name.span.clone(),
@@ -453,7 +516,7 @@ fn validate_list(
                     ));
                 }
             }
-            ListElement::Refinement(name, fields) => {
+            ListElement::Refinement(name, _assocs, fields) => {
                 if let Some(inst) = ctx.get_instance(name) {
                     let inst_type = &inst.type_name.node;
 
@@ -876,5 +939,65 @@ scenario = Scenario {
 }
 "#);
         assert!(errors.is_empty(), "Should accept: id is Concrete<String> and refinement is String: {:?}", errors);
+    }
+
+    #[test]
+    fn test_inline_assocs_valid() {
+        // Inline assocs on a field whose type (DbQuery) has @assoc [TableSchema]
+        let errors = validate_src(r#"
+type TableSchema = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    funcName Concrete<String>
+}
+type Endpoint = {
+    query DbQuery
+}
+userTable = TableSchema {name String}
+endpoint = Endpoint {
+    query <userTable> {funcName "test"}
+}
+"#);
+        assert!(errors.is_empty(), "Should accept valid inline assoc: {:?}", errors);
+    }
+
+    #[test]
+    fn test_inline_assocs_unknown_instance() {
+        let errors = validate_src(r#"
+type TableSchema = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    funcName Concrete<String>
+}
+type Endpoint = {
+    query DbQuery
+}
+endpoint = Endpoint {
+    query <unknownTable> {funcName "test"}
+}
+"#);
+        assert!(!errors.is_empty(), "Should reject unknown instance in inline assoc");
+        assert!(errors.iter().any(|e| e.message.contains("Unknown instance")), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_inline_assocs_wrong_type() {
+        let errors = validate_src(r#"
+type TableSchema = {...}
+type OtherType = {...}
+@assoc [TableSchema]
+type DbQuery = {
+    funcName Concrete<String>
+}
+type Endpoint = {
+    query DbQuery
+}
+wrongType = OtherType {name String}
+endpoint = Endpoint {
+    query <wrongType> {funcName "test"}
+}
+"#);
+        assert!(!errors.is_empty(), "Should reject wrong type in inline assoc");
+        assert!(errors.iter().any(|e| e.message.contains("not allowed")), "{:?}", errors);
     }
 }
