@@ -95,24 +95,7 @@ fn validate_associations(
 }
 
 fn type_matches_assoc(assoc_type: &str, instance_type: &str, env: &TypeEnv) -> bool {
-    if assoc_type == instance_type {
-        return true;
-    }
-
-    // Check if instance_type is a variant of assoc_type (union)
-    if let Some(type_decl) = env.get_type(assoc_type) {
-        if let TypeExpr::Union(variants) = &type_decl.node.body.node {
-            for variant in variants {
-                if let TypeExpr::Named(name) = &variant.node {
-                    if name == instance_type {
-                        return true;
-                    }
-                }
-            }
-        }
-    }
-
-    false
+    type_matches_ref(instance_type, assoc_type, env)
 }
 
 fn validate_value_against_type(

@@ -51,41 +51,8 @@ fn validate_type_fields_sources(
     type_fields: &[S<Field>],
     errors: &mut Vec<Diagnostic>,
 ) {
-    // Check each field for @source annotation
-    for type_field in type_fields {
-        let source_ann = type_field
-            .node
-            .annotations
-            .iter()
-            .find_map(|a| match &a.node {
-                Annotation::Source(paths) => Some(paths),
-                _ => None,
-            });
-
-        if let Some(sources) = source_ann {
-            if let Some(inst_field) = inst_fields
-                .iter()
-                .find(|f| f.node.name.node == type_field.node.name.node)
-            {
-                validate_field_source(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, errors);
-            }
-        }
-
-        // Recurse into nested struct values if the field type is a named type
-        if let Some(inst_field) = inst_fields
-            .iter()
-            .find(|f| f.node.name.node == type_field.node.name.node)
-        {
-            if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
-                // Get the type name from the type field
-                if let Some(nested_type_name) = get_type_name_from_type_expr(&type_field.node.ty.node) {
-                    if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
-                        validate_struct_sources(ctx, nested_inst_fields, &nested_type_decl.node, errors);
-                    }
-                }
-            }
-        }
-    }
+    let refs: Vec<&S<Field>> = type_fields.iter().collect();
+    validate_fields_sources_inner(ctx, inst_fields, &refs, errors);
 }
 
 fn get_type_name_from_type_expr(type_expr: &TypeExpr) -> Option<String> {
@@ -114,30 +81,31 @@ fn validate_intersection_struct_sources(
     type_fields: &[&S<Field>],
     errors: &mut Vec<Diagnostic>,
 ) {
+    validate_fields_sources_inner(ctx, inst_fields, type_fields, errors);
+}
+
+fn validate_fields_sources_inner(
+    ctx: &ValidationContext,
+    inst_fields: &[S<InstanceField>],
+    type_fields: &[&S<Field>],
+    errors: &mut Vec<Diagnostic>,
+) {
     for type_field in type_fields {
-        let source_ann = type_field
-            .node
-            .annotations
-            .iter()
-            .find_map(|a| match &a.node {
-                Annotation::Source(paths) => Some(paths),
-                _ => None,
-            });
+        let field_name = &type_field.node.name.node;
+
+        let source_ann = type_field.node.annotations.iter().find_map(|a| match &a.node {
+            Annotation::Source(paths) => Some(paths),
+            _ => None,
+        });
 
         if let Some(sources) = source_ann {
-            if let Some(inst_field) = inst_fields
-                .iter()
-                .find(|f| f.node.name.node == type_field.node.name.node)
-            {
+            if let Some(inst_field) = inst_fields.iter().find(|f| &f.node.name.node == field_name) {
                 validate_field_source(ctx, inst_field, sources, inst_fields, &type_field.node.ty.node, errors);
             }
         }
 
-        // Recurse into nested struct values if the field type is a named type
-        if let Some(inst_field) = inst_fields
-            .iter()
-            .find(|f| f.node.name.node == type_field.node.name.node)
-        {
+        // Recurse into nested struct values when the field type is a named type
+        if let Some(inst_field) = inst_fields.iter().find(|f| &f.node.name.node == field_name) {
             if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
                 if let Some(nested_type_name) = get_type_name_from_type_expr(&type_field.node.ty.node) {
                     if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
@@ -275,12 +243,8 @@ fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<
                 for ann in &field.node.annotations {
                     if let Annotation::Source(paths) = &ann.node {
                         for path in paths {
-                            let root = match &path.node {
-                                SourcePath::Simple(name) => name,
-                                SourcePath::Dotted(parts) => parts.first().unwrap(),
-                            };
                             // Skip fields that ARE sources (input declarations)
-                            result.insert(root.clone());
+                            result.insert(path.node.root_name().to_owned());
                         }
                     }
                 }
@@ -490,12 +454,8 @@ fn check_implicit_source(
     parent_fields: &[S<InstanceField>],
 ) -> bool {
     for source in sources {
-        let root = match &source.node {
-            SourcePath::Simple(name) => name,
-            SourcePath::Dotted(parts) => parts.first().unwrap(),
-        };
-
-        if let Some(source_field) = parent_fields.iter().find(|f| &f.node.name.node == root) {
+        let root = source.node.root_name();
+        if let Some(source_field) = parent_fields.iter().find(|f| f.node.name.node == root) {
             if let Value::Struct(source_fields) = &source_field.node.value.node {
                 if source_fields
                     .iter()

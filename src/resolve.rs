@@ -31,11 +31,6 @@ impl TypeEnv {
     pub fn main(&self) -> Option<&S<Instance>> {
         self.main_instance.as_ref().and_then(|n| self.instances.get(n))
     }
-
-    /// Get type body by name (for compatibility with old code)
-    pub fn get_type_body(&self, name: &str) -> Option<&S<TypeExpr>> {
-        self.types.get(name).map(|t| &t.node.body)
-    }
 }
 
 impl Default for TypeEnv {

@@ -67,6 +67,16 @@ pub enum SourcePath {
     Dotted(Vec<String>),
 }
 
+impl SourcePath {
+    /// Returns the first segment of the path (the root name).
+    pub fn root_name(&self) -> &str {
+        match self {
+            SourcePath::Simple(name) => name,
+            SourcePath::Dotted(parts) => parts.first().expect("dotted path must not be empty"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Annotation {

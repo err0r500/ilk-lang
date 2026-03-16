@@ -39,34 +39,14 @@ fn validate_instance_constraints(
     for constraint in constraints {
         let env = build_eval_env(ctx, inst);
         let assocs = build_assoc_map(inst);
-
-        match eval_constraint(&constraint.node, &env, &assocs, ctx) {
-            Ok(EvalValue::Bool(true)) => {}
-            Ok(EvalValue::Bool(false)) => {
-                errors.push(Diagnostic::error(
-                    constraint.span.clone(),
-                    format!(
-                        "Constraint failed for instance '{}'",
-                        inst.name.node
-                    ),
-                    ctx.path,
-                ));
-            }
-            Ok(_) => {
-                errors.push(Diagnostic::error(
-                    constraint.span.clone(),
-                    "Constraint must evaluate to boolean",
-                    ctx.path,
-                ));
-            }
-            Err(msg) => {
-                errors.push(Diagnostic::error(
-                    constraint.span.clone(),
-                    format!("Constraint evaluation error: {}", msg),
-                    ctx.path,
-                ));
-            }
-        }
+        let fail_msg = format!("Constraint failed for instance '{}'", inst.name.node);
+        report_constraint_result(
+            eval_constraint(&constraint.node, &env, &assocs, ctx),
+            &constraint.span,
+            &fail_msg,
+            ctx,
+            errors,
+        );
     }
 
     // Recursively validate constraints on nested structures
@@ -102,33 +82,17 @@ fn validate_nested_constraints(
                             let assocs = HashSet::new();
 
                             for constraint in &constraints {
-                                match eval_constraint(&constraint.node, &env, &assocs, ctx) {
-                                    Ok(EvalValue::Bool(true)) => {}
-                                    Ok(EvalValue::Bool(false)) => {
-                                        errors.push(Diagnostic::error(
-                                            elem.span.clone(),
-                                            format!(
-                                                "Constraint failed for inline {} at {}[{}]",
-                                                type_decl.node.name.node, parent_path, i
-                                            ),
-                                            ctx.path,
-                                        ));
-                                    }
-                                    Ok(_) => {
-                                        errors.push(Diagnostic::error(
-                                            constraint.span.clone(),
-                                            "Constraint must evaluate to boolean",
-                                            ctx.path,
-                                        ));
-                                    }
-                                    Err(msg) => {
-                                        errors.push(Diagnostic::error(
-                                            constraint.span.clone(),
-                                            format!("Constraint evaluation error: {}", msg),
-                                            ctx.path,
-                                        ));
-                                    }
-                                }
+                                let fail_msg = format!(
+                                    "Constraint failed for inline {} at {}[{}]",
+                                    type_decl.node.name.node, parent_path, i
+                                );
+                                report_constraint_result(
+                                    eval_constraint(&constraint.node, &env, &assocs, ctx),
+                                    &elem.span,
+                                    &fail_msg,
+                                    ctx,
+                                    errors,
+                                );
                             }
 
                             let inline_value = S::new(Value::Struct(fields.clone()), elem.span.clone());
@@ -175,33 +139,17 @@ fn validate_nested_constraints(
                     let assocs = HashSet::new();
 
                     for constraint in &constraints {
-                        match eval_constraint(&constraint.node, &env, &assocs, ctx) {
-                            Ok(EvalValue::Bool(true)) => {}
-                            Ok(EvalValue::Bool(false)) => {
-                                errors.push(Diagnostic::error(
-                                    constraint.span.clone(),
-                                    format!(
-                                        "Constraint failed for inline {} at {}",
-                                        type_name, parent_path
-                                    ),
-                                    ctx.path,
-                                ));
-                            }
-                            Ok(_) => {
-                                errors.push(Diagnostic::error(
-                                    constraint.span.clone(),
-                                    "Constraint must evaluate to boolean",
-                                    ctx.path,
-                                ));
-                            }
-                            Err(msg) => {
-                                errors.push(Diagnostic::error(
-                                    constraint.span.clone(),
-                                    format!("Constraint evaluation error: {}", msg),
-                                    ctx.path,
-                                ));
-                            }
-                        }
+                        let fail_msg = format!(
+                            "Constraint failed for inline {} at {}",
+                            type_name, parent_path
+                        );
+                        report_constraint_result(
+                            eval_constraint(&constraint.node, &env, &assocs, ctx),
+                            &constraint.span,
+                            &fail_msg,
+                            ctx,
+                            errors,
+                        );
                     }
                 }
 
@@ -280,6 +228,48 @@ fn build_assoc_map(inst: &Instance) -> HashSet<String> {
         .iter()
         .map(|a| a.node.clone())
         .collect()
+}
+
+/// Report the outcome of a single constraint evaluation, pushing diagnostics as needed.
+/// `fail_span` is used for a false-boolean result; the constraint span is used otherwise.
+fn report_constraint_result(
+    result: Result<EvalValue, String>,
+    fail_span: &crate::span::Span,
+    fail_message: &str,
+    ctx: &ValidationContext,
+    errors: &mut Vec<Diagnostic>,
+) {
+    match result {
+        Ok(EvalValue::Bool(true)) => {}
+        Ok(EvalValue::Bool(false)) => {
+            errors.push(Diagnostic::error(fail_span.clone(), fail_message, ctx.path));
+        }
+        Ok(_) => {
+            errors.push(Diagnostic::error(
+                fail_span.clone(),
+                "Constraint must evaluate to boolean",
+                ctx.path,
+            ));
+        }
+        Err(msg) => {
+            errors.push(Diagnostic::error(
+                fail_span.clone(),
+                format!("Constraint evaluation error: {}", msg),
+                ctx.path,
+            ));
+        }
+    }
+}
+
+/// Resolve the assoc set for an item in a collection iteration.
+fn assocs_for_item(item: &EvalValue, ctx: &ValidationContext) -> HashSet<String> {
+    if let EvalValue::BindingRef(name) = item {
+        ctx.get_instance(name)
+            .map(|inst| inst.assocs.iter().map(|a| a.node.clone()).collect())
+            .unwrap_or_default()
+    } else {
+        HashSet::new()
+    }
 }
 
 fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
@@ -361,21 +351,7 @@ fn eval_constraint(
                 for item in items {
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
-
-                    let item_assocs = match item {
-                        EvalValue::BindingRef(name) => {
-                            if let Some(inst) = ctx.get_instance(name) {
-                                inst.assocs
-                                    .iter()
-                                    .map(|a| a.node.clone())
-                                    .collect()
-                            } else {
-                                HashSet::new()
-                            }
-                        }
-                        _ => HashSet::new(),
-                    };
-
+                    let item_assocs = assocs_for_item(item, ctx);
                     let result = eval_constraint(&body.node, &inner_env, &item_assocs, ctx)?;
                     if let EvalValue::Bool(false) = result {
                         return Ok(EvalValue::Bool(false));
@@ -415,21 +391,7 @@ fn eval_constraint(
                 for item in items {
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
-
-                    let item_assocs = match item {
-                        EvalValue::BindingRef(name) => {
-                            if let Some(inst) = ctx.get_instance(name) {
-                                inst.assocs
-                                    .iter()
-                                    .map(|a| a.node.clone())
-                                    .collect()
-                            } else {
-                                HashSet::new()
-                            }
-                        }
-                        _ => HashSet::new(),
-                    };
-
+                    let item_assocs = assocs_for_item(item, ctx);
                     let result = eval_constraint(&body.node, &inner_env, &item_assocs, ctx)?;
                     if let EvalValue::Bool(true) = result {
                         return Ok(EvalValue::Bool(true));
@@ -592,41 +554,27 @@ fn eval_constraint(
             }
         }
 
-        ConstraintExpr::Lt(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Int(a), EvalValue::Int(b)) => Ok(EvalValue::Bool(a < b)),
-                _ => Err("< requires integer operands".to_string()),
-            }
-        }
+        ConstraintExpr::Lt(left, right) => eval_int_cmp(left, right, "<", env, assocs, ctx, |a, b| a < b),
+        ConstraintExpr::Le(left, right) => eval_int_cmp(left, right, "<=", env, assocs, ctx, |a, b| a <= b),
+        ConstraintExpr::Gt(left, right) => eval_int_cmp(left, right, ">", env, assocs, ctx, |a, b| a > b),
+        ConstraintExpr::Ge(left, right) => eval_int_cmp(left, right, ">=", env, assocs, ctx, |a, b| a >= b),
+    }
+}
 
-        ConstraintExpr::Le(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Int(a), EvalValue::Int(b)) => Ok(EvalValue::Bool(a <= b)),
-                _ => Err("<= requires integer operands".to_string()),
-            }
-        }
-
-        ConstraintExpr::Gt(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Int(a), EvalValue::Int(b)) => Ok(EvalValue::Bool(a > b)),
-                _ => Err("> requires integer operands".to_string()),
-            }
-        }
-
-        ConstraintExpr::Ge(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
-            match (l, r) {
-                (EvalValue::Int(a), EvalValue::Int(b)) => Ok(EvalValue::Bool(a >= b)),
-                _ => Err(">= requires integer operands".to_string()),
-            }
-        }
+fn eval_int_cmp(
+    left: &S<ConstraintExpr>,
+    right: &S<ConstraintExpr>,
+    op: &str,
+    env: &HashMap<String, EvalValue>,
+    assocs: &HashSet<String>,
+    ctx: &ValidationContext,
+    cmp: impl Fn(i64, i64) -> bool,
+) -> Result<EvalValue, String> {
+    let l = eval_constraint(&left.node, env, assocs, ctx)?;
+    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+    match (l, r) {
+        (EvalValue::Int(a), EvalValue::Int(b)) => Ok(EvalValue::Bool(cmp(a, b))),
+        _ => Err(format!("{} requires integer operands", op)),
     }
 }
 

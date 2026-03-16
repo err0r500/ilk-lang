@@ -79,21 +79,6 @@ impl Diagnostic {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Error {
-    Parse(Vec<Diagnostic>),
-    Resolve(Vec<Diagnostic>),
-    Validate(Vec<Diagnostic>),
-}
-
-impl Error {
-    pub fn diagnostics(&self) -> &[Diagnostic] {
-        match self {
-            Error::Parse(d) | Error::Resolve(d) | Error::Validate(d) => d,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
