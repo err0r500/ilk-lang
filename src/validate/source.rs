@@ -250,12 +250,15 @@ fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<
                 }
             }
 
-            // Second pass: skip fields with their own @source annotation
+            // Second pass: skip fields with their own @source annotation OR @out annotation
             for field in fields {
                 let has_source = field.node.annotations.iter().any(|a| {
                     matches!(a.node, Annotation::Source(_))
                 });
-                if has_source {
+                let has_out = field.node.annotations.iter().any(|a| {
+                    matches!(a.node, Annotation::Out)
+                });
+                if has_source || has_out {
                     result.insert(field.node.name.node.clone());
                 }
             }
