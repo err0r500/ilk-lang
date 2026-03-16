@@ -62,6 +62,7 @@ fn validate_instance_constraints(
     errors: &mut Vec<Diagnostic>,
 ) {
     let constraints: Vec<_> = find_constraints_in_type(&type_decl.body);
+    let type_fields = type_field_names(&type_decl.body);
 
     for constraint in constraints {
         let env = build_eval_env(ctx, inst);
@@ -70,7 +71,9 @@ fn validate_instance_constraints(
         report_constraint_result(
             eval_constraint(&constraint.node, &env, &assocs, ctx),
             &constraint.span,
+            &inst.name.span,
             &fail_msg,
+            &type_fields,
             ctx,
             errors,
         );
@@ -102,6 +105,7 @@ fn validate_nested_constraints(
 
             if let Some(type_decl) = type_decl {
                 let constraints = find_constraints_in_type(&type_decl.node.body);
+                let type_fields = type_field_names(&type_decl.node.body);
                 if !constraints.is_empty() {
                     for (i, elem) in elements.iter().enumerate() {
                         if let ListElement::Value(Value::Struct(fields)) = &elem.node {
@@ -116,7 +120,9 @@ fn validate_nested_constraints(
                                 report_constraint_result(
                                     eval_constraint(&constraint.node, &env, &assocs, ctx),
                                     &elem.span,
+                                    &elem.span,
                                     &fail_msg,
+                                    &type_fields,
                                     ctx,
                                     errors,
                                 );
@@ -161,6 +167,7 @@ fn validate_nested_constraints(
             if let Some(type_decl) = ctx.env.get_type(type_name) {
                 // Check constraints on this inline struct
                 let constraints = find_constraints_in_type(&type_decl.node.body);
+                let type_fields = type_field_names(&type_decl.node.body);
                 if !constraints.is_empty() {
                     let env = build_env_from_fields(val_fields, ctx);
                     let assocs = HashSet::new();
@@ -173,7 +180,9 @@ fn validate_nested_constraints(
                         report_constraint_result(
                             eval_constraint(&constraint.node, &env, &assocs, ctx),
                             &constraint.span,
+                            &value.span,
                             &fail_msg,
+                            &type_fields,
                             ctx,
                             errors,
                         );
@@ -236,6 +245,26 @@ fn find_constraints_in_type(ty: &S<TypeExpr>) -> Vec<S<ConstraintExpr>> {
     constraints
 }
 
+/// Extract field names declared in a type expression.
+fn type_field_names(ty: &S<TypeExpr>) -> HashSet<String> {
+    let mut names = HashSet::new();
+
+    match &ty.node {
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
+            for field in fields {
+                names.insert(field.node.name.node.clone());
+            }
+        }
+        TypeExpr::Intersection(left, right) => {
+            names.extend(type_field_names(left));
+            names.extend(type_field_names(right));
+        }
+        _ => {}
+    }
+
+    names
+}
+
 fn build_eval_env(ctx: &ValidationContext, inst: &Instance) -> HashMap<String, EvalValue> {
     let mut env = HashMap::new();
 
@@ -258,34 +287,54 @@ fn build_assoc_map(inst: &Instance) -> HashSet<String> {
 }
 
 /// Report the outcome of a single constraint evaluation, pushing diagnostics as needed.
-/// `fail_span` is used for a false-boolean result; the constraint span is used otherwise.
+/// `constraint_span` points to the constraint in the type definition.
+/// `instance_span` points to the instance being validated.
+/// `type_fields` contains field names declared in the type - if an unknown variable error
+/// refers to a field not in this set, the error points to the constraint (type error).
 fn report_constraint_result(
     result: Result<EvalValue, ConstraintError>,
-    fail_span: &crate::span::Span,
+    constraint_span: &crate::span::Span,
+    instance_span: &crate::span::Span,
     fail_message: &str,
+    type_fields: &HashSet<String>,
     ctx: &ValidationContext,
     errors: &mut Vec<Diagnostic>,
 ) {
     match result {
         Ok(EvalValue::Bool(true)) => {}
         Ok(EvalValue::Bool(false)) => {
-            errors.push(Diagnostic::error(fail_span.clone(), fail_message, ctx.path));
+            // Constraint failed due to instance data → instance error
+            errors.push(Diagnostic::error(instance_span.clone(), fail_message, ctx.path));
         }
         Ok(_) => {
             errors.push(Diagnostic::error(
-                fail_span.clone(),
+                constraint_span.clone(),
                 "Constraint must evaluate to boolean",
                 ctx.path,
             ));
         }
         Err(ConstraintError::Eval(msg)) => {
+            // Check if this is an "Unknown variable" error for a field that exists in the type
+            let span = if msg.starts_with("Unknown variable: ") {
+                let var_name = &msg["Unknown variable: ".len()..];
+                if type_fields.contains(var_name) {
+                    // Field declared in type but missing in instance → instance error
+                    instance_span
+                } else {
+                    // Field not declared in type → type/constraint error
+                    constraint_span
+                }
+            } else {
+                instance_span
+            };
             errors.push(Diagnostic::error(
-                fail_span.clone(),
+                span.clone(),
                 format!("Constraint evaluation error: {}", msg),
                 ctx.path,
             ));
         }
         Err(ConstraintError::Failed(trace)) => {
+            // Constraint failed due to instance data → instance error
             let mut msg = fail_message.to_string();
             if !trace.bindings.is_empty() {
                 msg.push_str("\n  where:");
@@ -293,7 +342,7 @@ fn report_constraint_result(
                     msg.push_str(&format!("\n    {} = {}", name, value));
                 }
             }
-            errors.push(Diagnostic::error(fail_span.clone(), msg, ctx.path));
+            errors.push(Diagnostic::error(instance_span.clone(), msg, ctx.path));
         }
     }
 }
@@ -932,5 +981,56 @@ outer = Outer {
 "#,
         );
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_constraint_error_missing_instance_field() {
+        // Field in type, missing in instance → error at instance
+        let src = "type Foo = {\n    @constraint x > 0\n    x Int\n}\nfoo = Foo {}";
+        //         ^0          ^12            ^30      ^43 ^45^47
+        // "foo" instance name starts at byte 45 (after "}\n")
+        // Type definition ends at byte 44 ("}")
+        let file = parse(src, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
+        let mut errors = Vec::new();
+        validate_constraints(&ctx, &file, &mut errors);
+
+        assert_eq!(errors.len(), 1);
+        // Error should point to instance name (after type def ends at 44)
+        assert!(errors[0].span.start >= 45, "Expected instance error span, got {:?}", errors[0].span);
+    }
+
+    #[test]
+    fn test_constraint_error_undeclared_type_field() {
+        // Field not in type → error at constraint
+        let src = "type Foo = {\n    @constraint y > 0\n    x Int\n}\nfoo = Foo { x 1 }";
+        //         ^0          ^12            ^30      ^43  ^48
+        // @constraint starts at byte 16
+        let file = parse(src, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
+        let mut errors = Vec::new();
+        validate_constraints(&ctx, &file, &mut errors);
+
+        assert_eq!(errors.len(), 1);
+        // Error should point to constraint (within type def, before byte 48)
+        assert!(errors[0].span.start < 48, "Expected constraint error span, got {:?}", errors[0].span);
+    }
+
+    #[test]
+    fn test_constraint_failure_points_to_instance() {
+        // Constraint evaluates to false → error at instance
+        let src = "type Foo = {\n    @constraint x > 10\n    x Int\n}\nfoo = Foo { x 5 }";
+        //         ^0          ^12             ^31      ^44 ^46
+        let file = parse(src, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
+        let mut errors = Vec::new();
+        validate_constraints(&ctx, &file, &mut errors);
+
+        assert_eq!(errors.len(), 1);
+        // Error should point to instance (after type def)
+        assert!(errors[0].span.start >= 46, "Expected instance error span, got {:?}", errors[0].span);
     }
 }
