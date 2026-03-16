@@ -3,7 +3,7 @@ mod diagnostics;
 mod hover;
 mod navigate;
 
-use crate::Compiler;
+use crate::{formatter, Compiler};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -65,6 +65,7 @@ impl LanguageServer for Backend {
                 }),
                 definition_provider: Some(OneOf::Left(true)),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
                 ..Default::default()
             },
             ..Default::default()
@@ -194,6 +195,39 @@ impl LanguageServer for Backend {
             }),
             range: None,
         }))
+    }
+
+    async fn formatting(
+        &self,
+        params: DocumentFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let uri = &params.text_document.uri;
+
+        let docs = self.documents.read().await;
+        let Some(text) = docs.get(uri) else {
+            return Ok(None);
+        };
+
+        let path = uri_to_path(uri);
+
+        // Parse the file to get the AST with comments
+        let Ok(file) = crate::parser::parse(text, &path) else {
+            return Ok(None);
+        };
+
+        let formatted = formatter::format(&file, text);
+
+        // Return a single edit replacing the entire document
+        let line_count = text.lines().count();
+        let last_line_len = text.lines().last().map(|l| l.len()).unwrap_or(0);
+
+        Ok(Some(vec![TextEdit {
+            range: Range {
+                start: Position::new(0, 0),
+                end: Position::new(line_count as u32, last_line_len as u32),
+            },
+            new_text: formatted,
+        }]))
     }
 }
 

@@ -1,5 +1,13 @@
-use crate::span::S;
+use crate::span::{Span, S};
 use serde::Serialize;
+
+// ============= Comments =============
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Comment {
+    pub span: Span,
+    pub text: String,
+}
 
 // ============= Type-Level AST (formerly ilk/ast.rs) =============
 
@@ -192,6 +200,7 @@ pub enum Item {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct File {
     pub items: Vec<S<Item>>,
+    pub comments: Vec<Comment>,
 }
 
 impl File {

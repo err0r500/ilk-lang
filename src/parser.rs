@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::ast::{*, Comment};
 use crate::error::Diagnostic;
 use crate::span::{Spanned, S};
 use chumsky::prelude::*;
@@ -839,13 +839,42 @@ pub fn file<'a>() -> impl Parser<'a, ParserInput<'a>, File, ParserExtra<'a>> {
                 .collect::<Vec<_>>(),
         )
         .then_ignore(ws_nl())
-        .map(|items| File { items })
+        .map(|items| File { items, comments: vec![] })
+}
+
+/// Extract comments from source text (separate pass before parsing)
+fn extract_comments(src: &str) -> Vec<Comment> {
+    let mut comments = Vec::new();
+    let mut i = 0;
+    let bytes = src.as_bytes();
+
+    while i < bytes.len() {
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+            let start = i;
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            let text = src[start..i].to_string();
+            comments.push(Comment { span: start..i, text });
+        } else {
+            i += 1;
+        }
+    }
+
+    comments
 }
 
 pub fn parse(src: &str, path: &Path) -> Result<File, Vec<Diagnostic>> {
+    let comments = extract_comments(src);
+
     file()
         .parse(src)
         .into_result()
+        .map(|mut f| {
+            f.comments = comments;
+            f
+        })
         .map_err(|errs| {
             errs.into_iter()
                 .map(|e| {

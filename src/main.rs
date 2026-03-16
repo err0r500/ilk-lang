@@ -45,6 +45,11 @@ enum Commands {
     },
     /// Start LSP server (stdio)
     Lsp,
+    /// Format an ilk file
+    Format {
+        /// Path to the ilk file
+        file: PathBuf,
+    },
 }
 
 #[derive(Serialize)]
@@ -98,6 +103,24 @@ fn main() {
             tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime")
                 .block_on(ilk::lsp::run());
+        }
+        Commands::Format { file } => {
+            run_format(&file);
+        }
+    }
+}
+
+fn run_format(file: &PathBuf) {
+    let src = std::fs::read_to_string(file).expect("Failed to read file");
+
+    match ilk::parser::parse(&src, file) {
+        Ok(ast) => {
+            let formatted = ilk::formatter::format(&ast, &src);
+            print!("{}", formatted);
+        }
+        Err(errors) => {
+            print_errors(&errors, file);
+            std::process::exit(1);
         }
     }
 }
