@@ -459,46 +459,71 @@ fn check_implicit_source(
 ) -> bool {
     let field_name = &field.node.name.node;
 
-    for source in sources {
-        let root = source.node.root_name();
-        if let Some(source_field) = parent_fields.iter().find(|f| f.node.name.node == root) {
+    // Collect all matching sources
+    let matches: Vec<(&str, &S<InstanceField>)> = sources
+        .iter()
+        .filter_map(|source| {
+            let root = source.node.root_name();
+            let source_field = parent_fields.iter().find(|f| f.node.name.node == root)?;
             if let Value::Struct(source_fields) = &source_field.node.value.node {
-                if let Some(src_field) =
-                    source_fields.iter().find(|f| &f.node.name.node == field_name)
-                {
-                    // Check optionality: mandatory field cannot depend on optional source
-                    if !field.node.optional && src_field.node.optional {
-                        errors.push(Diagnostic::error(
-                            field.span.clone(),
-                            format!(
-                                "Mandatory field cannot depend on optional source '{}.{}'",
-                                root, field_name
-                            ),
-                            ctx.path,
-                        ));
-                    }
+                let src_field = source_fields
+                    .iter()
+                    .find(|f| &f.node.name.node == field_name)?;
+                Some((root, src_field))
+            } else {
+                None
+            }
+        })
+        .collect();
 
-                    // Check type compatibility
-                    let src_type = get_value_type(&src_field.node.value.node);
-                    let dst_type = get_value_type(&field.node.value.node);
-                    if let (Some(s), Some(d)) = (src_type, dst_type) {
-                        if s != d {
-                            errors.push(Diagnostic::error(
-                                field.span.clone(),
-                                format!(
-                                    "Type mismatch: source '{}.{}' is {} but field is {}",
-                                    root, field_name, s, d
-                                ),
-                                ctx.path,
-                            ));
-                        }
-                    }
-                    return true;
+    match matches.len() {
+        0 => false,
+        1 => {
+            let (root, src_field) = matches[0];
+
+            // Check optionality: mandatory field cannot depend on optional source
+            if !field.node.optional && src_field.node.optional {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!(
+                        "Mandatory field cannot depend on optional source '{}.{}'",
+                        root, field_name
+                    ),
+                    ctx.path,
+                ));
+            }
+
+            // Check type compatibility
+            let src_type = get_value_type(&src_field.node.value.node);
+            let dst_type = get_value_type(&field.node.value.node);
+            if let (Some(s), Some(d)) = (src_type, dst_type) {
+                if s != d {
+                    errors.push(Diagnostic::error(
+                        field.span.clone(),
+                        format!(
+                            "Type mismatch: source '{}.{}' is {} but field is {}",
+                            root, field_name, s, d
+                        ),
+                        ctx.path,
+                    ));
                 }
             }
+            true
+        }
+        _ => {
+            let sources_list: Vec<_> = matches.iter().map(|(r, _)| *r).collect();
+            errors.push(Diagnostic::error(
+                field.span.clone(),
+                format!(
+                    "Ambiguous source for '{}': found in [{}]. Use explicit mapping.",
+                    field_name,
+                    sources_list.join(", ")
+                ),
+                ctx.path,
+            ));
+            true // Return true to avoid additional "no source found" error
         }
     }
-    false
 }
 
 fn is_concrete_value(value: &S<Value>) -> bool {
@@ -848,5 +873,54 @@ cmd = Cmd {
         // Should fail: type mismatch even if both optional
         assert!(!errors.is_empty());
         assert!(errors[0].message.contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_implicit_type_mismatch() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId Uuid}
+type Cmd = {
+  fields {...}
+  auth {...}
+  @source [fields, auth]
+  emits []Event
+}
+e = Event {userId Uuid}
+cmd = Cmd {
+  fields {x Int}
+  auth {userId String}
+  emits [e]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
+        assert!(errors[0].message.contains("auth.userId"));
+    }
+
+    #[test]
+    fn test_ambiguous_source() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Cmd = {
+  fields {...}
+  auth {...}
+  @source [fields, auth]
+  emits []Event
+}
+e = Event {userId String}
+cmd = Cmd {
+  fields {userId String}
+  auth {userId String}
+  emits [e]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Ambiguous source"));
+        assert!(errors[0].message.contains("fields"));
+        assert!(errors[0].message.contains("auth"));
     }
 }
