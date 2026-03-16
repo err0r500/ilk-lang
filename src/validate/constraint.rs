@@ -389,6 +389,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
             EvalValue::List(vals)
         }
         Value::Variant(_, body) => value_to_eval_value(body, ctx),
+        Value::Refinement(name, _, _) => EvalValue::BindingRef(name.clone()),
     }
 }
 

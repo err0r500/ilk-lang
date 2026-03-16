@@ -19,17 +19,9 @@ fn validate_instance_sources(
     errors: &mut Vec<Diagnostic>,
 ) {
     if let Value::Struct(inst_fields) = &inst.body.node {
-        validate_struct_sources(ctx, inst_fields, type_decl, errors);
+        // Pass instance-level assocs as initial context
+        validate_struct_sources_with_assocs(ctx, inst_fields, type_decl, &inst.assocs, errors);
     }
-}
-
-fn validate_struct_sources(
-    ctx: &ValidationContext,
-    inst_fields: &[S<InstanceField>],
-    type_decl: &TypeDecl,
-    errors: &mut Vec<Diagnostic>,
-) {
-    validate_struct_sources_with_assocs(ctx, inst_fields, type_decl, &[], errors);
 }
 
 fn validate_struct_sources_with_assocs(
@@ -239,6 +231,33 @@ fn validate_field_source_with_assocs(
             let nested_assocs = if nested.node.assocs.is_empty() { assocs } else { &nested.node.assocs };
             validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
         }
+    } else if let Value::BindingRef(ref_name) | Value::Refinement(ref_name, _, _) = &inst_field.node.value.node {
+        // Extract refinement info if present
+        let (ref_assocs, ref_fields): (&[S<String>], &[S<InstanceField>]) = match &inst_field.node.value.node {
+            Value::Refinement(_, a, f) => (a, f),
+            _ => (&[], &[]),
+        };
+        let active_assocs = if ref_assocs.is_empty() { assocs } else { ref_assocs };
+
+        // Validate explicit refinement fields first
+        for field in ref_fields {
+            validate_refinement_field(ctx, field, sources, parent_fields, active_assocs, errors);
+        }
+
+        // Validate non-refined fields from referenced instance
+        if let Some(ref_inst) = ctx.get_instance(ref_name) {
+            if let Value::Struct(inst_fields) = &ref_inst.body.node {
+                let fields_to_skip = get_fields_to_skip(field_type, ctx);
+                let refined_names: std::collections::HashSet<_> = ref_fields.iter().map(|f| &f.node.name.node).collect();
+                for nested in inst_fields {
+                    if refined_names.contains(&nested.node.name.node) || fields_to_skip.contains(&nested.node.name.node) {
+                        continue;
+                    }
+                    let nested_assocs = if nested.node.assocs.is_empty() { active_assocs } else { &nested.node.assocs };
+                    validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
+                }
+            }
+        }
     }
 }
 
@@ -246,16 +265,14 @@ fn validate_field_source_with_assocs(
 /// This includes fields with their own @source annotation, and open struct fields (declarations)
 fn get_fields_to_skip(ty: &TypeExpr, ctx: &ValidationContext) -> std::collections::HashSet<String> {
     let mut result = std::collections::HashSet::new();
-
-    let type_decl = match ty {
-        TypeExpr::Named(name) => ctx.env.get_type(name),
-        _ => None,
+    let body = if let TypeExpr::Named(name) = ty {
+        ctx.env.get_type(name).map(|t| &t.node.body.node)
+    } else {
+        Some(ty)
     };
-
-    if let Some(type_decl) = type_decl {
-        collect_fields_to_skip(&type_decl.node.body.node, &mut result);
+    if let Some(body) = body {
+        collect_fields_to_skip(body, &mut result);
     }
-
     result
 }
 
@@ -340,6 +357,28 @@ fn validate_refinement_field(
                     validate_refinement_field(ctx, nested, sources, parent_fields, active_assocs, errors);
                 }
                 // Don't error on parent - child errors are sufficient
+                return;
+            }
+
+            // If this is a refinement, validate its fields
+            if let Value::Refinement(ref_name, ref_assocs, ref_fields) = &field.node.value.node {
+                let ref_active_assocs = if ref_assocs.is_empty() { active_assocs } else { ref_assocs };
+                for ref_field in ref_fields {
+                    validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_active_assocs, errors);
+                }
+                // Also validate non-refined fields from referenced instance
+                if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                    if let Value::Struct(inst_fields) = &ref_inst.body.node {
+                        let refined_names: std::collections::HashSet<_> = ref_fields.iter().map(|f| &f.node.name.node).collect();
+                        for nested in inst_fields {
+                            if refined_names.contains(&nested.node.name.node) {
+                                continue;
+                            }
+                            let nested_assocs = if nested.node.assocs.is_empty() { ref_active_assocs } else { &nested.node.assocs };
+                            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
+                        }
+                    }
+                }
                 return;
             }
 
@@ -444,15 +483,27 @@ fn validate_source_path(
                 source_optional = true;
             }
             if i < path.len() - 1 {
-                if let Value::Struct(nested) = &f.node.value.node {
-                    current_fields = nested;
-                } else {
-                    errors.push(Diagnostic::error(
-                        field.span.clone(),
-                        format!("Source path '{}' not found", path.join(".")),
-                        ctx.path,
-                    ));
-                    return;
+                // Get nested fields from struct, binding ref, or refinement
+                let nested = match &f.node.value.node {
+                    Value::Struct(fields) => Some(fields.as_slice()),
+                    Value::BindingRef(name) | Value::Refinement(name, _, _) => {
+                        ctx.get_instance(name).and_then(|inst| match &inst.body.node {
+                            Value::Struct(fields) => Some(fields.as_slice()),
+                            _ => None,
+                        })
+                    }
+                    _ => None,
+                };
+                match nested {
+                    Some(fields) => current_fields = fields,
+                    None => {
+                        errors.push(Diagnostic::error(
+                            field.span.clone(),
+                            format!("Source path '{}' not found", path.join(".")),
+                            ctx.path,
+                        ));
+                        return;
+                    }
                 }
             } else {
                 source_field = Some(f);

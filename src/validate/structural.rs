@@ -18,6 +18,16 @@ fn format_type(ty: &TypeExpr) -> String {
     }
 }
 
+fn get_value_type_name(value: &Value) -> Option<&str> {
+    match value {
+        Value::TypeRef(t) => Some(t.as_str()),
+        Value::LitString(_) => Some("String"),
+        Value::LitInt(_) => Some("Int"),
+        Value::LitBool(_) => Some("Bool"),
+        _ => None,
+    }
+}
+
 pub struct ValidationContext<'a> {
     pub env: &'a TypeEnv,
     pub path: &'a Path,
@@ -332,6 +342,32 @@ fn validate_value_against_type(
             }
         }
 
+        // Refinement value against type (bindingRef & {fields})
+        (Value::Refinement(name, _assocs, fields), TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type)) => {
+            if let Some(inst) = ctx.get_instance(name) {
+                let inst_type = &inst.type_name.node;
+                if !type_matches_ref(inst_type, expected_type, ctx.env) {
+                    errors.push(Diagnostic::error(
+                        value.span.clone(),
+                        format!(
+                            "Refinement type mismatch: {} is {}, expected {}",
+                            name, inst_type, expected_type
+                        ),
+                        ctx.path,
+                    ));
+                }
+                // Validate refinement fields against the instance
+                let is_refinable = matches!(ty.node, TypeExpr::RefinableRef(_));
+                validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, errors);
+            } else {
+                errors.push(Diagnostic::error(
+                    value.span.clone(),
+                    format!("Unknown instance in refinement: {}", name),
+                    ctx.path,
+                ));
+            }
+        }
+
         // Named types - resolve and validate
         (_, TypeExpr::Named(name)) => {
             if let Some(type_decl) = ctx.env.get_type(name) {
@@ -640,6 +676,10 @@ fn refinement_value_matches_type(
         (_, TypeExpr::Union(variants)) => {
             variants.iter().any(|v| refinement_value_matches_type(ctx, value, &v.node))
         }
+        // Struct value against open struct type - always compatible
+        (Value::Struct(_), TypeExpr::Struct(StructKind::Open(_))) => true,
+        // Struct value against closed struct - compatible (detailed check happens elsewhere)
+        (Value::Struct(_), TypeExpr::Struct(StructKind::Closed(_))) => true,
         // String literals are valid for Uuid, Date, Timestamp (they're string-based types)
         (Value::LitString(_), TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp)) => true,
         // Int literal doesn't match Uuid, Date, etc.
@@ -719,6 +759,38 @@ fn validate_refinement_fields_against_instance(
                         ),
                         ctx.path,
                     ));
+                }
+            }
+
+            // Recursively validate nested struct refinements
+            if let (Value::Struct(ref_nested), Value::Struct(inst_nested)) =
+                (&field.node.value.node, &inst_field.node.value.node)
+            {
+                for nested_field in ref_nested {
+                    let nested_name = &nested_field.node.name.node;
+                    if let Some(inst_nested_field) = inst_nested.iter().find(|f| &f.node.name.node == nested_name) {
+                        // Check type compatibility between refinement and instance field
+                        let ref_type = get_value_type_name(&nested_field.node.value.node);
+                        let inst_type = get_value_type_name(&inst_nested_field.node.value.node);
+                        if let (Some(rt), Some(it)) = (ref_type, inst_type) {
+                            if rt != it {
+                                errors.push(Diagnostic::error(
+                                    nested_field.node.value.span.clone(),
+                                    format!(
+                                        "Type mismatch in nested refinement: field '{}' is {} but refinement specifies {}",
+                                        nested_name, it, rt
+                                    ),
+                                    ctx.path,
+                                ));
+                            }
+                        }
+                    } else {
+                        errors.push(Diagnostic::error(
+                            nested_field.node.name.span.clone(),
+                            format!("Unknown field in nested refinement: {}", nested_name),
+                            ctx.path,
+                        ));
+                    }
                 }
             }
         } else {
@@ -999,5 +1071,38 @@ endpoint = Endpoint {
 "#);
         assert!(!errors.is_empty(), "Should reject wrong type in inline assoc");
         assert!(errors.iter().any(|e| e.message.contains("not allowed")), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_field_value_refinement() {
+        // Field value with refinement syntax: fieldName refInstance & {field value}
+        let errors = validate_src(r#"
+type Event = {...} & {id String}
+type Cmd = {
+    event -Event
+}
+ev = Event {id String}
+cmd = Cmd {
+    event ev & {id "user-123"}
+}
+"#);
+        assert!(errors.is_empty(), "Should accept field value refinement: {:?}", errors);
+    }
+
+    #[test]
+    fn test_field_value_refinement_type_mismatch() {
+        let errors = validate_src(r#"
+type Event = {...}
+type Other = {...}
+type Cmd = {
+    event Event
+}
+other = Other {x Int}
+cmd = Cmd {
+    event other & {x 123}
+}
+"#);
+        assert!(!errors.is_empty(), "Should reject mismatched refinement type");
+        assert!(errors.iter().any(|e| e.message.contains("type mismatch") || e.message.contains("Type mismatch")), "{:?}", errors);
     }
 }

@@ -645,9 +645,30 @@ fn instance_struct<'a>(
         .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 
-fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
-    let simple_value = choice((type_ref_value(), lit_int_value(), lit_string_value(), lit_bool_value()));
+fn refinement_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    recursive(|refinement_val| {
+        let simple_value = choice((type_ref_value(), lit_int_value(), lit_string_value(), lit_bool_value()));
 
+        let refinement_struct = just('{')
+            .ignore_then(ws_nl())
+            .ignore_then(
+                refinement_field_inner(refinement_val)
+                    .separated_by(sep())
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
+            )
+            .then_ignore(ws_nl())
+            .then_ignore(just('}'))
+            .map(Value::Struct)
+            .map_with(|v, e| Spanned::from_simple(v, e.span()));
+
+        choice((refinement_struct, simple_value))
+    })
+}
+
+fn refinement_field_inner<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone,
+) -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
     let doc = just("@doc")
         .ignore_then(ws())
         .ignore_then(just('"'))
@@ -660,7 +681,7 @@ fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, 
         .then(just('?').or_not().map(|o| o.is_some()))
         .then_ignore(ws())
         .then(inline_assocs())
-        .then(simple_value)
+        .then(value)
         .then(field_origin())
         .map(|(((((doc, name), optional), assocs), value), origin)| InstanceField {
             name,
@@ -671,6 +692,10 @@ fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, 
             doc: doc.map(|s: &str| s.to_string()),
         })
         .map_with(|f, e| Spanned::from_simple(f, e.span()))
+}
+
+fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
+    refinement_field_inner(refinement_value())
 }
 
 fn list_element<'a>(
@@ -724,7 +749,28 @@ fn instance_list<'a>(
 }
 
 fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
-    text::ident()
+    let refinement = text::ident()
+        .filter(|s: &&str| {
+            !matches!(
+                *s,
+                "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
+                    | "true" | "false" | "type" | "import"
+            )
+        })
+        .map(|s: &str| s.to_string())
+        .then_ignore(ws())
+        .then(inline_assocs())
+        .then_ignore(just('&'))
+        .then_ignore(ws())
+        .then_ignore(just('{'))
+        .then_ignore(ws_nl())
+        .then(refinement_field().separated_by(sep()).allow_trailing().collect::<Vec<_>>())
+        .then_ignore(ws_nl())
+        .then_ignore(just('}'))
+        .map(|((name, assocs), fields)| Value::Refinement(name, assocs, fields))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()));
+
+    let simple = text::ident()
         .filter(|s: &&str| {
             !matches!(
                 *s,
@@ -733,7 +779,9 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
             )
         })
         .map(|s: &str| Value::BindingRef(s.to_string()))
-        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()));
+
+    choice((refinement, simple))
 }
 
 pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
@@ -1059,5 +1107,34 @@ board = Board {
         let f = parse_file(src);
         assert_eq!(f.type_decls().count(), 2);
         assert_eq!(f.instances().count(), 3);
+    }
+
+    #[test]
+    fn test_value_refinement() {
+        let v = parse_value("foo & {x \"hello\"}");
+        assert!(matches!(v.node, Value::Refinement(name, assocs, fields)
+            if name == "foo" && assocs.is_empty() && fields.len() == 1));
+    }
+
+    #[test]
+    fn test_value_refinement_with_assocs() {
+        let v = parse_value("foo <a, b> & {x Int}");
+        assert!(matches!(v.node, Value::Refinement(name, assocs, _)
+            if name == "foo" && assocs.len() == 2));
+    }
+
+    #[test]
+    fn test_value_refinement_nested_struct() {
+        let v = parse_value("foo & {params {userId Uuid}}");
+        if let Value::Refinement(_, _, fields) = v.node {
+            assert_eq!(fields.len(), 1);
+            if let Value::Struct(nested) = &fields[0].node.value.node {
+                assert_eq!(nested.len(), 1);
+            } else {
+                panic!("Expected nested struct");
+            }
+        } else {
+            panic!("Expected refinement");
+        }
     }
 }

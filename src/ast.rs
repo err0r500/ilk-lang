@@ -155,6 +155,7 @@ pub enum Value {
     Struct(Vec<S<InstanceField>>),         // {x Int, y String}
     List(Vec<S<ListElement>>),             // [a, b, c]
     Variant(String, Box<S<Value>>),        // VariantName body
+    Refinement(String, Vec<S<String>>, Vec<S<InstanceField>>), // binding <assocs> & {fields}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

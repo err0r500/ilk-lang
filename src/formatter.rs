@@ -541,6 +541,21 @@ impl<'a> Formatter<'a> {
                 self.write(" ");
                 self.format_value(body);
             }
+            Value::Refinement(name, assocs, fields) => {
+                self.write(name);
+                if !assocs.is_empty() {
+                    self.write(" <");
+                    for (i, a) in assocs.iter().enumerate() {
+                        if i > 0 {
+                            self.write(", ");
+                        }
+                        self.write(&a.node);
+                    }
+                    self.write(">");
+                }
+                self.write(" & ");
+                self.format_refinement_fields(fields);
+            }
         }
     }
 

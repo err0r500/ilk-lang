@@ -275,6 +275,7 @@ fn value_to_type_string(val: &Value) -> String {
         Value::Struct(_) => "{...}".to_string(),
         Value::List(_) => "[...]".to_string(),
         Value::Variant(name, _) => name.clone(),
+        Value::Refinement(name, _, _) => format!("{} & {{...}}", name),
     }
 }
 
