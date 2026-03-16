@@ -411,6 +411,19 @@ fn validate_struct(
     span: &Span,
     errors: &mut Vec<Diagnostic>,
 ) {
+    // Check for duplicate fields
+    let mut seen_fields: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for val_field in val_fields {
+        let name = &val_field.node.name.node;
+        if !seen_fields.insert(name.as_str()) {
+            errors.push(Diagnostic::error(
+                val_field.node.name.span.clone(),
+                format!("Duplicate field: {}", name),
+                ctx.path,
+            ));
+        }
+    }
+
     match kind {
         StructKind::Closed(type_fields) => {
             // Check all value fields are in type
@@ -908,6 +921,14 @@ mod tests {
             "type Foo = {x Int}\nfoo = Foo {x Int, y Int}",
         );
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_duplicate_field() {
+        let errors = validate_src(
+            "type Foo = {x Int}\nfoo = Foo {x Int, x Int}",
+        );
+        assert!(errors.iter().any(|e| e.message.contains("Duplicate field")), "{:?}", errors);
     }
 
     #[test]
