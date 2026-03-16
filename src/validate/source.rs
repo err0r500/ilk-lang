@@ -346,7 +346,7 @@ fn validate_refinement_field(
                 return;
             }
 
-            let found = check_implicit_source(ctx, name, sources, parent_fields);
+            let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
             if !found {
                 if !is_concrete_value(&field.node.value) {
                     errors.push(Diagnostic::error(
@@ -451,19 +451,48 @@ fn get_value_type(value: &Value) -> Option<&str> {
 }
 
 fn check_implicit_source(
-    _ctx: &ValidationContext,
-    field_name: &str,
+    ctx: &ValidationContext,
+    field: &S<InstanceField>,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
+    errors: &mut Vec<Diagnostic>,
 ) -> bool {
+    let field_name = &field.node.name.node;
+
     for source in sources {
         let root = source.node.root_name();
         if let Some(source_field) = parent_fields.iter().find(|f| f.node.name.node == root) {
             if let Value::Struct(source_fields) = &source_field.node.value.node {
-                if source_fields
-                    .iter()
-                    .any(|f| &f.node.name.node == field_name)
+                if let Some(src_field) =
+                    source_fields.iter().find(|f| &f.node.name.node == field_name)
                 {
+                    // Check optionality: mandatory field cannot depend on optional source
+                    if !field.node.optional && src_field.node.optional {
+                        errors.push(Diagnostic::error(
+                            field.span.clone(),
+                            format!(
+                                "Mandatory field cannot depend on optional source '{}.{}'",
+                                root, field_name
+                            ),
+                            ctx.path,
+                        ));
+                    }
+
+                    // Check type compatibility
+                    let src_type = get_value_type(&src_field.node.value.node);
+                    let dst_type = get_value_type(&field.node.value.node);
+                    if let (Some(s), Some(d)) = (src_type, dst_type) {
+                        if s != d {
+                            errors.push(Diagnostic::error(
+                                field.span.clone(),
+                                format!(
+                                    "Type mismatch: source '{}.{}' is {} but field is {}",
+                                    root, field_name, s, d
+                                ),
+                                ctx.path,
+                            ));
+                        }
+                    }
                     return true;
                 }
             }
