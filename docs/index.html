@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ilk — Data Modeling Language</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1c2128;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --purple: #d2a8ff;
+      --yellow: #e3b341;
+      --red: #f85149;
+      --code-bg: #0d1117;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    /* Layout */
+    .page { max-width: 1000px; margin: 0 auto; padding: 3rem 2rem; }
+
+    /* Hero */
+    .hero { padding: 4rem 0 3rem; border-bottom: 1px solid var(--border); margin-bottom: 3rem; }
+    .hero h1 { font-size: 3rem; font-weight: 700; color: var(--accent); letter-spacing: -1px; margin-bottom: 0.5rem; }
+    .hero .tagline { font-size: 1.3rem; color: var(--text); margin-bottom: 1.5rem; font-weight: 400; }
+    .hero .pitch {
+      font-size: 1rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      line-height: 1.7;
+      margin-bottom: 2rem;
+    }
+    .hero .pitch strong { color: var(--text); }
+    .pill {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid;
+      margin-right: 0.5rem;
+    }
+    .pill-blue  { color: var(--accent);  border-color: var(--accent);  background: rgba(88,166,255,0.08); }
+    .pill-green { color: var(--green);   border-color: var(--green);   background: rgba(63,185,80,0.08); }
+
+    /* Sections */
+    .section { margin-bottom: 4rem; }
+    .section > h2 {
+      font-size: 1.4rem;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .section > h2 .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.6rem;
+      height: 1.6rem;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .section > .lead {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 1.5rem;
+      max-width: 700px;
+    }
+    .section > .lead strong { color: var(--text); }
+
+    /* Code blocks */
+    .box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 1rem; }
+    .box-label {
+      padding: 0.4rem 1rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.03em;
+    }
+    .box-label.ilk { color: var(--accent); }
+    .box-label.ok  { color: var(--green); }
+    .box-label.err { color: var(--red); }
+    pre {
+      margin: 0;
+      padding: 1.2rem 1.4rem;
+      overflow-x: auto;
+      font-family: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 0.84rem;
+      line-height: 1.65;
+      background: var(--code-bg);
+    }
+
+    /* Two columns */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .cols3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+    @media (max-width: 700px) {
+      .cols, .cols3 { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 2.2rem; }
+    }
+
+    /* Inline callout */
+    .callout {
+      background: rgba(88,166,255,0.06);
+      border: 1px solid rgba(88,166,255,0.2);
+      border-radius: 6px;
+      padding: 0.8rem 1.2rem;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+    }
+    .callout strong { color: var(--accent); }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { padding: 0.55rem 0.9rem; text-align: left; border: 1px solid var(--border); }
+    th { background: var(--surface2); color: var(--text-muted); font-weight: 600; }
+    td code { background: var(--surface); padding: 0.15rem 0.45rem; border-radius: 3px; font-family: 'SF Mono', Consolas, monospace; font-size: 0.83rem; }
+
+    /* Syntax colors */
+    .c   { color: #8b949e; }           /* comment */
+    .kw  { color: #ff7b72; }           /* keyword: type */
+    .id  { color: #c9d1d9; }           /* identifier */
+    .ty  { color: #79c0ff; }           /* type name */
+    .str { color: #a5d6ff; }           /* string / number literal */
+    .ann { color: #d2a8ff; }           /* annotation */
+    .op  { color: #ff7b72; }           /* operator */
+    .ok  { color: #3fb950; }           /* valid marker */
+    .er  { color: #f85149; }           /* error */
+
+    /* Divider */
+    hr { border: none; border-top: 1px solid var(--border); margin: 3rem 0; }
+
+    /* Footer */
+    footer { color: var(--text-muted); font-size: 0.82rem; padding: 2rem 0; border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── HERO ─────────────────────────────────────────────────── -->
+  <header class="hero">
+    <h1>ilk</h1>
+    <p class="tagline">Define your types. Name your entities. Trace your data.</p>
+    <p class="pitch">
+      <strong>ilk</strong> is a single-file data modeling language.
+      One <code>.ilk</code> file holds both <strong>type declarations</strong> —
+      the abstract vocabulary of a domain — and <strong>instance bindings</strong> —
+      the named entities that actually exist in your system.<br><br>
+      Beyond shape validation, ilk tracks <strong>data provenance</strong>:
+      each field must be traceable back to a declared source.
+      The compiler catches missing mappings before runtime.
+    </p>
+    <span class="pill pill-blue">.ilk — types &amp; instances</span>
+    <span class="pill pill-green">validates shape + data flow</span>
+  </header>
+
+
+  <!-- ── 1. HELLO WORLD ────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">1</span> The basics — types and instances</h2>
+    <p class="lead">
+      <strong>Type declarations</strong> describe shapes (what fields exist, what types they have).
+      <strong>Instance bindings</strong> name the concrete entities in your domain — not runtime values,
+      but the fixed catalog of things your system knows about.
+      Both live in one file.
+    </p>
+
+    <div class="box">
+      <div class="box-label ilk">domain.ilk</div>
+      <pre>
+<span class="c">// ── Type declarations ──────────────────────────</span>
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span> | <span class="str">"DELETE"</span>
+
+<span class="kw">type</span> <span class="ty">User</span> = {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
+}
+
+<span class="c">// ── Instance bindings ───────────────────────────</span>
+<span class="c">// Named entities in this specific domain</span>
+
+<span class="id">adminUser</span> = <span class="ty">User</span> {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
+}
+
+<span class="id">guestUser</span> = <span class="ty">User</span> {
+    <span class="id">id</span>    <span class="ty">Uuid</span>
+    <span class="id">name</span>  <span class="ty">String</span>
+    <span class="id">email</span> <span class="ty">String</span>
+}</pre>
+    </div>
+
+    <div class="callout">
+      <strong>Instance bindings are not runtime values.</strong>
+      <code>adminUser</code> doesn't hold a real UUID or name — it declares that
+      your domain has an entity called <em>adminUser</em> whose <code>id</code> field
+      will be a <code>Uuid</code> at runtime. Think of it as a typed slot catalog.
+    </div>
+  </section>
+
+
+  <!-- ── 2. VALUE CONSTRAINTS ──────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">2</span> How tight is a value?</h2>
+    <p class="lead">
+      ilk has three constraint levels for field values.
+      They form a tightening progression: from fully open to exact match.
+    </p>
+
+    <table style="margin-bottom:1.2rem">
+      <thead>
+        <tr><th>In a type</th><th>In an instance</th><th>Meaning</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>String</code></td>
+          <td><code>String</code></td>
+          <td>Open — any string value at runtime</td>
+        </tr>
+        <tr>
+          <td><code>Concrete&lt;String&gt;</code></td>
+          <td><code>"webhook"</code></td>
+          <td>Instance-fixed — the instance author picks one specific value</td>
+        </tr>
+        <tr>
+          <td><code>"POST"</code></td>
+          <td><code>"POST"</code></td>
+          <td>Type-fixed — only this exact value is ever valid</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">type</div>
+        <pre>
+<span class="kw">type</span> <span class="ty">Webhook</span> = {
+    <span class="c">// any URL at runtime</span>
+    <span class="id">url</span>     <span class="ty">String</span>
+
+    <span class="c">// instance author fixes the event name</span>
+    <span class="id">event</span>   <span class="ty">Concrete&lt;String&gt;</span>
+
+    <span class="c">// always exactly "POST"</span>
+    <span class="id">method</span>  <span class="str">"POST"</span>
+}</pre>
+      </div>
+      <div class="box">
+        <div class="box-label ok">✓ valid instance</div>
+        <pre>
+<span class="id">userCreatedHook</span> = <span class="ty">Webhook</span> {
+    <span class="c">// open: leave as String (value comes at runtime)</span>
+    <span class="id">url</span>     <span class="ty">String</span>
+
+    <span class="c">// instance-fixed: pick the event name</span>
+    <span class="id">event</span>   <span class="str">"user.created"</span>
+
+    <span class="c">// type-fixed: must be exactly "POST"</span>
+    <span class="id">method</span>  <span class="str">"POST"</span>
+}</pre>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 3. SHAPES ─────────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">3</span> Shapes — structs, lists, unions</h2>
+    <p class="lead">
+      Structs describe field collections. Lists carry cardinality.
+      Unions let a field accept multiple alternatives.
+    </p>
+
+    <div class="cols">
+      <div>
+        <div class="box">
+          <div class="box-label ilk">Structs</div>
+          <pre>
+<span class="c">// anonymous: 1 field of any name/type</span>
+{<span class="id">_</span>}
+
+<span class="c">// anonymous with type constraint</span>
+{<span class="id">_</span> <span class="ty">String</span>}
+
+<span class="c">// open: any fields</span>
+{<span class="id">...</span>}
+
+<span class="c">// named fields</span>
+{<span class="id">id</span> <span class="ty">Uuid</span>, <span class="id">name</span> <span class="ty">String</span>}
+
+<span class="c">// any fields + required id</span>
+{<span class="id">...</span>} &amp; {<span class="id">id</span> <span class="ty">Uuid</span>}</pre>
+        </div>
+
+        <div class="box">
+          <div class="box-label ilk">Unions</div>
+          <pre>
+<span class="c">// literal union</span>
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span>
+
+<span class="c">// identifier union</span>
+<span class="kw">type</span> <span class="ty">Status</span> = <span class="ty">Pending</span> | <span class="ty">Active</span> | <span class="ty">Archived</span>
+
+<span class="c">// mixed</span>
+<span class="kw">type</span> <span class="ty">Tag</span> = {<span class="id">_</span> <span class="ty">String</span>} | <span class="ty">Concrete&lt;String&gt;</span></pre>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="box-label ilk">Lists</div>
+        <pre>
+<span class="c">// 0 or more</span>
+[]<span class="ty">Event</span>
+
+<span class="c">// exactly 3</span>
+[3]<span class="ty">Tag</span>
+
+<span class="c">// 1 or more</span>
+[1..]<span class="ty">Tag</span>
+
+<span class="c">// 2 to 5</span>
+[2..5]<span class="ty">Tag</span>
+
+<span class="c">// up to 10</span>
+[..10]<span class="ty">Tag</span>
+
+<span class="c">// ── References ─────────────────</span>
+<span class="c">// point to a binding, no data flow</span>
+&amp;<span class="ty">Event</span>
+[]&amp;<span class="ty">Event</span>
+
+<span class="c">// refinable reference</span>
+<span class="c">// (can override open fields with literals)</span>
+-<span class="ty">Event</span>
+[]-<span class="ty">Event</span></pre>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── 4. DATA FLOW ───────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">4</span> Data flow — where does this field come from?</h2>
+    <p class="lead">
+      <strong>This is the unique part.</strong>
+      <code>@source</code> declares which upstream fields can supply data to a downstream field.
+      Every non-<code>Concrete</code> field in the downstream struct must be explicitly traced back —
+      the compiler enforces it.
+    </p>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">type with @source</div>
+        <pre>
+<span class="kw">type</span> <span class="ty">DbLookup</span> = {
+    <span class="id">args</span>    {<span class="id">...</span>}
+
+    <span class="c">// @out: this field provides data to callers</span>
+    <span class="ann">@out</span>
+    <span class="id">returns</span> {<span class="id">...</span>}
+}
+
+<span class="kw">type</span> <span class="ty">Endpoint</span> = {
+    <span class="id">params</span>  {<span class="id">...</span>}
+
+    <span class="c">// db can only use data from params</span>
+    <span class="ann">@source</span> [<span class="id">params</span>]
+    <span class="id">db</span>      <span class="ty">DbLookup</span>
+
+    <span class="c">// response can use params OR db.returns</span>
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">db.returns</span>]
+    <span class="id">response</span> {<span class="id">...</span>}
+}</pre>
+      </div>
+
+      <div>
+        <div class="box">
+          <div class="box-label ok">✓ all fields traced</div>
+          <pre>
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+
+    <span class="id">db</span> <span class="id">findUserDb</span> &amp; {
+        <span class="c">// maps params.id → db arg</span>
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>  <span class="ok">✓</span>
+    }
+
+    <span class="id">response</span> {
+        <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>    <span class="ok">✓</span>
+        <span class="id">name</span> <span class="ty">String</span> = <span class="id">db.returns.name</span>  <span class="ok">✓</span>
+    }
+}</pre>
+        </div>
+
+        <div class="box">
+          <div class="box-label err">✗ untraced field → compile error</div>
+          <pre>
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+    <span class="id">db</span>      <span class="id">findUserDb</span> &amp; {
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>
+    }
+
+    <span class="id">response</span> {
+        <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>
+        <span class="c">// name has no = assignment</span>
+        <span class="id">name</span> <span class="ty">String</span>  <span class="er">✗ @source violation</span>
+    }
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <strong>Why does this matter?</strong>
+      In a large API codebase, it's easy to accidentally include data in a response
+      that shouldn't be there (e.g. internal IDs leaking out).
+      <code>@source</code> makes the data flow explicit and machine-checked —
+      every field in a response must be justified.
+    </div>
+  </section>
+
+
+  <!-- ── 5. ANNOTATIONS ────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">5</span> Annotations</h2>
+    <p class="lead">Annotations go on the line immediately before what they annotate.</p>
+
+    <table>
+      <thead>
+        <tr><th>Annotation</th><th>Where</th><th>What it does</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>@main</code></td><td>instance</td><td>Entry point — the root binding the compiler validates from</td></tr>
+        <tr><td><code>@source [fields]</code></td><td>field in type</td><td>Data provenance: this field's values must trace back to <em>fields</em></td></tr>
+        <tr><td><code>@out</code></td><td>field in type</td><td>Output field — exempt from <code>@source</code> checks; can be referenced by callers</td></tr>
+        <tr><td><code>@assoc [T]</code></td><td>type</td><td>Instances carry typed associations (used with <code>@constraint</code>)</td></tr>
+        <tr><td><code>@constraint expr</code></td><td>field in type</td><td>Boolean predicate evaluated at validation time</td></tr>
+        <tr><td><code>@doc "…"</code></td><td>field</td><td>Implementation hint, preserved in AST for downstream tooling</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+
+  <!-- ── 6. FULL EXAMPLE ───────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">6</span> Full example — REST API with data flow</h2>
+    <p class="lead">
+      Type the whole API domain in one file: method enum, DB layer, response shapes,
+      endpoint shape, and the concrete endpoints that exist in your system.
+      The compiler validates structure and traces every response field back to a source.
+    </p>
+
+    <div class="box">
+      <div class="box-label ilk">api.ilk</div>
+      <pre>
+<span class="c">// ── Types ───────────────────────────────────────────────────────</span>
+
+<span class="kw">type</span> <span class="ty">HttpMethod</span> = <span class="str">"GET"</span> | <span class="str">"POST"</span> | <span class="str">"PUT"</span> | <span class="str">"DELETE"</span>
+
+<span class="kw">type</span> <span class="ty">DbMethod</span> = {
+    <span class="id">name</span>    <span class="ty">Concrete&lt;String&gt;</span>   <span class="c">// instance author picks the method name</span>
+    <span class="id">args</span>    {<span class="id">...</span>}
+
+    <span class="ann">@out</span>                       <span class="c">// result flows outward to callers</span>
+    <span class="id">returns</span> {<span class="id">...</span>}
+}
+
+<span class="kw">type</span> <span class="ty">HttpResponse</span> = {
+    <span class="id">status</span>  <span class="ty">Concrete&lt;Int&gt;</span>      <span class="c">// instance author picks status code</span>
+    <span class="id">body</span>    {<span class="id">...</span>}
+}
+
+<span class="kw">type</span> <span class="ty">Endpoint</span> = {
+    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">templateVars</span>(<span class="id">path</span>), <span class="id">v</span> =&gt; <span class="id">v</span> <span class="kw">in</span> <span class="id">keys</span>(<span class="id">params</span>))
+    <span class="id">path</span>    <span class="ty">Concrete&lt;String&gt;</span>
+
+    <span class="id">method</span>  <span class="ty">HttpMethod</span>
+    <span class="id">params</span>  {<span class="id">...</span>}
+    <span class="id">body</span>    {<span class="id">...</span>}
+
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">body</span>]    <span class="c">// db args must come from request</span>
+    <span class="id">db</span>      <span class="ty">DbMethod</span>
+
+    <span class="ann">@source</span> [<span class="id">params</span>, <span class="id">body</span>, <span class="id">db.returns</span>]  <span class="c">// responses may use db results too</span>
+    <span class="id">responses</span> []<span class="ty">HttpResponse</span>
+}
+
+<span class="kw">type</span> <span class="ty">Api</span> = {
+    <span class="id">endpoints</span> []<span class="ty">Endpoint</span>
+}
+
+
+<span class="c">// ── Instances ───────────────────────────────────────────────────</span>
+
+<span class="id">findUser</span> = <span class="ty">DbMethod</span> {
+    <span class="id">name</span>    <span class="str">"users.findById"</span>
+    <span class="id">args</span>    {<span class="id">userId</span> <span class="ty">Uuid</span>}
+    <span class="id">returns</span> {<span class="id">id</span> <span class="ty">Uuid</span>, <span class="id">name</span> <span class="ty">String</span>}
+}
+
+<span class="id">getUser</span> = <span class="ty">Endpoint</span> {
+    <span class="id">path</span>    <span class="str">"/users/{id}"</span>
+    <span class="id">method</span>  <span class="str">"GET"</span>
+    <span class="id">params</span>  {<span class="id">id</span> <span class="ty">Uuid</span>}
+    <span class="id">body</span>    {}
+
+    <span class="id">db</span> <span class="id">findUser</span> &amp; {
+        <span class="id">userId</span> <span class="ty">Uuid</span> = <span class="id">params.id</span>   <span class="c">// maps request param → db arg</span>
+    }
+
+    <span class="id">responses</span> [
+        {
+            <span class="id">status</span>  <span class="str">200</span>              <span class="c">// Concrete → exempt from @source</span>
+            <span class="id">body</span>    {
+                <span class="id">id</span>   <span class="ty">Uuid</span>   = <span class="id">db.returns.id</span>
+                <span class="id">name</span> <span class="ty">String</span> = <span class="id">db.returns.name</span>
+            }
+        }
+        {
+            <span class="id">status</span>  <span class="str">404</span>
+            <span class="id">body</span>    {<span class="id">message</span> <span class="str">"User not found"</span>}
+        }
+    ]
+}
+
+<span class="ann">@main</span>
+<span class="id">api</span> = <span class="ty">Api</span> {
+    <span class="id">endpoints</span> [<span class="id">getUser</span>]
+}</pre>
+    </div>
+  </section>
+
+
+  <!-- ── 7. EVENT SOURCING ──────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">7</span> Full example — event sourcing with tag constraints</h2>
+    <p class="lead">
+      <code>@assoc</code> attaches typed metadata to instances.
+      <code>@constraint</code> validates relationships at compile time —
+      here, every event in a query must carry every tag the query declares.
+    </p>
+
+    <div class="cols">
+      <div class="box">
+        <div class="box-label ilk">types</div>
+        <pre>
+<span class="c">// Tag: parametrized {field String} or a unique string</span>
+<span class="kw">type</span> <span class="ty">Tag</span> = {<span class="id">_</span> <span class="ty">String</span>} | <span class="ty">Concrete&lt;String&gt;</span>
+
+<span class="c">// Event carries open fields + a timestamp</span>
+<span class="c">// Instances can declare Tag associations</span>
+<span class="ann">@assoc</span> [<span class="ty">Tag</span>]
+<span class="kw">type</span> <span class="ty">Event</span> = {<span class="id">...</span>} &amp; {<span class="id">timestamp</span> <span class="ty">Int</span>}
+
+<span class="c">// Every event must carry every listed tag</span>
+<span class="kw">type</span> <span class="ty">QueryItem</span> = {
+    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">tags</span>, <span class="id">t</span> =&gt;
+        <span class="id">forall</span>(<span class="id">eventTypes</span>, <span class="id">e</span> =&gt; <span class="id">e</span>.<span class="id">assoc</span>(<span class="id">t</span>)))
+    <span class="id">eventTypes</span> []&amp;<span class="ty">Event</span>
+    <span class="id">tags</span>       []<span class="ty">Tag</span>
+}
+
+<span class="kw">type</span> <span class="ty">Command</span> = {
+    <span class="id">fields</span> {<span class="id">...</span>}
+    <span class="ann">@source</span> [<span class="id">fields</span>]
+    <span class="id">emits</span>  []<span class="ty">Event</span>
+    <span class="id">query</span>  []<span class="ty">QueryItem</span>
+}
+
+<span class="ann">@main</span>
+<span class="kw">type</span> <span class="ty">Board</span> = {<span class="id">commands</span> []<span class="ty">Command</span>}</pre>
+      </div>
+
+      <div class="box">
+        <div class="box-label ok">instances</div>
+        <pre>
+<span class="c">// Define reusable tags</span>
+<span class="id">userIdTag</span>   = <span class="ty">Tag</span> {<span class="id">userId</span> <span class="ty">String</span>}
+<span class="id">userNameTag</span> = <span class="ty">Tag</span> {<span class="id">name</span>   <span class="ty">String</span>}
+
+<span class="c">// Event associated with both tags</span>
+<span class="id">userRegistered</span> = <span class="ty">Event</span>&lt;<span class="id">userIdTag</span>, <span class="id">userNameTag</span>&gt; {
+    <span class="id">id</span>        <span class="ty">String</span>
+    <span class="id">name</span>      <span class="ty">String</span>
+    <span class="id">timestamp</span> <span class="ty">Int</span>
+}
+
+<span class="c">// registerUser command: fields flow into emitted event</span>
+<span class="id">registerUser</span> = <span class="ty">Command</span> {
+    <span class="id">fields</span> {<span class="id">userId</span> <span class="ty">String</span>, <span class="id">name</span> <span class="ty">String</span>}
+    <span class="id">emits</span>  [
+        <span class="id">userRegistered</span> &amp; {
+            <span class="id">id</span>   <span class="ty">String</span> = <span class="id">fields.userId</span>
+            <span class="id">name</span> <span class="ty">String</span> = <span class="id">fields.name</span>
+        }
+    ]
+    <span class="id">query</span>  [
+        {
+            <span class="id">eventTypes</span> [&amp;<span class="id">userRegistered</span>]
+            <span class="id">tags</span>       [<span class="id">userIdTag</span>]
+        }
+    ]
+}
+
+<span class="ann">@main</span>
+<span class="id">board</span> = <span class="ty">Board</span> {
+    <span class="id">commands</span> [<span class="id">registerUser</span>]
+}</pre>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ── BASE TYPES ─────────────────────────────────────────────── -->
+  <section class="section">
+    <h2><span class="num">8</span> Base types</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>*</code></td><td>Wildcard — matches any type or value</td></tr>
+        <tr><td><code>Uuid</code></td><td>UUID value</td></tr>
+        <tr><td><code>String</code></td><td>UTF-8 string</td></tr>
+        <tr><td><code>Int</code></td><td>Integer</td></tr>
+        <tr><td><code>Float</code></td><td>Floating-point number</td></tr>
+        <tr><td><code>Bool</code></td><td>Boolean (<code>true</code> / <code>false</code>)</td></tr>
+        <tr><td><code>Date</code></td><td>Calendar date</td></tr>
+        <tr><td><code>Timestamp</code></td><td>Point in time</td></tr>
+        <tr><td><code>Money</code></td><td>Monetary amount</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    ilk language — <a href="spec.md" style="color:var(--accent)">full specification</a>
+  </footer>
+
+</div>
+</body>
+</html>

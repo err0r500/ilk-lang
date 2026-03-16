@@ -1,0 +1,175 @@
+================================================================================
+Base types
+================================================================================
+
+type A = *
+type B = Uuid
+type C = String
+type D = Int
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type))
+  (type_decl (identifier) (base_type)))
+
+================================================================================
+Struct types
+================================================================================
+
+type Empty = {}
+type Open = {...}
+type Anonymous = {_}
+type AnonymousTyped = {_ String}
+type Named = {x Int}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (struct_type))
+  (type_decl (identifier) (struct_type))
+  (type_decl (identifier) (struct_type (anonymous_fields (anonymous_field))))
+  (type_decl (identifier) (struct_type (anonymous_fields (anonymous_field (base_type)))))
+  (type_decl (identifier) (struct_type (field_list (field (identifier) (base_type))))))
+
+================================================================================
+List types
+================================================================================
+
+type Items = []Event
+type Exact = [3]Tag
+type AtLeast = [1..]Tag
+type Range = [2..5]Tag
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (list_type (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number)) (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number)) (named_type (identifier))))
+  (type_decl (identifier) (list_type (cardinality (number) (number)) (named_type (identifier)))))
+
+================================================================================
+Union types
+================================================================================
+
+type Status = Pending | Active | Archived
+type Method = "GET" | "POST"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (union_type (union_type (named_type (identifier)) (named_type (identifier))) (named_type (identifier))))
+  (type_decl (identifier) (union_type (literal_type (string)) (literal_type (string)))))
+
+================================================================================
+Intersection types
+================================================================================
+
+type Event = {...} & {timestamp Int}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (intersection_type (struct_type) (struct_type (field_list (field (identifier) (base_type)))))))
+
+================================================================================
+Reference types
+================================================================================
+
+type Ref = &Event
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (reference_type (identifier))))
+
+================================================================================
+Refinable ref types
+================================================================================
+
+type Scenario = []-Event
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (list_type (refinable_ref (identifier)))))
+
+================================================================================
+Concrete types
+================================================================================
+
+type Label = Concrete<String>
+type Version = Concrete<Int>
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (concrete_type (base_type)))
+  (type_decl (identifier) (concrete_type (base_type))))
+
+================================================================================
+Annotations - assoc
+================================================================================
+
+@assoc [Tag]
+type Event = {...}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl
+    (annotation (annotation_args (identifier)))
+    (identifier)
+    (struct_type)))
+
+================================================================================
+Annotations - source
+================================================================================
+
+type Command = {
+    fields {...},
+    @source [fields]
+    emits []Event
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (struct_type (field_list
+    (field (identifier) (struct_type))
+    (field (annotation (source_args (source_path (identifier)))) (identifier) (list_type (named_type (identifier))))))))
+
+================================================================================
+Annotations - constraint
+================================================================================
+
+type QueryItem = {
+    @constraint forall(tags, t => e.assoc(t))
+    tags []Tag
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (type_decl (identifier) (struct_type (field_list
+    (field
+      (annotation (constraint_call (constraint_var (identifier)) (identifier) (constraint_call (constraint_var (identifier)) (constraint_var (identifier)))))
+      (identifier)
+      (list_type (named_type (identifier))))))))
+
+================================================================================
+Comments
+================================================================================
+
+// This is a comment
+type A = String // inline
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (type_decl (identifier) (base_type))
+  (comment))

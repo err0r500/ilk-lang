@@ -1,0 +1,15 @@
+{
+  "name": "ilk-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild": "cp ../spec.md ./ilk-spec.md",
+    "predev": "cp ../spec.md ./ilk-spec.md",
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3"
+  }
+}
