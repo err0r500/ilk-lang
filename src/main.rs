@@ -154,10 +154,15 @@ fn run_watch(file: &PathBuf, json: bool) {
                 std::thread::sleep(Duration::from_millis(100));
                 while rx.try_recv().is_ok() {}
 
+                let start = std::time::Instant::now();
                 if !json {
-                    println!("\n--- Re-validating ---");
+                    let now = chrono::Local::now();
+                    println!("\n--- Re-validating at {} ---", now.format("%H:%M:%S"));
                 }
                 run_validation(file, json);
+                if !json {
+                    println!("Completed in {:?}", start.elapsed());
+                }
             }
             Err(e) => {
                 eprintln!("Watch error: {}", e);
