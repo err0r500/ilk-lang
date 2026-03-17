@@ -1,0 +1,93 @@
+type TableSchema = {...}
+
+@assoc [TableSchema]
+type DbQuery = {
+    name! Concrete<String>
+    params {...}
+
+    @source [params]
+    insert []TableSchema
+
+    @source [params, assoc]
+    update []TableSchema
+
+    @source [assoc]
+    @out
+    return {...}
+}
+
+type Endpoint = {
+    method! "GET" | "POST"
+    path! Concrete<String>
+    auth {...}
+
+    @source [auth]
+    query DbQuery
+
+    @source [auth, query.return]
+    responses []{
+        status Concrete<Int>
+        body {...}
+    }
+}
+
+userTable = TableSchema {
+    id? Uuid
+    name String
+}
+
+getUserById = DbQuery<userTable> {
+    name "getUserById"
+
+    params {userId Uuid}
+
+    return {
+        id? Uuid = $assoc.userTable.id
+        name String = $assoc.userTable.name
+    }
+}
+
+insertUser = DbQuery<userTable> {
+    name "insertUser"
+
+    params {
+        name String
+    }
+
+    insert [
+        userTable & {
+            name String = params.name
+        }
+    ]
+
+    update [
+        userTable & {
+            id? Uuid = $assoc.userTable.id
+            name String = params.name
+        }
+    ]
+
+    return {
+        id Uuid*
+    }
+}
+
+
+getMe = Endpoint {
+    method "GET"
+    path "/me"
+    auth {userId Uuid}
+
+    query getUserById
+
+    responses [
+        {status 401}
+        {
+            status 200
+            body {
+                id? Uuid = query.return.id
+                name String = query.return.name
+            }
+        }
+    ]
+}

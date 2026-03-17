@@ -1,16 +1,18 @@
 // Type declarations
-
 // A tag is a single-field String struct, or a unique concrete string
 type Tag = {_ String} | Concrete<String>
 
+
 @assoc [Tag]
 type Event = {...} & {timestamp Int}
+
 
 type QueryItem = {
     @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
     eventTypes! []&Event
     tags! []Tag
 }
+
 
 type Command = {
     fields! {...}
@@ -20,13 +22,14 @@ type Command = {
 
     @source [fields]
     emits! []Event
-
 }
+
 
 type HttpResponse = {
     status! Concrete<Int>
     body {...}
 }
+
 
 type HttpEndpoint = {
     method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
@@ -39,6 +42,7 @@ type HttpEndpoint = {
     responses! []HttpResponse
 }
 
+
 type ChangeSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
@@ -49,6 +53,7 @@ type ChangeSlice = {
     scenarios []CommandScenario
 }
 
+
 type CommandScenario = {
     name! Concrete<String>
 
@@ -57,15 +62,16 @@ type CommandScenario = {
     then! []-Event
 }
 
-type Board = {
-    changes! []ChangeSlice
-}
 
-
+type Board = {changes! []ChangeSlice}
 // Instance bindings
 
-userIdTag   = Tag {userId String}
+
+
+userIdTag = Tag {userId String}
+
 userNameTag = Tag {name String}
+
 
 userRegistered = Event<userIdTag, userNameTag> {
     id Uuid
@@ -73,56 +79,56 @@ userRegistered = Event<userIdTag, userNameTag> {
     ts Timestamp
 }
 
+
 registerUser = ChangeSlice {
     name "registerUser"
 
     endpoint {
         path "/users/{id}"
         method "POST"
-        params {
-            id Uuid
-        }
-        body {
-            name String
-        }
+        params {id Uuid}
+        body {name String}
 
         responses [
-            {status 201, body {id Uuid, name String}}
+            {
+                status 201
+                body {
+                    id Uuid
+                    name String
+                }
+            }
             {status 404}
         ]
     }
 
     command {
         fields {
-             id Uuid = endpoint.params.id
-             name String = endpoint.body.name
+            id Uuid = endpoint.params.id
+            name String = endpoint.body.name
         }
 
         query [
             {
-                eventTypes [userRegistered],
+                eventTypes [userRegistered]
                 tags [userIdTag & {userId Uuid = fields.id}]
-            },
+            }
             {
-                eventTypes [userRegistered],
+                eventTypes [userRegistered]
                 tags [userNameTag & {name String = fields.name}]
             }
         ]
 
-        emits [userRegistered & {ts Timestamp*}]
+        emits [userRegistered & {id Uuid*, name String = fields.name, ts Timestamp*}]
     }
 
-    scenarios [
-        {
-            name "happy path",
-            given [userRegistered & {id "124"}]
-            when {}
-            then [userRegistered & {id "123"}]
-        }
-    ]
+    scenarios [{
+        name "happy path"
+        given [userRegistered & {id "124"}]
+        when {}
+        then [userRegistered & {id "123"}]
+    }]
 }
 
+
 @main
-board = Board {
-    changes [registerUser]
-}
+board = Board {changes [registerUser]}
