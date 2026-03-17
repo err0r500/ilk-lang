@@ -50,6 +50,14 @@ enum Commands {
         /// Path to the ilk file
         file: PathBuf,
     },
+    /// Emit types and @main instances as JSON
+    Emit {
+        /// Path to the ilk file
+        file: PathBuf,
+        /// Pretty-print the JSON output
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 #[derive(Serialize)]
@@ -106,6 +114,9 @@ fn main() {
         }
         Commands::Format { file } => {
             run_format(&file);
+        }
+        Commands::Emit { file, pretty } => {
+            run_emit(&file, pretty);
         }
     }
 }
@@ -264,6 +275,34 @@ fn run_json(file: &PathBuf, pretty: bool) {
             std::process::exit(1);
         }
     }
+}
+
+fn run_emit(file: &PathBuf, pretty: bool) {
+    let src = std::fs::read_to_string(file).expect("Failed to read file");
+
+    let ast = match ilk::parser::parse(&src, file) {
+        Ok(ast) => ast,
+        Err(errors) => {
+            print_errors(&errors, file);
+            std::process::exit(1);
+        }
+    };
+
+    let env = match ilk::resolve::resolve(&ast, file) {
+        Ok(env) => env,
+        Err(errors) => {
+            print_errors(&errors, file);
+            std::process::exit(1);
+        }
+    };
+
+    let output = ilk::emit::emit_json(&ast, &env);
+    let json_str = if pretty {
+        serde_json::to_string_pretty(&output).unwrap()
+    } else {
+        serde_json::to_string(&output).unwrap()
+    };
+    println!("{}", json_str);
 }
 
 fn print_errors(errors: &[Diagnostic], file: &PathBuf) {

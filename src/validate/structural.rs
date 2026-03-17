@@ -358,7 +358,7 @@ fn validate_value_against_type(
                 }
                 // Validate refinement fields against the instance
                 let is_refinable = matches!(ty.node, TypeExpr::RefinableRef(_));
-                validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, errors);
+                validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, value.span.clone(), errors);
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -397,6 +397,20 @@ fn validate_value_against_type(
 
         // Wildcard accepts anything
         (_, TypeExpr::Base(BaseType::Wildcard)) => {}
+
+        // Refinement against struct type (e.g., userTable & {...} : TableSchema)
+        (Value::Refinement(name, _assocs, fields), TypeExpr::Struct(_kind)) => {
+            if let Some(inst) = ctx.get_instance(name) {
+                // Validate refinement fields against the instance
+                validate_refinement_fields_against_instance(ctx, fields, inst, false, value.span.clone(), errors);
+            } else {
+                errors.push(Diagnostic::error(
+                    value.span.clone(),
+                    format!("Unknown instance in refinement: {}", name),
+                    ctx.path,
+                ));
+            }
+        }
 
         _ => {
             // Other mismatches
@@ -596,7 +610,7 @@ fn validate_list(
 
                     // Validate refinement fields against the instance's actual fields
                     let is_refinable = matches!(&elem_ty.node, TypeExpr::RefinableRef(_));
-                    validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, errors);
+                    validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, elem.span.clone(), errors);
                 } else {
                     errors.push(Diagnostic::error(
                         elem.span.clone(),
@@ -707,6 +721,7 @@ fn validate_refinement_fields_against_instance(
     fields: &[S<InstanceField>],
     inst: &Instance,
     is_refinable: bool,
+    refinement_span: Span,
     errors: &mut Vec<Diagnostic>,
 ) {
     // Get fields from the instance's body
@@ -812,6 +827,23 @@ fn validate_refinement_fields_against_instance(
                 format!("Unknown field in refinement: {}", field_name),
                 ctx.path,
             ));
+        }
+    }
+
+    // Check all required instance fields are present in refinement
+    // Only for non-refinable types (refinable refs are just documentation)
+    if !is_refinable {
+        for inst_field in inst_fields {
+            if !inst_field.node.optional {
+                let fname = &inst_field.node.name.node;
+                if !fields.iter().any(|f| &f.node.name.node == fname) {
+                    errors.push(Diagnostic::error(
+                        refinement_span.clone(),
+                        format!("Missing required field '{}' in refinement of {}", fname, inst.name.node),
+                        ctx.path,
+                    ));
+                }
+            }
         }
     }
 }

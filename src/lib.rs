@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod emit;
 pub mod error;
 pub mod formatter;
 pub mod lsp;
