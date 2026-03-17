@@ -135,9 +135,10 @@ onMounted(async () => {
     parent: editorContainer.value,
   })
 
-  // Load WASM
+  // Load WASM (served as a public asset, not resolved by Rollup at build time)
   try {
-    const mod = await import('../wasm/ilk.js')
+    const wasmUrl = `${import.meta.env.BASE_URL}wasm/ilk.js`
+    const mod = await import(/* @vite-ignore */ wasmUrl)
     await mod.default()
     wasmCheck = mod.check
     wasmReady.value = true
