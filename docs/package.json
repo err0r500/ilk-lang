@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "cp ../spec.md ./ilk-spec.md",
-    "predev": "cp ../spec.md ./ilk-spec.md",
+    "build:wasm": "cd .. && wasm-pack build --target web --out-dir docs/public/wasm --no-default-features --features wasm",
+    "prebuild": "npm run build:wasm && cp ../spec.md ./ilk-spec.md",
+    "predev": "npm run build:wasm && cp ../spec.md ./ilk-spec.md",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview"

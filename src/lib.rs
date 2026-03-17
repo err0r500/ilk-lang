@@ -2,11 +2,15 @@ pub mod ast;
 pub mod emit;
 pub mod error;
 pub mod formatter;
+#[cfg(feature = "cli")]
 pub mod lsp;
 pub mod parser;
 pub mod resolve;
 pub mod span;
 pub mod validate;
+
+#[cfg(feature = "wasm")]
+pub mod wasm;
 
 use ast::File;
 use error::Diagnostic;
