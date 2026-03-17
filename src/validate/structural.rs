@@ -254,7 +254,21 @@ fn validate_value_against_type(
         (Value::LitString(_), TypeExpr::Base(BaseType::String)) => {
             errors.push(Diagnostic::error(
                 value.span.clone(),
-                "Cannot use literal for open String type - use String type ref",
+                "Cannot use literal for open String type - use Concrete<String>",
+                ctx.path,
+            ));
+        }
+        (Value::LitInt(_), TypeExpr::Base(BaseType::Int)) => {
+            errors.push(Diagnostic::error(
+                value.span.clone(),
+                "Cannot use literal for open Int type - use Concrete<Int>",
+                ctx.path,
+            ));
+        }
+        (Value::LitBool(_), TypeExpr::Base(BaseType::Bool)) => {
+            errors.push(Diagnostic::error(
+                value.span.clone(),
+                "Cannot use literal for open Bool type - use Concrete<Bool>",
                 ctx.path,
             ));
         }
