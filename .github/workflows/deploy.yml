@@ -23,6 +23,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
+
+      - name: Build WASM
+        run: wasm-pack build --target web --out-dir docs/public/wasm --no-default-features --features wasm
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -37,8 +48,11 @@ jobs:
         run: npm ci
         working-directory: docs
 
+      - name: Prepare spec
+        run: cp spec.md docs/ilk-spec.md
+
       - name: Build with VitePress
-        run: npm run build
+        run: npx vitepress build
         working-directory: docs
 
       - name: Upload artifact

@@ -3,13 +3,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "cp ../spec.md ./ilk-spec.md",
-    "predev": "cp ../spec.md ./ilk-spec.md",
+    "build:wasm": "cd .. && wasm-pack build --target web --out-dir docs/.vitepress/wasm --no-default-features --features wasm",
+    "prebuild": "npm run build:wasm && cp ../spec.md ./ilk-spec.md",
+    "predev": "npm run build:wasm && cp ../spec.md ./ilk-spec.md",
     "dev": "vitepress dev",
     "build": "vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {
     "vitepress": "^1.6.3"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/language": "^6.12.2",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0",
+    "@lezer/highlight": "^1.2.3",
+    "@replit/codemirror-vim": "^6.3.0",
+    "codemirror": "^6.0.2"
   }
 }
