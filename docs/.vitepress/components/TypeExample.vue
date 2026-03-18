@@ -50,8 +50,10 @@ onMounted(async () => {
   await highlight()
 
   try {
-    const mod = await import('../wasm/ilk.js')
-    await mod.default()
+    const wasmJsUrl = new URL('../wasm/ilk.js', import.meta.url).href
+    const wasmBgUrl = new URL('../wasm/ilk_bg.wasm', import.meta.url).href
+    const mod = await import(/* @vite-ignore */ wasmJsUrl)
+    await mod.default(wasmBgUrl)
     wasmCheck = mod.check
     wasmReady.value = true
     runCheck()
