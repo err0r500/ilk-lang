@@ -20,6 +20,37 @@ features:
     details: Structure, data flow, and domain constraints are all checked before runtime. If a field is untraced, a path is invalid, or a constraint fails, you get a clear error at compile time.
 ---
 
+## Try it
+
+<script setup>
+const typeCode = `type HttpResponse = {
+    status! Concrete<Int>
+    body {...}
+}`
+const instances = [
+  { label: 'Valid', code: `success = HttpResponse {
+    status 200
+    body {
+        message String
+        timestamp Timestamp
+    }
+}`, expect: 'pass' },
+  { label: 'Optional by default', code: `success = HttpResponse {
+    status 200
+}`, expect: 'pass' },
+  { label: 'Not an Int', code: `broken = HttpResponse {
+    status "not a number"
+}`, expect: 'fail' },
+  { label: 'Missing required status', code: `broken = HttpResponse {
+      body {
+          message String
+      }
+}`, expect: 'fail' }
+]
+</script>
+
+<TypeExample :typeCode="typeCode" :instances="instances" />
+
 ## The idea in 30 seconds
 
 A `.ilk` file has two sections: **type declarations** and **instance bindings**.
