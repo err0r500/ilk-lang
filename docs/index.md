@@ -23,11 +23,11 @@ features:
 ## Try it
 
 <script setup>
-const typeCode = `type HttpResponse = {
-    status! Concrete<Int>
-    body {...}
+const typeCode1 = `type HttpResponse = {
+    status! Concrete<Int> // required field (note the "!")
+    body {...} // optional open field
 }`
-const instances = [
+const instances1 = [
   { label: 'Valid', code: `success = HttpResponse {
     status 200
     body {
@@ -47,9 +47,61 @@ const instances = [
       }
 }`, expect: 'fail' }
 ]
+
+const typeCode2 = `
+type HttpResponse = {
+    status! Concrete<Int>
+    body {...}
+}
+
+type Endpoint = {
+    params  {...}
+    body    {...}
+
+    @source [params, body]
+    response HttpResponse
+}
+`
+
+const instances2 = [
+  { label: 'Valid mappings',
+   expect: 'pass',
+    code: `
+getUser = Endpoint {
+    params { id Uuid }
+    body   { name String }
+
+    response {
+        status 200
+        body {
+           name   String // resolved implicitly from field names in @source
+           userId Uuid = params.id // needs explicit mapping (different field names)
+        }
+    }
+}
+`
+  },
+  { label: 'Missing mapping',
+   expect: 'fail',
+    code: `
+getUser = Endpoint {
+    params { id Uuid }
+    body   { name String }
+
+    response {
+        status 200
+        body {
+            userId Uuid
+            name   String
+        }
+    }
+}
+`
+  }
+]
 </script>
 
-<TypeExample :typeCode="typeCode" :instances="instances" />
+<TypeExample :typeCode="typeCode1" :instances="instances1" />
 
 ## The idea in 30 seconds
 
@@ -93,40 +145,7 @@ Traditional schemas validate *shape*. ilk also validates *where data comes from*
 `@source` declares which upstream fields may supply data to a downstream field.
 Every open field must be explicitly mapped — the compiler checks it.
 
-```ilk
-type Endpoint = {
-    params  {...}
-    body    {...}
-
-    @source [params, body]   // responses use data from params and body
-    responses []HttpResponse
-}
-
-// In an instance, every field assignment is checked against @source
-getUser = Endpoint {
-    params { id Uuid }
-    body   {
-        name String
-    }
-
-    responses [
-        {
-            status 200             // Concrete<Int> — exempt from @source
-            body {
-                userId  Uuid   = params.id   // mapping
-                name    String = body.name   // mapping
-            }
-        }
-        {
-            status 404
-            body {
-                message "User not found"  // ✓ literal — exempt
-                timestamp Timestamp*      // generated field (*)
-            }
-        }
-    ]
-}
-```
+<TypeExample :typeCode="typeCode2" :instances="instances2" />
 
 ## Quick reference
 

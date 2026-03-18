@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, shallowRef } from 'vue'
-import init, { check } from '../wasm/ilk.js'
+import { getCheck } from './wasm-loader.js'
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view'
 import { EditorState, Compartment } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -138,8 +138,7 @@ onMounted(async () => {
 
   // Load WASM
   try {
-    await init()
-    wasmCheck = check
+    wasmCheck = await getCheck()
     wasmReady.value = true
     runCheck()
   } catch (e) {

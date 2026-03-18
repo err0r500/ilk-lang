@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import init, { check } from '../wasm/ilk.js'
+import { getCheck } from './wasm-loader.js'
 import { createHighlighter } from 'shiki'
 import ilkLang from '../langs/ilk.tmLanguage.json'
 
@@ -51,8 +51,7 @@ onMounted(async () => {
   await highlight()
 
   try {
-    await init()
-    wasmCheck = check
+    wasmCheck = await getCheck()
     wasmReady.value = true
     runCheck()
   } catch (e) {
