@@ -192,6 +192,19 @@ fn validate_value_against_type(
             // TypeRef against named type - valid for open types
         }
 
+        // TypeRef against Concrete - error, must provide literal
+        (Value::TypeRef(val_type), TypeExpr::Concrete(inner)) => {
+            errors.push(Diagnostic::error(
+                value.span.clone(),
+                format!(
+                    "Concrete<{}> requires a literal value, got type reference {}",
+                    format_type(&inner.node),
+                    val_type
+                ),
+                ctx.path,
+            ));
+        }
+
         // Concrete type - must provide a literal
         (Value::LitString(_), TypeExpr::Concrete(inner)) => {
             if !matches!(&inner.node, TypeExpr::Base(BaseType::String)) {
