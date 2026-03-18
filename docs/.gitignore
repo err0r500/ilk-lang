@@ -1,5 +1,3 @@
 node_modules
 .vitepress/cache
 .vitepress/dist
-ilk-spec.md
-kli-spec.md

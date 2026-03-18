@@ -20,3 +20,10 @@
     --vp-code-font-size: 0.75em;
   }
 }
+
+/* Full-width layout */
+.VPDoc .container,
+.VPDoc .content,
+.VPDoc .content-container {
+  max-width: 100% !important;
+}

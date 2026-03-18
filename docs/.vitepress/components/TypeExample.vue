@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
+import init, { check } from '../wasm/ilk.js'
 import { createHighlighter } from 'shiki'
 import ilkLang from '../langs/ilk.tmLanguage.json'
 
@@ -50,11 +51,8 @@ onMounted(async () => {
   await highlight()
 
   try {
-    const wasmJsUrl = new URL('../wasm/ilk.js', import.meta.url).href
-    const wasmBgUrl = new URL('../wasm/ilk_bg.wasm', import.meta.url).href
-    const mod = await import(/* @vite-ignore */ wasmJsUrl)
-    await mod.default(wasmBgUrl)
-    wasmCheck = mod.check
+    await init()
+    wasmCheck = check
     wasmReady.value = true
     runCheck()
   } catch (e) {
