@@ -1,18 +1,587 @@
+<script setup>
+const exConstraints = {
+  type: `
+type Name = String
+type Mode = Concrete<String>
+type Version = 1
+`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `
+name = Name String
+mode = Mode "production"
+version = Version 1
+`
+},
+    { label: 'Wrong open value', expect: 'fail', code: `
+    name = Name "hello"
+` },
+    { label: 'Wrong type-fixed value', expect: 'fail', code: `
+    version = Version 2
+` },
+    { label: 'Open type for Concrete field', expect: 'fail', code: `
+    mode  = Mode String
+` },
+  ]
+}
+
+const exLitteralsUnion = {
+  type: `
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `
+    get = HttpMethod "GET"
+` },
+    { label: 'Wrong value', expect: 'fail', code: `
+    get = HttpMethod "hello"
+` },
+  ]
+}
+
+const exStruct = {
+    type: `
+
+type OneFieldAny = {_} // exactly 1 field of any name and type (= {_ *})
+type OneString = {_ String} // exactly 1 field of any name, type String
+type TwoFieldsAny = {_, _} // exactly 2 fields of any names and types
+type TwoFieldsIntString = {_ Int, _ String} // exactly 2 fields with specific types
+type TwoFieldsNamed = {age Int, name String} // exactly 2 fields with specific types
+type Empty = {} // zero fields (empty struct)
+type AStruct = {...} // zero or more fields of any names and types
+type InlineDeclaration = {
+    a {
+        b Concrete<Int>
+    }
+}
+
+type InlineWithRef = {
+    user OneFieldAny
+}
+    `
+ ,   instances: [
+    {label: "Valid", expect: "pass", code: `
+a = OneFieldAny {foo Int}
+b = OneString {hello String}
+c = TwoFieldsAny {hello String, goodbye Bool}
+d = TwoFieldsIntString {age Int, name String}
+e = TwoFieldsNamed {age Int, name String}
+f = Empty {}
+g = AStruct {}
+h = InlineDeclaration {
+    a {
+        b 123
+    }
+}
+i = InlineWithRef {
+    user {
+        name String
+    }
+}
+`},
+    {label: "Invalid", expect: "fail", code: `
+a = OneFieldAny {foo Int, extra String} // too many fields
+b = OneString {hello Bool}
+c = TwoFieldsAny {hello String}
+d = TwoFieldsIntString {}
+e = Empty {hello String}
+f = AStruct String
+`}]}
+
+const exStruct2 = {
+    type : `
+type AllOptional = {
+    age Int
+    name String
+}
+
+type NameIsRequired = {
+    age Int
+    name! String
+}
+`,
+    instances: [
+    {label: "valid, fields are optional by default", expect: "pass", code: `
+a = AllOptional {}
+b = AllOptional {
+     age Int
+}
+c = NameIsRequired {
+     name String
+}
+    `},
+    {label: "missing mandatory field", expect: "fail", code: `
+a = NameIsRequired {
+      age Int
+}
+    `},
+    {label: "No extra fields allowed", expect: "fail", code: `
+a = AllOptional {
+      other Bool
+}
+    `}
+    ]
+}
+
+const exIntersection = {
+  type: `
+type Id = {id! Uuid}
+type Entity = {...} & Id // Open struct extended with a required id field
+
+type Conflict = {timestamp String} & {timestamp Int} // Right side wins (int)
+`,
+  instances: [
+    { label: 'Entity: id + extra fields', expect: 'pass', code: `
+jane = Entity {
+    id   Uuid
+    name String
+}` },
+    { label: 'Entity: only required id', expect: 'pass', code: `e = Entity {
+    id Uuid
+}` },
+    { label: 'Entity: missing required id', expect: 'fail', code: `e = Entity {
+    name String
+}` },
+    { label: 'Conflict: right side wins (Int)', expect: 'pass', code: `
+s = Conflict {
+    timestamp Int
+}` },
+  ]
+}
+
+const exIdentifierUnion = {
+  type: `
+type Status = Pending | Active | Archived
+
+type Process = {
+    status! Status
+}`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `
+p = Process {
+    status Pending
+}` },
+{ label: 'not in union', expect: 'fail', code: `
+p = Process {
+    status "ongoing"
+}` },
+  ]
+}
+
+const exUnionAnonymousStruct = {
+  type: `
+type Tag = {_ String} | Concrete<String>
+`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `
+userIdTag = Tag {userId String}   // {_ String} branch — a single-field struct
+simpleTag = Tag "simple-tag"      // Concrete<String> branch — a literal string
+` },
+  ]
+}
+
+
+const exLiteralUnion = {
+  type: `
+type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+
+type Endpoint = {
+    method! HttpMethod
+}`,
+  instances: [
+    { label: 'GET', expect: 'pass', code: `ep = Endpoint {
+    method "GET"
+}` },
+{ label: 'not in union', expect: 'fail', code: `ep = Endpoint {
+    method "PATCH"
+}` },
+
+  ]
+}
+
+const exNamedUnion = {
+  type: `type Pending  = { queue Concrete<String> }
+type Active   = { since Timestamp }
+type Archived = { at Timestamp }
+
+type Status = Pending | Active | Archived
+
+type Job = {
+    name!   Concrete<String>
+    status! Status
+}`,
+  instances: [
+    { label: 'Pending branch', expect: 'pass', code: `j = Job {
+    name   "my-job"
+    status Pending { queue "default" }
+}` },
+    { label: 'Active branch', expect: 'pass', code: `j = Job {
+    name   "my-job"
+    status Active { since Timestamp }
+}` },
+    { label: 'Archived branch', expect: 'pass', code: `j = Job {
+    name   "my-job"
+    status Archived { at Timestamp }
+}` },
+    { label: 'Unknown variant', expect: 'fail', code: `j = Job {
+    name   "my-job"
+    status Cancelled { at Timestamp }
+}` },
+  ]
+}
+
+
+const exClosed = {
+  type: `type Point = {
+    x! Int
+    y! Int
+}`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `p = Point {
+    x Int
+    y Int
+}` },
+    { label: 'Missing required field', expect: 'fail', code: `p = Point {
+    x Int
+}` },
+    { label: 'Extra field', expect: 'fail', code: `p = Point {
+    x Int
+    y Int
+    z Int
+}` },
+    { label: 'Wrong field type', expect: 'fail', code: `p = Point {
+    x String
+    y Int
+}` },
+  ]
+}
+
+const exOpen = {
+  type: `type Flexible = {...}
+
+type Single = {_ String}
+
+type Pair = {_ Int, _ String}`,
+  instances: [
+    { label: 'Open: any fields', expect: 'pass', code: `data = Flexible {
+    name  String
+    count Int
+    flag  Bool
+}` },
+    { label: 'Anonymous: one field of any name', expect: 'pass', code: `tag = Single { userId String }` },
+    { label: 'Pair: two typed fields', expect: 'pass', code: `coords = Pair { count Int, label String }` },
+    { label: 'Single: too many fields', expect: 'fail', code: `broken = Single {
+    name  String
+    extra Int
+}` },
+  ]
+}
+
+const exList = {
+  type: `type Item = Concrete<String>
+
+type Bag = {
+    contents! [1..3]Item
+}`,
+  instances: [
+    { label: 'One item', expect: 'pass', code: `item = Item "apple"
+bag  = Bag { contents [item] }` },
+    { label: 'Three items (max)', expect: 'pass', code: `i1 = Item "apple"
+i2 = Item "cherry"
+i3 = Item "peach"
+bag = Bag { contents [i1, i2, i3] }` },
+    { label: 'Empty — below minimum', expect: 'fail', code: `bag = Bag { contents [] }` },
+    { label: 'Four items — above maximum', expect: 'fail', code: `i1 = Item "a"
+i2 = Item "b"
+i3 = Item "c"
+i4 = Item "d"
+bag = Bag { contents [i1, i2, i3, i4] }` },
+  ]
+}
+
+const exRef = {
+  type: `type Color = Concrete<String>
+
+type Theme = {
+    primary!  &Color
+    secondary &Color
+    all!      []&Color
+}`,
+  instances: [
+    { label: 'Valid references', expect: 'pass', code: `red   = Color "red"
+blue  = Color "blue"
+green = Color "green"
+
+t = Theme {
+    primary   red
+    secondary blue
+    all       [red, blue, green]
+}` },
+    { label: 'Without optional secondary', expect: 'pass', code: `red = Color "red"
+
+t = Theme {
+    primary red
+    all     [red]
+}` },
+    { label: 'Undefined binding', expect: 'fail', code: `t = Theme {
+    primary phantom
+    all     []
+}` },
+    { label: 'Wrong type', expect: 'fail', code: `type Font = Concrete<String>
+serif = Font "serif"
+
+t = Theme {
+    primary serif
+    all     [serif]
+}` },
+  ]
+}
+
+const exAssoc = {
+  type: `type Tag = Concrete<String>
+
+@assoc [Tag]
+type Event = {...}
+
+type Log = {
+    events! []&Event
+}`,
+  instances: [
+    { label: 'Events with tags', expect: 'pass', code: `urgentTag = Tag "urgent"
+userTag   = Tag "user"
+
+login  = Event<urgentTag, userTag> { action String }
+logout = Event<userTag>            { action String }
+
+log = Log { events [login, logout] }` },
+    { label: 'Event without tags', expect: 'pass', code: `ping = Event { action String }
+log  = Log { events [ping] }` },
+    { label: 'Mixed: tagged and untagged', expect: 'pass', code: `urgentTag = Tag "urgent"
+alert = Event<urgentTag> { action String }
+info  = Event            { action String }
+
+log = Log { events [alert, info] }` },
+    { label: 'Wrong type for associated value', expect: 'fail', code: `type Category = Concrete<String>
+work = Category "work"
+
+click = Event<work> { action String }
+log   = Log { events [click] }` },
+  ]
+}
+
+const exSource = {
+  type: `type Form = {
+    inputs {...}
+
+    @source [inputs]
+    output {...}
+}`,
+  instances: [
+    { label: 'Field name matches source', expect: 'pass', code: `f = Form {
+    inputs { name String }
+    output { name String }
+}` },
+    { label: 'Multiple source fields', expect: 'pass', code: `f = Form {
+    inputs { id Uuid, name String }
+    output { id Uuid, name String }
+}` },
+    { label: 'Field not in source', expect: 'fail', code: `f = Form {
+    inputs { id Uuid }
+    output { id Uuid, extra Float }
+}` },
+    { label: 'Empty output', expect: 'pass', code: `f = Form {
+    inputs { id Uuid }
+    output {}
+}` },
+  ]
+}
+
+const exOut = {
+  type: `type DbQuery = {
+    name Concrete<String>
+    args {...}
+
+    @out
+    returns {...}
+}
+
+type Endpoint = {
+    params {...}
+
+    @source [params]
+    db DbQuery
+
+    @source [db.returns]
+    response {...}
+}`,
+  instances: [
+    { label: 'Valid data flow', expect: 'pass', code: `ep = Endpoint {
+    params { id Uuid }
+    db {
+        name    "users.findById"
+        args    { id Uuid = params.id }
+        returns { name String, email String }
+    }
+    response {
+        name  String
+        email String
+    }
+}` },
+    { label: 'Different fields from returns', expect: 'pass', code: `ep = Endpoint {
+    params { userId Uuid }
+    db {
+        name    "users.getProfile"
+        args    { id Uuid = params.userId }
+        returns { username String, bio String }
+    }
+    response {
+        username String
+        bio      String
+    }
+}` },
+    { label: 'Response field not in returns', expect: 'fail', code: `ep = Endpoint {
+    params { id Uuid }
+    db {
+        name    "users.find"
+        args    { id Uuid = params.id }
+        returns { name String }
+    }
+    response {
+        name    String
+        unknown Int
+    }
+}` },
+    { label: 'Args field not from params', expect: 'fail', code: `ep = Endpoint {
+    params { id Uuid }
+    db {
+        name    "users.find"
+        args    { query String }
+        returns { name String }
+    }
+    response {
+        name String
+    }
+}` },
+  ]
+}
+
+const exConstraint = {
+  type: `type Tag = Concrete<String>
+
+type List = {
+    @constraint count(items) >= 2
+    @constraint count(items) <= 4
+    items! []Tag
+}`,
+  instances: [
+    { label: '2 items (minimum)', expect: 'pass', code: `a = Tag "alpha"
+b = Tag "beta"
+list = List { items [a, b] }` },
+    { label: '4 items (maximum)', expect: 'pass', code: `a = Tag "alpha"
+b = Tag "beta"
+c = Tag "gamma"
+d = Tag "delta"
+list = List { items [a, b, c, d] }` },
+    { label: '1 item — below minimum', expect: 'fail', code: `a = Tag "alone"
+list = List { items [a] }` },
+    { label: '5 items — above maximum', expect: 'fail', code: `a = Tag "a"
+b = Tag "b"
+c = Tag "c"
+d = Tag "d"
+e = Tag "e"
+list = List { items [a, b, c, d, e] }` },
+  ]
+}
+
+const exOrigins = {
+  type: `type Request = {
+    params {...}
+    body   {...}
+
+    @source [params, body]
+    result {...}
+}`,
+  instances: [
+    { label: 'Implicit name matching', expect: 'pass', code: `r = Request {
+    params { id Uuid, name String }
+    body   {}
+    result {
+        id   Uuid
+        name String
+    }
+}` },
+    { label: 'Explicit mapping (= path)', expect: 'pass', code: `r = Request {
+    params { userId Uuid }
+    body   { userName String }
+    result {
+        id   Uuid   = params.userId
+        name String = body.userName
+    }
+}` },
+    { label: 'Generated (*) and computed', expect: 'pass', code: `r = Request {
+    params { x Int }
+    body   { y Int }
+    result {
+        reqId Uuid*
+        total Int = compute(params.x, body.y)
+    }
+}` },
+    { label: 'Unmapped field — no source', expect: 'fail', code: `r = Request {
+    params { id Uuid }
+    body   {}
+    result {
+        id      Uuid
+        unknown Float
+    }
+}` },
+  ]
+}
+
+const exOptional = {
+  type: `type Profile = {
+    id!      Uuid
+    name!    String
+    email?   String
+    website? String
+}`,
+  instances: [
+    { label: 'All fields', expect: 'pass', code: `p = Profile {
+    id      Uuid
+    name    String
+    email   String
+    website String
+}` },
+    { label: 'Only required fields', expect: 'pass', code: `p = Profile {
+    id   Uuid
+    name String
+}` },
+    { label: 'Some optional fields', expect: 'pass', code: `p = Profile {
+    id    Uuid
+    name  String
+    email String
+}` },
+    { label: 'Missing required name', expect: 'fail', code: `p = Profile {
+    id    Uuid
+    email String
+}` },
+  ]
+}
+</script>
+
 ## Overview
 
-ilk is a **single-file data modeling language**. A `.ilk` file contains both
-**type declarations** — the abstract vocabulary of a domain (which concepts exist, what
-shape they have, what constraints apply) — and **instance bindings** — the concrete
-entities that exist in a specific domain (which named events, commands, tags, etc.).
+ilk is a **data modeling language** it can be used to design your system and validate this design is sound,
+especially at the data flow level.
 
-A `.ilk` file is not a data file. It does not hold runtime values like actual UUIDs or
-timestamps. Think of it as a catalog: types define what an *Event* is in the abstract;
+A `.ilk` file contains both :
+- **type declarations** : the abstract vocabulary of a domain (which concepts exist, what
+shape they have, what constraints apply)
+- **instance bindings** : the concrete entities that exist in a specific domain (which named events, commands, tags, etc.).
+
+**It does not hold runtime values like actual UUIDs or timestamps.**
+
+Think of it as a catalog: types define what an *Event* is in the abstract;
 instance bindings say "in *my* system, the specific events are `userRegistered` and
 `orderPlaced`."
-
-Runtime records (actual field values) live downstream.
-
-Type compatibility is checked **structurally** (by shape, not by name).
 
 ---
 
@@ -32,77 +601,17 @@ userIdTag = Tag {userId String} // inline comment
 | Token | Description |
 |-------|-------------|
 | `*` | Wildcard — matches any type. Usable as a field type or in struct cardinality notation. |
-| `Uuid` | UUID value |
-| `String` | UTF-8 string |
+| `Bool` | Boolean |
 | `Int` | Integer |
 | `Float` | Floating-point number |
-| `Bool` | Boolean (`true` / `false`) |
+| `String` | UTF-8 string |
+| `Uuid` | UUID value |
 | `Date` | Calendar date |
 | `Timestamp` | Point in time |
 | `Money` | Monetary amount |
 
 `*` can be used as a field type (any concrete type or value is accepted) or in struct
 cardinality notation like `{_}` (shorthand for `{_ *}`).
-
----
-
-## Value constraint levels
-
-Three forms express how tightly a field's value is constrained:
-
-| Form | Constraint | Meaning |
-|------|------------|---------|
-| `String`, `Int`, … | Open | Any value of that type; provided at runtime |
-| `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the type does not prescribe which |
-| `"hello"`, `42`, `true`, … | Type-fixed | Only this exact value is valid |
-
-```ilk
-// open: any string at runtime
-name String
-
-// instance-fixed: instance picks one specific string (e.g. "webhook")
-label Concrete<String>
-
-// type-fixed: must be exactly this integer
-version 1
-```
-
-In instance bindings:
-
-```ilk
-name    String      // satisfies String — open type, value provided at runtime
-label   "webhook"   // satisfies Concrete<String> — instance author's chosen value
-version 1           // satisfies literal 1 — must match exactly
-```
-
-Both `Concrete<T>` and type-fixed literals look the same in instances (`"value"`), but
-validation differs:
-- `Concrete<T>` — any literal of type T is valid; instance author chooses
-- Type-fixed literal — must match exactly
-
-**Types must match exactly.** Instances must use the same type as declared — no subtyping
-on constraint levels:
-- Type `String` → instance must use `String`, not `Uuid` or `"hello"`
-- Type `Timestamp` → instance must use `Timestamp`, not a literal
-
-The three levels form a tightening progression: `String` leaves the value fully open,
-`Concrete<String>` lets the instance author fix it to one value, and `"hello"` forecloses
-the choice in the type itself.
-
-> **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
-> allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
-
-Literal types are most useful in union positions:
-
-```ilk
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
-```
-
-Identifier-only union variants (no body, no quotes) are named blocks with empty bodies:
-
-```ilk
-type HttpVerb = Get | Post | Put | Delete
-```
 
 ---
 
@@ -114,25 +623,35 @@ Type declarations define named types. The `type` keyword introduces a declaratio
 type Name = TypeExpr
 ```
 
-Type names start with a capital letter. Declarations may be annotated:
+Type names start with a capital letter.
 
-```ilk
-type Parametrized = {_ String}
-type Unique = Concrete<String>
-type Tag = Parametrized | Unique
+Declarations may be annotated : annotations appear on the line immediately
+before the declaration they annotate.
 
-@assoc [Tag]
-type Event = {...} & {timestamp Int}
+---
 
-type Command = {
-    fields {...}
+## Value constraint levels
 
-    @source [fields]
-    emits []Event
-}
-```
+Three forms express how tightly a field's value is constrained:
 
-Annotations appear on the line immediately before the declaration they annotate.
+| Form | Constraint | Meaning |
+|------|------------|---------|
+| `String`, `Int`, … | Open | Instance must accept any value of that type |
+| `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the type does not prescribe which |
+| `"hello"`, `42`, `true`, … | Type-fixed | Only this exact value is valid |
+
+
+<TypeExample :example="exConstraints" />
+
+
+**Types must match exactly.** Instances must use the same type as declared — no subtyping
+
+> **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
+> allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
+
+Literal types are most useful in union positions:
+
+<TypeExample :example="exLitteralsUnion" />
 
 ---
 
@@ -141,34 +660,64 @@ Annotations appear on the line immediately before the declaration they annotate.
 Structs have named fields. The **anonymous-field shorthand** uses `_` as a placeholder
 for "a field of any name":
 
-```ilk
-{_}              // exactly 1 field of any name and type (= {_ *})
-{_ String}       // exactly 1 field of any name, type String
-{_, _}           // exactly 2 fields of any names and types
-{_ Int, _ String}  // exactly 2 fields with specific types
-{}               // zero fields (empty struct)
-{...}            // zero or more fields of any names and types
-```
+<TypeExample :example="exStruct" />
 
-For structs with known field names, list them explicitly:
 
-```ilk
-{id Uuid, name String}   // exactly these two fields
-```
-
-Fields are separated by **newlines** (or commas inline):
+### Fields declaration
+Fields are separated by **newlines or commas inline**:
 
 ```ilk
 {
     id   Uuid
     name String
 }
+
+{ id Uuid, name String }
 ```
 
-**Constraint:** Mixed anonymous/named structs are not allowed; use **intersection types**
-(`&`) for that pattern.
+### Optional, Required and additional fields
+
+<TypeExample :example="exStruct2" />
+
+### Intersection Types
+
+`A & B` produces a type whose instances must satisfy **both** `A` and `B`. All fields
+from both sides are merged into a single struct.
+
+
+<TypeExample :example="exIntersection" />
+
+NB : Reference types (`&T`) cannot participate in intersections.
 
 ---
+
+## Union types
+
+`A | B` means a value must satisfy **exactly one** of the alternatives.
+
+### Litteral type branches
+
+<TypeExample :example="exLiteralUnion" />
+
+### Identifier-only variants
+Named types with empty bodies need no body in instances:
+
+<TypeExample :example="exIdentifierUnion" />
+
+### Anonymous struct branches
+The branch is matched structurally:
+
+<TypeExample :example="exUnionAnonymousStruct" />
+
+### Discriminated unions
+
+For named-type branches, every union is discriminated by name. When two branches have the
+same shape, the name distinguishes them:
+
+<TypeExample :example="exNamedUnion" />
+
+---
+# DRAFT DOCUMENTATION BELOW
 
 ## List types
 
@@ -199,6 +748,8 @@ List values in instances are separated by **commas** (or newlines):
 ]
 ```
 
+<TypeExample :example="exList" />
+
 ---
 
 ## Reference types
@@ -218,6 +769,8 @@ through it. The validator checks that the referenced binding exists and is of th
 - The binding must exist in the file
 - The binding must be of type `T` (or a subtype)
 - No data flows through references — `@source` checks do not apply
+
+<TypeExample :example="exRef" />
 
 ---
 
@@ -248,118 +801,6 @@ Without the `-` prefix, providing concrete values in a refinement is an error. W
 the validator allows concrete literals for open fields in the refinement struct.
 
 ---
-
-## Union types
-
-`A | B` means a value must satisfy **exactly one** of the alternatives. Each branch is a
-type expression: a named type reference, an anonymous struct expression (`{_ String}`,
-`{...}`, etc.), a `Concrete<T>`, a scalar base type, or a literal.
-
-```ilk
-type Success = { value Bool }
-type Error   = { message String }
-type Response = Success | Error
-```
-
-Unions with named-type branches — in instances, the branch is identified by the variant name:
-
-```ilk
-result = Success { value Bool }
-// or
-result = Error { message String }
-```
-
-Identifier-only variants (named types with empty bodies) need no body in instances:
-
-```ilk
-type Status = Pending | Active | Archived
-```
-
-```ilk
-status Active
-```
-
-Anonymous struct branches are valid — the branch is matched structurally:
-
-```ilk
-// Tag is either a {_ String} anonymous struct or a Concrete<String>
-type Tag = {_ String} | Concrete<String>
-```
-
-In instances, the branch is chosen by the shape of the value:
-
-```ilk
-userIdTag = Tag {userId String}   // {_ String} branch — a single-field struct
-simpleTag = Tag "simple-tag"      // Concrete<String> branch — a literal string
-```
-
-Literal branches (`"GET"`, `42`, etc.) and `Concrete<T>` branches are matched by the
-syntax of the instance value. Named type branches are matched by writing the type name.
-
-Literal unions are useful for enumerated string/int values:
-
-```ilk
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
-type Verb       = "POST" | "DELETE" | "PUT" | "PATCH"
-```
-
-### Discriminated unions
-
-For named-type branches, every union is discriminated by name. When two branches have the
-same shape, the name distinguishes them:
-
-```ilk
-type Started  = { at Timestamp }
-type Finished = { at Timestamp }
-type Status   = Started | Finished   // same shape — unambiguous by name
-```
-
-For anonymous struct branches or scalar/literal branches, the instance value's syntactic
-form is sufficient to discriminate: `{...}` is a struct, `"literal"` is a string, etc.
-
----
-
-## Intersection types
-
-`A & B` produces a type whose instances must satisfy **both** `A` and `B`. All fields
-from both sides are merged into a single struct.
-
-```ilk
-type Event = {...} & {timestamp Int}
-```
-
-Use intersection instead of mixed-cardinality structs:
-
-```ilk
-// open struct plus a required id field
-type Entity = {...} & {id Uuid}
-```
-
-### Conflict rule
-
-When both sides of `&` name the same field, the **right side wins** — its type overrides
-the left side's declaration for that field:
-
-```ilk
-// {...} may include a timestamp field of any type;
-// & {timestamp Int} pins it to Int — right side wins
-type Event = {...} & {timestamp Int}
-```
-
-```ilk
-// OK: right side wins — result has {id String}
-{id Uuid} & {id String}
-```
-
-### Reference intersections
-
-Reference types (`&T`) cannot participate in intersections. References point to bindings,
-while intersections merge struct shapes — the two concepts do not combine meaningfully.
-
-```ilk
-// error: reference cannot be intersected
-type Bad = &Event & {priority Int}
-```
 
 ---
 
@@ -431,6 +872,8 @@ Declares that instances of this type may carry associated values — named bindi
 @assoc [Tag]
 type Event = {...} & {timestamp Int}
 ```
+
+<TypeExample :example="exAssoc" />
 
 ### `@source`
 
@@ -534,6 +977,8 @@ type Command = {
 }
 ```
 
+<TypeExample :example="exSource" />
+
 ### `@out`
 
 `@out` marks a field as **output** — data flows OUT from this field rather than into it.
@@ -561,6 +1006,8 @@ type Endpoint = {
 Without `@out`, a field like `returns` would appear to be missing a `@source` constraint.
 The annotation disambiguates intentional output fields from accidental omissions.
 
+<TypeExample :example="exOut" />
+
 ### `@constraint`
 
 An inline boolean predicate that every instance of the enclosing type must satisfy.
@@ -574,6 +1021,8 @@ type QueryItem = {
     tags       []Tag
 }
 ```
+
+<TypeExample :example="exConstraint" />
 
 ### `@doc`
 
@@ -636,6 +1085,8 @@ The value is derived from multiple source fields. Paths are comma-separated dot-
 At least one path is required. All path roots must satisfy the same `@source` constraint
 as mapped fields. Use `compute()` for narrowing mappings (e.g. `String` → `Uuid`) that
 require runtime validation.
+
+<TypeExample :example="exOrigins" />
 
 ---
 
@@ -854,6 +1305,8 @@ emits [userRegistered & {
     email String = compute(fields.email)  // runtime handles absence
 }]
 ```
+
+<TypeExample :example="exOptional" />
 
 ---
 

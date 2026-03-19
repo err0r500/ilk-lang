@@ -5,9 +5,11 @@ import { createHighlighter } from 'shiki'
 import ilkLang from '../langs/ilk.tmLanguage.json'
 
 const props = defineProps({
-  typeCode: { type: String, required: true },
-  instances: { type: Array, required: true }
+  example: { type: Object, required: true }
 })
+
+const typeCode = computed(() => props.example.type)
+const instances = computed(() => props.example.instances)
 
 const activeTab = ref(0)
 const output = ref(null)
@@ -18,7 +20,7 @@ let wasmCheck = null
 let highlighter = null
 
 const fullCode = computed(() => {
-  return props.typeCode.trim() + '\n\n' + props.instances[activeTab.value].code.trim()
+  return typeCode.value.trim() + '\n\n' + instances.value[activeTab.value].code.trim()
 })
 
 async function highlight() {
@@ -26,11 +28,11 @@ async function highlight() {
     themes: ['github-dark'],
     langs: [ilkLang]
   })
-  typeHtml.value = highlighter.codeToHtml(props.typeCode.trim(), {
+  typeHtml.value = highlighter.codeToHtml(typeCode.value.trim(), {
     lang: 'ilk',
     theme: 'github-dark'
   })
-  instanceHtmls.value = props.instances.map(inst =>
+  instanceHtmls.value = instances.value.map(inst =>
     highlighter.codeToHtml(inst.code.trim(), {
       lang: 'ilk',
       theme: 'github-dark'

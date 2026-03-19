@@ -14,6 +14,8 @@ fn format_type(ty: &TypeExpr) -> String {
         TypeExpr::LitString(s) => format!("\"{}\"", s),
         TypeExpr::LitInt(i) => format!("{}", i),
         TypeExpr::LitBool(b) => format!("{}", b),
+        TypeExpr::Struct(_) => "{...}".to_string(),
+        TypeExpr::Union(variants) => variants.iter().map(|v| format_type(&v.node)).collect::<Vec<_>>().join(" | "),
         _ => "?".to_string(),
     }
 }
@@ -25,6 +27,20 @@ fn get_value_type_name(value: &Value) -> Option<&str> {
         Value::LitInt(_) => Some("Int"),
         Value::LitBool(_) => Some("Bool"),
         _ => None,
+    }
+}
+
+fn value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::TypeRef(_) => "type reference",
+        Value::LitString(_) => "string literal",
+        Value::LitInt(_) => "int literal",
+        Value::LitBool(_) => "bool literal",
+        Value::BindingRef(_) => "binding reference",
+        Value::Struct(_) => "struct",
+        Value::List(_) => "list",
+        Value::Variant(_, _) => "variant",
+        Value::Refinement(_, _, _) => "refinement",
     }
 }
 
@@ -341,24 +357,53 @@ fn validate_value_against_type(
 
         // Intersections
         (_, TypeExpr::Intersection(left, right)) => {
-            if matches!(&left.node, TypeExpr::Struct(StructKind::Open(_))) {
-                // Open struct on left - extra fields allowed
-                if let (Value::Struct(val_fields), TypeExpr::Struct(StructKind::Closed(type_fields))) =
-                    (&value.node, &right.node)
-                {
-                    for type_field in type_fields {
-                        let name = &type_field.node.name.node;
-                        if let Some(val_field) =
-                            val_fields.iter().find(|f| &f.node.name.node == name)
-                        {
-                            validate_value_against_type(
-                                ctx,
-                                &val_field.node.value,
-                                &type_field.node.ty,
-                                errors,
-                            );
+            // Resolve types to check for open struct pattern
+            let left_resolved = resolve_type_expr(ctx, &left.node);
+            let right_resolved = resolve_type_expr(ctx, &right.node);
+
+            if matches!(left_resolved, Some(TypeExpr::Struct(StructKind::Open(_)))) {
+                // Open struct on left - extra fields allowed, validate only right's required fields
+                if let Value::Struct(val_fields) = &value.node {
+                    if let Some(TypeExpr::Struct(StructKind::Closed(type_fields))) = right_resolved {
+                        // Validate field types
+                        for type_field in type_fields {
+                            let name = &type_field.node.name.node;
+                            if let Some(val_field) =
+                                val_fields.iter().find(|f| &f.node.name.node == name)
+                            {
+                                validate_value_against_type(
+                                    ctx,
+                                    &val_field.node.value,
+                                    &type_field.node.ty,
+                                    errors,
+                                );
+                            }
                         }
+                        // Check required fields are present
+                        for type_field in type_fields {
+                            if !type_field.node.optional {
+                                let name = &type_field.node.name.node;
+                                if !val_fields.iter().any(|f| &f.node.name.node == name) {
+                                    errors.push(Diagnostic::error(
+                                        value.span.clone(),
+                                        format!("Missing required field: {}", name),
+                                        ctx.path,
+                                    ));
+                                }
+                            }
+                        }
+                        return; // Don't fall through
                     }
+                }
+                // Fallback: validate both sides
+                validate_value_against_type(ctx, value, left, errors);
+                validate_value_against_type(ctx, value, right, errors);
+            } else if let Value::Struct(val_fields) = &value.node {
+                // Both closed structs - merge with right-wins semantics
+                if let (Some(TypeExpr::Struct(StructKind::Closed(left_fields))), Some(TypeExpr::Struct(StructKind::Closed(right_fields)))) =
+                    (left_resolved, right_resolved)
+                {
+                    validate_intersection_struct(ctx, val_fields, left_fields, right_fields, &value.span, errors);
                 } else {
                     validate_value_against_type(ctx, value, left, errors);
                     validate_value_against_type(ctx, value, right, errors);
@@ -439,8 +484,17 @@ fn validate_value_against_type(
             }
         }
 
+        // Literals against struct types - reject (e.g., "ongoing" vs marker type Pending)
+        (Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_), TypeExpr::Struct(_)) => {
+            errors.push(Diagnostic::error(
+                value.span.clone(),
+                format!("Type mismatch: {} cannot satisfy {}", value_kind(&value.node), format_type(&ty.node)),
+                ctx.path,
+            ));
+        }
+
         _ => {
-            // Other mismatches
+            // Other patterns handled elsewhere or valid
         }
     }
 }
@@ -539,6 +593,70 @@ fn validate_struct(
                 if let Some(expected_ty) = ty {
                     validate_value_against_type(ctx, &val_field.node.value, expected_ty, errors);
                 }
+            }
+        }
+    }
+}
+
+/// Validate struct against intersection of two closed structs (right-wins for conflicts)
+fn validate_intersection_struct(
+    ctx: &ValidationContext,
+    val_fields: &[S<InstanceField>],
+    left_fields: &[S<Field>],
+    right_fields: &[S<Field>],
+    span: &Span,
+    errors: &mut Vec<Diagnostic>,
+) {
+    // Check for duplicate fields in value
+    let mut seen_fields: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for val_field in val_fields {
+        let name = &val_field.node.name.node;
+        if !seen_fields.insert(name.as_str()) {
+            errors.push(Diagnostic::error(
+                val_field.node.name.span.clone(),
+                format!("Duplicate field: {}", name),
+                ctx.path,
+            ));
+        }
+    }
+
+    // Build merged field map: right wins on conflict
+    let mut merged_fields: std::collections::HashMap<&str, &S<Field>> = std::collections::HashMap::new();
+    for field in left_fields {
+        merged_fields.insert(&field.node.name.node, field);
+    }
+    for field in right_fields {
+        merged_fields.insert(&field.node.name.node, field); // overwrites left
+    }
+
+    // Validate value fields
+    for val_field in val_fields {
+        let name = &val_field.node.name.node;
+        if let Some(type_field) = merged_fields.get(name.as_str()) {
+            validate_value_against_type(
+                ctx,
+                &val_field.node.value,
+                &type_field.node.ty,
+                errors,
+            );
+        } else {
+            errors.push(Diagnostic::error(
+                val_field.node.name.span.clone(),
+                format!("Extra field not in schema: {}", name),
+                ctx.path,
+            ));
+        }
+    }
+
+    // Check required fields are present
+    for (name, type_field) in &merged_fields {
+        if !type_field.node.optional {
+            if !val_fields.iter().any(|f| &f.node.name.node == *name) {
+                errors.push(Diagnostic::error(
+                    span.clone(),
+                    format!("Missing required field: {}", name),
+                    ctx.path,
+                ));
             }
         }
     }
@@ -669,8 +787,9 @@ fn get_field_type_from_type_expr<'a>(
                 .and_then(|decl| get_field_type_from_type_expr(ctx, &decl.node.body.node, field_name))
         }
         TypeExpr::Intersection(left, right) => {
-            get_field_type_from_type_expr(ctx, &left.node, field_name)
-                .or_else(|| get_field_type_from_type_expr(ctx, &right.node, field_name))
+            // Right side wins for conflicts (later in intersection takes precedence)
+            get_field_type_from_type_expr(ctx, &right.node, field_name)
+                .or_else(|| get_field_type_from_type_expr(ctx, &left.node, field_name))
         }
         _ => None,
     }
@@ -886,6 +1005,16 @@ fn type_ref_matches_base(type_ref: &str, base: &BaseType) -> bool {
         ("Timestamp", BaseType::Timestamp) => true,
         ("Money", BaseType::Money) => true,
         _ => false,
+    }
+}
+
+/// Resolve Named/RefinableRef to underlying type expression
+fn resolve_type_expr<'a>(ctx: &'a ValidationContext, ty: &'a TypeExpr) -> Option<&'a TypeExpr> {
+    match ty {
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
+            ctx.env.get_type(name).and_then(|decl| resolve_type_expr(ctx, &decl.node.body.node))
+        }
+        other => Some(other),
     }
 }
 
@@ -1184,5 +1313,55 @@ cmd = Cmd {
 "#);
         assert!(!errors.is_empty(), "Should reject mismatched refinement type");
         assert!(errors.iter().any(|e| e.message.contains("type mismatch") || e.message.contains("Type mismatch")), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_open_struct_intersection_with_named_type() {
+        // Open struct & Named type - extra fields allowed
+        let errors = validate_src(r#"
+type Id = {id! Uuid}
+type Entity = {...} & Id
+
+e1 = Entity {id Uuid, name String}
+"#);
+        assert!(errors.is_empty(), "Should accept extra fields with open struct intersection: {:?}", errors);
+    }
+
+    #[test]
+    fn test_open_struct_intersection_missing_required() {
+        // Missing required field from Named type
+        let errors = validate_src(r#"
+type Id = {id! Uuid}
+type Entity = {...} & Id
+
+e = Entity {name String}
+"#);
+        assert!(!errors.is_empty(), "Should reject missing required field");
+        assert!(errors.iter().any(|e| e.message.contains("Missing required field")), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_intersection_right_wins_conflict() {
+        // Right side should win in conflicts
+        let errors = validate_src(r#"
+type Left = {timestamp String}
+type Right = {timestamp Int}
+type Conflict = Left & Right
+
+c = Conflict {timestamp Int}
+"#);
+        assert!(errors.is_empty(), "Right side should win in intersection conflicts: {:?}", errors);
+    }
+
+    #[test]
+    fn test_union_variant_not_matched() {
+        let errors = validate_src(r#"
+type Status = Pending | Active | Archived
+type Process = {status! Status}
+
+p = Process {status "ongoing"}
+"#);
+        assert!(!errors.is_empty(), "Should reject value not in union");
+        assert!(errors.iter().any(|e| e.message.contains("union")), "{:?}", errors);
     }
 }

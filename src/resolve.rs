@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::span::S;
+use crate::span::{S, Span};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -56,6 +56,24 @@ pub fn resolve(file: &File, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
             } else {
                 env.types.insert(name.clone(), S::new(decl.clone(), item.span.clone()));
             }
+        }
+    }
+
+    // Auto-register implicit marker types from union variants
+    let mut implicit_types: Vec<(String, Span)> = Vec::new();
+    for item in &file.items {
+        if let Item::TypeDecl(decl) = &item.node {
+            collect_implicit_union_variants(&decl.body, &env, &mut implicit_types);
+        }
+    }
+    for (name, span) in implicit_types {
+        if !env.types.contains_key(&name) && !is_base_type(&name) {
+            let decl = TypeDecl {
+                name: S::new(name.clone(), span.clone()),
+                annotations: Vec::new(),
+                body: S::new(TypeExpr::Struct(StructKind::Closed(Vec::new())), span.clone()),
+            };
+            env.types.insert(name, S::new(decl, span));
         }
     }
 
@@ -137,6 +155,40 @@ fn is_base_type(name: &str) -> bool {
         name,
         "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
     )
+}
+
+fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Vec<(String, Span)>) {
+    match &ty.node {
+        TypeExpr::Union(variants) => {
+            for v in variants {
+                if let TypeExpr::Named(name) = &v.node {
+                    if !env.types.contains_key(name) && !is_base_type(name) {
+                        out.push((name.clone(), v.span.clone()));
+                    }
+                }
+                collect_implicit_union_variants(v, env, out);
+            }
+        }
+        TypeExpr::Concrete(inner) => collect_implicit_union_variants(inner, env, out),
+        TypeExpr::List(_, inner) => collect_implicit_union_variants(inner, env, out),
+        TypeExpr::Intersection(left, right) => {
+            collect_implicit_union_variants(left, env, out);
+            collect_implicit_union_variants(right, env, out);
+        }
+        TypeExpr::Struct(kind) => match kind {
+            StructKind::Closed(fields) | StructKind::Open(fields) => {
+                for field in fields {
+                    collect_implicit_union_variants(&field.node.ty, env, out);
+                }
+            }
+            StructKind::Anonymous(types) => {
+                for ty in types.iter().flatten() {
+                    collect_implicit_union_variants(ty, env, out);
+                }
+            }
+        },
+        _ => {}
+    }
 }
 
 fn check_type_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
@@ -327,5 +379,14 @@ mod tests {
         assert!(result.is_err());
         let errs = result.unwrap_err();
         assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
+    }
+
+    #[test]
+    fn test_implicit_union_marker_types() {
+        let env = resolve_str("type Status = Pending | Active | Archived\ntype Process = { status! Status }").unwrap();
+        assert!(env.types.contains_key("Status"));
+        assert!(env.types.contains_key("Pending"));
+        assert!(env.types.contains_key("Active"));
+        assert!(env.types.contains_key("Archived"));
     }
 }

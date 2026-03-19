@@ -23,33 +23,35 @@ features:
 ## Try it
 
 <script setup>
-const typeCode1 = `type HttpResponse = {
+const ex1 = {
+  type: `type HttpResponse = {
     status! Concrete<Int> // required field (note the "!")
     body {...} // optional open field
-}`
-const instances1 = [
-  { label: 'Valid', code: `success = HttpResponse {
+}`,
+  instances: [
+    { label: 'Valid', expect: 'pass', code: `success = HttpResponse {
     status 200
     body {
         message String
         timestamp Timestamp
     }
-}`, expect: 'pass' },
-  { label: 'Optional by default', code: `success = HttpResponse {
+}` },
+    { label: 'Optional by default', expect: 'pass', code: `success = HttpResponse {
     status 200
-}`, expect: 'pass' },
-  { label: 'Not an Int', code: `broken = HttpResponse {
+}` },
+    { label: 'Not an Int', expect: 'fail', code: `broken = HttpResponse {
     status "not a number"
-}`, expect: 'fail' },
-  { label: 'Missing required status', code: `broken = HttpResponse {
+}` },
+    { label: 'Missing required status', expect: 'fail', code: `broken = HttpResponse {
       body {
           message String
       }
-}`, expect: 'fail' }
-]
+}` }
+  ]
+}
 
-const typeCode2 = `
-type HttpResponse = {
+const ex2 = {
+  type: `type HttpResponse = {
     status! Concrete<Int>
     body {...}
 }
@@ -60,14 +62,9 @@ type Endpoint = {
 
     @source [params, body]
     response HttpResponse
-}
-`
-
-const instances2 = [
-  { label: 'Valid mappings',
-   expect: 'pass',
-    code: `
-getUser = Endpoint {
+}`,
+  instances: [
+    { label: 'Valid mappings', expect: 'pass', code: `getUser = Endpoint {
     params { id Uuid }
     body   { name String }
 
@@ -78,13 +75,8 @@ getUser = Endpoint {
            userId Uuid = params.id // needs explicit mapping (different field names)
         }
     }
-}
-`
-  },
-  { label: 'Missing mapping',
-   expect: 'fail',
-    code: `
-getUser = Endpoint {
+}` },
+    { label: 'Missing mapping', expect: 'fail', code: `getUser = Endpoint {
     params { id Uuid }
     body   { name String }
 
@@ -95,13 +87,12 @@ getUser = Endpoint {
             name   String
         }
     }
+}` }
+  ]
 }
-`
-  }
-]
 </script>
 
-<TypeExample :typeCode="typeCode1" :instances="instances1" />
+<TypeExample :example="ex1" />
 
 ## The idea in 30 seconds
 
@@ -145,7 +136,7 @@ Traditional schemas validate *shape*. ilk also validates *where data comes from*
 `@source` declares which upstream fields may supply data to a downstream field.
 Every open field must be explicitly mapped — the compiler checks it.
 
-<TypeExample :typeCode="typeCode2" :instances="instances2" />
+<TypeExample :example="ex2" />
 
 ## Quick reference
 

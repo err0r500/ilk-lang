@@ -19,6 +19,7 @@ export default defineConfig({
     themeConfig: {
         nav: [
             { text: 'Home', link: '/' },
+            { text: 'Examples', link: '/examples' },
             { text: 'Playground', link: '/playground' },
             { text: 'Specification', link: '/ilk-spec' }
         ],
