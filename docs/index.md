@@ -7,7 +7,10 @@ hero:
   actions:
     - theme: brand
       text: Language Specification
-      link: /spec
+      link: /ilk-spec
+    - theme: brand
+      text: Playground
+      link: /playground
 features:
   - icon: 🗂️
     title: Types and instances together

@@ -48,9 +48,6 @@ jobs:
         run: npm ci
         working-directory: docs
 
-      - name: Prepare spec
-        run: cp spec.md docs/ilk-spec.md
-
       - name: Build with VitePress
         run: npx vitepress build
         working-directory: docs
