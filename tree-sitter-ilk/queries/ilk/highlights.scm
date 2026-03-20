@@ -5,7 +5,7 @@
 (base_type) @type.builtin
 
 ; Type identifiers
-(named_type (identifier) @type)
+(named_type (identifier) @type.builtin)
 
 ; Field names
 (field name: (identifier) @variable.member)
@@ -14,6 +14,7 @@
 ; Type/instance names
 (type_decl name: (identifier) @type.definition)
 (instance name: (identifier) @variable.definition)
+(instance type: (identifier) @type.builtin)
 
 ; Annotations
 "@" @attribute
