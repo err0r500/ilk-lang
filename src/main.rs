@@ -296,7 +296,7 @@ fn run_emit(file: &PathBuf, pretty: bool) {
         }
     };
 
-    let output = ilk::emit::emit_json(&ast, &env);
+    let output = ilk::emit_schema::emit_schema(&ast, &env);
     let json_str = if pretty {
         serde_json::to_string_pretty(&output).unwrap()
     } else {
