@@ -25,6 +25,7 @@ type Command = {
 
     @source [fields]
     emits! []Event
+
 }
 
 
@@ -53,8 +54,9 @@ type ChangeSlice = {
     @source [endpoint.params, endpoint.body]
     command! Command
 
-    @constraint all(scenarios, s => all(s.given, g => exists(command.query, q => g in q.eventTypes)))
-    @constraint all(scenarios, s => all(s.then, t => t in command.emits))
+    @constraint all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
+    @constraint all(scenarios, s => all(keys(s.when), k => k in keys(command.fields)))
+    @constraint all(scenarios, s => all(s.then, event => event in command.emits))
     scenarios []ChangeScenario
 }
 
@@ -63,7 +65,7 @@ type ChangeScenario = {
     name! Concrete<String>
 
     given! []-Event
-    when! &Command
+    when! {...}
     then! []-Event
 }
 
@@ -139,7 +141,7 @@ registerUser = ChangeSlice {
     scenarios [{
         name "happy path"
         given [userRegistered & {id "124"}]
-        when {}
+        when {id "bla"}
         then [userRegistered & {id "123"}]
     }]
 }
