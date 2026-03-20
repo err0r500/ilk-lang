@@ -412,6 +412,29 @@ fn validate_value_against_type(
             }
         }
 
+        // BindingRef against Named/RefinableRef
+        (Value::BindingRef(name), TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type)) => {
+            if let Some(inst) = ctx.get_instance(name) {
+                let inst_type = &inst.type_name.node;
+                if !type_matches_ref(inst_type, expected_type, ctx.env) {
+                    errors.push(Diagnostic::error(
+                        value.span.clone(),
+                        format!(
+                            "Reference type mismatch: {} is type {}, expected {}",
+                            name, inst_type, expected_type
+                        ),
+                        ctx.path,
+                    ));
+                }
+            } else {
+                errors.push(Diagnostic::error(
+                    value.span.clone(),
+                    format!("Unknown instance: {}", name),
+                    ctx.path,
+                ));
+            }
+        }
+
         // Refinement value against type (bindingRef & {fields})
         (Value::Refinement(name, _assocs, fields), TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type)) => {
             if let Some(inst) = ctx.get_instance(name) {

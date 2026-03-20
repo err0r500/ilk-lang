@@ -2,7 +2,7 @@ import "./types.ilk"
 import "./events.ilk"
 import "./tags.ilk"
 
-registerUser = ChangeSlice {
+createCart = ChangeSlice {
     name "registerUser"
 
     endpoint {
