@@ -123,3 +123,20 @@ type Tag = {_ String} | Concrete<String>   // mixed
 | `@assoc [T]` | Instances carry typed associations (used with `@constraint`) |
 | `@constraint expr` | Boolean predicate validated at compile time |
 | `@doc "…"` | Implementation hint, preserved in AST |
+
+
+## Run the CLI
+
+```sh
+Usage: ilk [OPTIONS] <COMMAND>
+
+Commands:
+  check   Validate an ilk file
+  watch   Watch file and re-validate on changes
+  parse   Parse a file and dump the AST
+  json    Output the compiled AST as JSON
+  lsp     Start LSP server (stdio)
+  format  Format an ilk file
+  emit    Emit types and @main instances as JSON
+  help    Print this message or the help of the given subcommand(s)
+```
