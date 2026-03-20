@@ -10,7 +10,7 @@ type Event = {...} & {
 
 
 type QueryItem = {
-    @constraint forall(tags, t => forall(eventTypes, e => t in e.tags))
+    @constraint all(tags, t => all(eventTypes, e => t in e.tags))
     eventTypes! []&Event
 
     tags []Tag
@@ -37,7 +37,7 @@ type HttpResponse = {
 type HttpEndpoint = {
     method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
 
-    @constraint forall(templateVars(path), v => v in keys(params))
+    @constraint all(templateVars(path), v => v in keys(params))
     path! Concrete<String>
     params {...}
     body {...}
@@ -53,8 +53,8 @@ type ChangeSlice = {
     @source [endpoint.params, endpoint.body]
     command! Command
 
-    @constraint forall(scenarios, s => forall(s.given, g => exists(command.query, q => g in q.eventTypes)))
-    @constraint forall(scenarios, s => forall(s.then, t => t in command.emits))
+    @constraint all(scenarios, s => all(s.given, g => exists(command.query, q => g in q.eventTypes)))
+    @constraint all(scenarios, s => all(s.then, t => t in command.emits))
     scenarios []ChangeScenario
 }
 

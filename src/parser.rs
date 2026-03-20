@@ -1,4 +1,4 @@
-use crate::ast::{*, Comment};
+use crate::ast::{Comment, *};
 use crate::error::Diagnostic;
 use crate::span::{Spanned, S};
 use chumsky::prelude::*;
@@ -10,8 +10,7 @@ type ParserExtra<'a> = extra::Err<Rich<'a, char>>;
 // ============= Common Parsers =============
 
 fn ident<'a>() -> impl Parser<'a, ParserInput<'a>, S<String>, ParserExtra<'a>> + Clone {
-    text::ident()
-        .map_with(|s: &str, e| Spanned::from_simple(s.to_string(), e.span()))
+    text::ident().map_with(|s: &str, e| Spanned::from_simple(s.to_string(), e.span()))
 }
 
 fn ws<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone {
@@ -31,10 +30,7 @@ fn ws_nl<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone 
 }
 
 fn sep<'a>() -> impl Parser<'a, ParserInput<'a>, (), ParserExtra<'a>> + Clone {
-    ws_nl()
-        .then(just(',').or_not())
-        .then(ws_nl())
-        .ignored()
+    ws_nl().then(just(',').or_not()).then(ws_nl()).ignored()
 }
 
 // ============= Type Expression Parsers =============
@@ -99,9 +95,7 @@ fn cardinality<'a>() -> impl Parser<'a, ParserInput<'a>, Cardinality, ParserExtr
         num.clone()
             .then_ignore(just(".."))
             .map(Cardinality::AtLeast),
-        just("..")
-            .ignore_then(num.clone())
-            .map(Cardinality::AtMost),
+        just("..").ignore_then(num.clone()).map(Cardinality::AtMost),
         num.map(Cardinality::Exact),
         empty().to(Cardinality::Any),
     ))
@@ -130,9 +124,26 @@ fn named_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra
         .filter(|s: &&str| {
             !matches!(
                 *s,
-                "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
-                    | "true" | "false" | "Concrete" | "forall" | "exists" | "unique" | "count"
-                    | "templateVars" | "keys" | "in" | "type" | "import"
+                "Uuid"
+                    | "String"
+                    | "Int"
+                    | "Float"
+                    | "Bool"
+                    | "Date"
+                    | "Timestamp"
+                    | "Money"
+                    | "true"
+                    | "false"
+                    | "Concrete"
+                    | "all"
+                    | "exists"
+                    | "unique"
+                    | "count"
+                    | "templateVars"
+                    | "keys"
+                    | "in"
+                    | "type"
+                    | "import"
             )
         })
         .map(|s: &str| TypeExpr::Named(s.to_string()))
@@ -148,8 +159,8 @@ fn refinable_ref<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
 
 fn source_path<'a>() -> impl Parser<'a, ParserInput<'a>, S<SourcePath>, ParserExtra<'a>> + Clone {
     // Allow $assoc as a special root identifier
-    let assoc_root = just("$assoc")
-        .map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
+    let assoc_root =
+        just("$assoc").map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
 
     let path_segment = choice((assoc_root, ident()));
 
@@ -167,7 +178,8 @@ fn source_path<'a>() -> impl Parser<'a, ParserInput<'a>, S<SourcePath>, ParserEx
         .map_with(|p, e| Spanned::from_simple(p, e.span()))
 }
 
-fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, ParserExtra<'a>> + Clone {
+fn constraint_expr<'a>(
+) -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, ParserExtra<'a>> + Clone {
     recursive(|expr| {
         let atom = choice((
             just("true")
@@ -180,9 +192,11 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                 .or_not()
                 .then(text::int(10))
                 .to_slice()
-                .map(|s: &str| ConstraintExpr::Int(s.parse().expect("valid int literal from parser")))
+                .map(|s: &str| {
+                    ConstraintExpr::Int(s.parse().expect("valid int literal from parser"))
+                })
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
-            just("forall(")
+            just("all(")
                 .ignore_then(expr.clone())
                 .then_ignore(just(',').then(ws()))
                 .then(ident())
@@ -190,7 +204,7 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                 .then(expr.clone())
                 .then_ignore(just(')'))
                 .map(|((col, var), body)| {
-                    ConstraintExpr::ForAll(Box::new(col), var.node, Box::new(body))
+                    ConstraintExpr::All(Box::new(col), var.node, Box::new(body))
                 })
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("exists(")
@@ -250,18 +264,21 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
                     .ignore_then(expr.clone())
                     .then_ignore(just(')'))
                     .map(|arg| (true, arg)),
-                just('.')
-                    .ignore_then(ident())
-                    .map(|field| (false, Spanned::from_simple(ConstraintExpr::Var(field.node.clone()), field.span.into()))),
+                just('.').ignore_then(ident()).map(|field| {
+                    (
+                        false,
+                        Spanned::from_simple(
+                            ConstraintExpr::Var(field.node.clone()),
+                            field.span.into(),
+                        ),
+                    )
+                }),
             ))
             .repeated(),
             |left, (is_assoc, right)| {
                 let span = left.span.start..right.span.end;
                 if is_assoc {
-                    Spanned::new(
-                        ConstraintExpr::Assoc(Box::new(left), Box::new(right)),
-                        span,
-                    )
+                    Spanned::new(ConstraintExpr::Assoc(Box::new(left), Box::new(right)), span)
                 } else {
                     if let ConstraintExpr::Var(field) = &right.node {
                         Spanned::new(
@@ -276,19 +293,18 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
         );
 
         let cmp = postfix.clone().foldl(
-            ws()
-                .ignore_then(choice((
-                    just("==").to("=="),
-                    just("!=").to("!="),
-                    just("<=").to("<="),
-                    just(">=").to(">="),
-                    just('<').to("<"),
-                    just('>').to(">"),
-                    just("in").to("in"),
-                )))
-                .then_ignore(ws())
-                .then(postfix.clone())
-                .repeated(),
+            ws().ignore_then(choice((
+                just("==").to("=="),
+                just("!=").to("!="),
+                just("<=").to("<="),
+                just(">=").to(">="),
+                just('<').to("<"),
+                just('>').to(">"),
+                just("in").to("in"),
+            )))
+            .then_ignore(ws())
+            .then(postfix.clone())
+            .repeated(),
             |left, (op, right)| {
                 let span = left.span.start..right.span.end;
                 let node = match op {
@@ -306,8 +322,7 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
         );
 
         let and = cmp.clone().foldl(
-            ws()
-                .ignore_then(just("&&"))
+            ws().ignore_then(just("&&"))
                 .ignore_then(ws())
                 .ignore_then(cmp.clone())
                 .repeated(),
@@ -318,8 +333,7 @@ fn constraint_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<ConstraintExpr>, 
         );
 
         and.clone().foldl(
-            ws()
-                .ignore_then(just("||"))
+            ws().ignore_then(just("||"))
                 .ignore_then(ws())
                 .ignore_then(and.clone())
                 .repeated(),
@@ -405,8 +419,7 @@ fn type_field<'a>(
 fn struct_type<'a>(
     type_expr: impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone + 'a,
 ) -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
-    let anon_field = just('_')
-        .ignore_then(ws().ignore_then(type_expr.clone()).or_not());
+    let anon_field = just('_').ignore_then(ws().ignore_then(type_expr.clone()).or_not());
 
     let anon_struct = just('{')
         .ignore_then(ws_nl())
@@ -450,7 +463,7 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
         let atom = choice((
             lit_bool_type(),
             lit_string_type(),
-            refinable_ref(),  // -TypeName (before lit_int to avoid conflict with negative numbers)
+            refinable_ref(), // -TypeName (before lit_int to avoid conflict with negative numbers)
             lit_int_type(),
             concrete(type_expr.clone()),
             base_type(),
@@ -461,8 +474,7 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
         ));
 
         let intersection = atom.clone().foldl(
-            ws()
-                .ignore_then(just('&'))
+            ws().ignore_then(just('&'))
                 .ignore_then(ws())
                 .ignore_then(atom.clone())
                 .repeated(),
@@ -476,8 +488,7 @@ pub fn type_expr<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
         );
 
         intersection.clone().foldl(
-            ws()
-                .ignore_then(just('|'))
+            ws().ignore_then(just('|'))
                 .ignore_then(ws())
                 .ignore_then(intersection.clone())
                 .repeated(),
@@ -539,8 +550,8 @@ fn type_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtr
 
 fn dot_path<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<String>, ParserExtra<'a>> + Clone {
     // Allow $assoc as a special root identifier
-    let assoc_root = just("$assoc")
-        .map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
+    let assoc_root =
+        just("$assoc").map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
 
     let path_segment = choice((assoc_root, ident()));
 
@@ -563,14 +574,13 @@ fn field_origin<'a>() -> impl Parser<'a, ParserInput<'a>, FieldOrigin, ParserExt
             )
             .then_ignore(just(')'))
             .map(FieldOrigin::Computed),
-        just(" = ")
-            .ignore_then(dot_path())
-            .map(FieldOrigin::Mapped),
+        just(" = ").ignore_then(dot_path()).map(FieldOrigin::Mapped),
         empty().to(FieldOrigin::None),
     ))
 }
 
-fn inline_assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone {
+fn inline_assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone
+{
     just('<')
         .ignore_then(ws())
         .ignore_then(
@@ -603,14 +613,16 @@ fn instance_field<'a>(
         .then(inline_assocs())
         .then(value)
         .then(field_origin())
-        .map(|(((((doc, name), optional), assocs), value), origin)| InstanceField {
-            name,
-            optional,
-            assocs,
-            value,
-            origin,
-            doc: doc.map(|s: &str| s.to_string()),
-        })
+        .map(
+            |(((((doc, name), optional), assocs), value), origin)| InstanceField {
+                name,
+                optional,
+                assocs,
+                value,
+                origin,
+                doc: doc.map(|s: &str| s.to_string()),
+            },
+        )
         .map_with(|f, e| Spanned::from_simple(f, e.span()))
 }
 
@@ -633,7 +645,12 @@ fn instance_struct<'a>(
 
 fn refinement_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
     recursive(|refinement_val| {
-        let simple_value = choice((type_ref_value(), lit_int_value(), lit_string_value(), lit_bool_value()));
+        let simple_value = choice((
+            type_ref_value(),
+            lit_int_value(),
+            lit_string_value(),
+            lit_bool_value(),
+        ));
 
         let refinement_struct = just('{')
             .ignore_then(ws_nl())
@@ -669,18 +686,21 @@ fn refinement_field_inner<'a>(
         .then(inline_assocs())
         .then(value)
         .then(field_origin())
-        .map(|(((((doc, name), optional), assocs), value), origin)| InstanceField {
-            name,
-            optional,
-            assocs,
-            value,
-            origin,
-            doc: doc.map(|s: &str| s.to_string()),
-        })
+        .map(
+            |(((((doc, name), optional), assocs), value), origin)| InstanceField {
+                name,
+                optional,
+                assocs,
+                value,
+                origin,
+                doc: doc.map(|s: &str| s.to_string()),
+            },
+        )
         .map_with(|f, e| Spanned::from_simple(f, e.span()))
 }
 
-fn refinement_field<'a>() -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
+fn refinement_field<'a>(
+) -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
     refinement_field_inner(refinement_value())
 }
 
@@ -739,8 +759,18 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         .filter(|s: &&str| {
             !matches!(
                 *s,
-                "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
-                    | "true" | "false" | "type" | "import"
+                "Uuid"
+                    | "String"
+                    | "Int"
+                    | "Float"
+                    | "Bool"
+                    | "Date"
+                    | "Timestamp"
+                    | "Money"
+                    | "true"
+                    | "false"
+                    | "type"
+                    | "import"
             )
         })
         .map(|s: &str| s.to_string())
@@ -750,7 +780,12 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         .then_ignore(ws())
         .then_ignore(just('{'))
         .then_ignore(ws_nl())
-        .then(refinement_field().separated_by(sep()).allow_trailing().collect::<Vec<_>>())
+        .then(
+            refinement_field()
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(ws_nl())
         .then_ignore(just('}'))
         .map(|((name, assocs), fields)| Value::Refinement(name, assocs, fields))
@@ -760,8 +795,18 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         .filter(|s: &&str| {
             !matches!(
                 *s,
-                "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
-                    | "true" | "false" | "type" | "import"
+                "Uuid"
+                    | "String"
+                    | "Int"
+                    | "Float"
+                    | "Bool"
+                    | "Date"
+                    | "Timestamp"
+                    | "Money"
+                    | "true"
+                    | "false"
+                    | "type"
+                    | "import"
             )
         })
         .map(|s: &str| Value::BindingRef(s.to_string()))
@@ -881,15 +926,12 @@ fn import<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + 
         .then_ignore(just('"'))
         .map_with(|s: &str, e| Spanned::from_simple(s.to_string(), e.span()))
         .then(
-            ws()
-                .ignore_then(just("as"))
+            ws().ignore_then(just("as"))
                 .ignore_then(ws())
                 .ignore_then(ident())
                 .or_not(),
         )
-        .map(|(path, alias)| {
-            Item::Import(Import { path, alias })
-        })
+        .map(|(path, alias)| Item::Import(Import { path, alias }))
         .map_with(|i, e| Spanned::from_simple(i, e.span()))
 }
 
@@ -906,7 +948,10 @@ pub fn file<'a>() -> impl Parser<'a, ParserInput<'a>, File, ParserExtra<'a>> {
                 .collect::<Vec<_>>(),
         )
         .then_ignore(ws_nl())
-        .map(|items| File { items, comments: vec![] })
+        .map(|items| File {
+            items,
+            comments: vec![],
+        })
 }
 
 /// Extract comments from source text (separate pass before parsing)
@@ -923,7 +968,10 @@ fn extract_comments(src: &str) -> Vec<Comment> {
                 i += 1;
             }
             let text = src[start..i].to_string();
-            comments.push(Comment { span: start..i, text });
+            comments.push(Comment {
+                span: start..i,
+                text,
+            });
         } else {
             i += 1;
         }
@@ -945,11 +993,7 @@ pub fn parse(src: &str, path: &Path) -> Result<File, Vec<Diagnostic>> {
         .map_err(|errs| {
             errs.into_iter()
                 .map(|e| {
-                    Diagnostic::error(
-                        e.span().into_range(),
-                        e.to_string(),
-                        path.to_path_buf(),
-                    )
+                    Diagnostic::error(e.span().into_range(), e.to_string(), path.to_path_buf())
                 })
                 .collect()
         })
@@ -974,13 +1018,22 @@ mod tests {
     // Type parsing tests
     #[test]
     fn test_wildcard() {
-        assert!(matches!(parse_type("*").node, TypeExpr::Base(BaseType::Wildcard)));
+        assert!(matches!(
+            parse_type("*").node,
+            TypeExpr::Base(BaseType::Wildcard)
+        ));
     }
 
     #[test]
     fn test_base_types() {
-        assert!(matches!(parse_type("String").node, TypeExpr::Base(BaseType::String)));
-        assert!(matches!(parse_type("Int").node, TypeExpr::Base(BaseType::Int)));
+        assert!(matches!(
+            parse_type("String").node,
+            TypeExpr::Base(BaseType::String)
+        ));
+        assert!(matches!(
+            parse_type("Int").node,
+            TypeExpr::Base(BaseType::Int)
+        ));
     }
 
     #[test]
@@ -1068,7 +1121,10 @@ mod tests {
     fn test_main_instance() {
         let f = parse_file("@main\nboard = Board {x Int}");
         let inst = f.instances().next().unwrap();
-        assert!(inst.annotations.iter().any(|a| matches!(a.node, Annotation::Main)));
+        assert!(inst
+            .annotations
+            .iter()
+            .any(|a| matches!(a.node, Annotation::Main)));
     }
 
     #[test]

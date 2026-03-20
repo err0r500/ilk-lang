@@ -1029,7 +1029,7 @@ Uses the constraint expression language (see [Constraint expression language](#c
 
 ```ilk
 type QueryItem = {
-    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
+    @constraint all(tags, t => all(eventTypes, e => e.assoc(t)))
 
     eventTypes []Event
     tags       []Tag
@@ -1264,7 +1264,7 @@ A minimal expression language for `@constraint` predicates.
 
 | Expression | Meaning |
 |--|--|
-| `forall(col, x => body)` | True if `body` holds for every element `x` in collection `col` |
+| `all(col, x => body)` | True if `body` holds for every element `x` in collection `col` |
 | `exists(col, x => body)` | True if `body` holds for at least one element `x` in collection `col` |
 | `unique(col, x => expr)` | True if `expr` yields distinct values for all elements in `col` |
 | `count(col)` | Number of elements in collection `col` |

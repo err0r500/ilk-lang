@@ -495,7 +495,7 @@
 }
 
 <span class="kw">type</span> <span class="ty">Endpoint</span> = {
-    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">templateVars</span>(<span class="id">path</span>), <span class="id">v</span> =&gt; <span class="id">v</span> <span class="kw">in</span> <span class="id">keys</span>(<span class="id">params</span>))
+    <span class="ann">@constraint</span> <span class="id">all</span>(<span class="id">templateVars</span>(<span class="id">path</span>), <span class="id">v</span> =&gt; <span class="id">v</span> <span class="kw">in</span> <span class="id">keys</span>(<span class="id">params</span>))
     <span class="id">path</span>    <span class="ty">Concrete&lt;String&gt;</span>
 
     <span class="id">method</span>  <span class="ty">HttpMethod</span>
@@ -578,8 +578,8 @@
 
 <span class="c">// Every event must carry every listed tag</span>
 <span class="kw">type</span> <span class="ty">QueryItem</span> = {
-    <span class="ann">@constraint</span> <span class="id">forall</span>(<span class="id">tags</span>, <span class="id">t</span> =&gt;
-        <span class="id">forall</span>(<span class="id">eventTypes</span>, <span class="id">e</span> =&gt; <span class="id">e</span>.<span class="id">assoc</span>(<span class="id">t</span>)))
+    <span class="ann">@constraint</span> <span class="id">all</span>(<span class="id">tags</span>, <span class="id">t</span> =&gt;
+        <span class="id">all</span>(<span class="id">eventTypes</span>, <span class="id">e</span> =&gt; <span class="id">e</span>.<span class="id">assoc</span>(<span class="id">t</span>)))
     <span class="id">eventTypes</span> []&amp;<span class="ty">Event</span>
     <span class="id">tags</span>       []<span class="ty">Tag</span>
 }

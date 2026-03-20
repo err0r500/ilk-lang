@@ -147,7 +147,7 @@ Annotations - constraint
 ================================================================================
 
 type QueryItem = {
-    @constraint forall(tags, t => e.assoc(t))
+    @constraint all(tags, t => e.assoc(t))
     tags []Tag
 }
 

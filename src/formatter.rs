@@ -203,8 +203,8 @@ impl<'a> Formatter<'a> {
                 self.write(".");
                 self.write(f);
             }
-            ConstraintExpr::ForAll(col, var, body) => {
-                self.write("forall(");
+            ConstraintExpr::All(col, var, body) => {
+                self.write("all(");
                 self.format_constraint_expr(col);
                 self.write(", ");
                 self.write(var);
@@ -666,7 +666,10 @@ impl<'a> Formatter<'a> {
 
             match &elem.node {
                 ListElement::Value(v) => {
-                    let tmp = S { node: v.clone(), span: elem.span.clone() };
+                    let tmp = S {
+                        node: v.clone(),
+                        span: elem.span.clone(),
+                    };
                     self.format_value(&tmp);
                 }
                 ListElement::BindingRef(s) => self.write(s),

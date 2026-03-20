@@ -30,7 +30,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
             │
             └─ CONSTRAINTS - @constraint exprs
                 Boolean algebra + collection ops
-                forall, exists, unique, count, etc.
+                all, exists, unique, count, etc.
 ```
 
 ## Module Details
@@ -103,7 +103,7 @@ Validates @source annotation paths:
 Constraint ops:
 - Boolean: true, false, &&, ||, !
 - Comparison: ==, !=, <, <=, >, >=, in
-- Collections: forall, exists, unique, count
+- Collections: all, exists, unique, count
 - Access: x.y.z, e.assoc(type)
 - String: templateVars(str), keys(struct)
 

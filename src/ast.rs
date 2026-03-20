@@ -1,7 +1,6 @@
 use crate::span::{Span, S};
 use serde::Serialize;
 
-
 // ============= Type-Level AST (formerly ilk/ast.rs) =============
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -21,18 +20,18 @@ pub enum BaseType {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Cardinality {
-    Any,             // []
-    Exact(usize),    // [N]
-    AtLeast(usize),  // [N..]
-    AtMost(usize),   // [..M]
+    Any,                 // []
+    Exact(usize),        // [N]
+    AtLeast(usize),      // [N..]
+    AtMost(usize),       // [..M]
     Range(usize, usize), // [N..M]
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StructKind {
-    Closed(Vec<S<Field>>),           // {x Int, y String}
-    Open(Vec<S<Field>>),             // {...} or {...} & {x Int}
+    Closed(Vec<S<Field>>),               // {x Int, y String}
+    Open(Vec<S<Field>>),                 // {...} or {...} & {x Int}
     Anonymous(Vec<Option<S<TypeExpr>>>), // {_}, {_ String}, {_, _}
 }
 
@@ -53,7 +52,7 @@ pub enum TypeExpr {
     LitInt(i64),
     LitBool(bool),
     Named(String),
-    RefinableRef(String),  // -TypeName - allows refinement with concrete values
+    RefinableRef(String), // -TypeName - allows refinement with concrete values
     Struct(StructKind),
     List(Cardinality, Box<S<TypeExpr>>),
     Reference(String),
@@ -95,7 +94,7 @@ pub enum ConstraintExpr {
     Bool(bool),
     Var(String),
     FieldAccess(Box<S<ConstraintExpr>>, String),
-    ForAll(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
+    All(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
     Exists(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
     Unique(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
     Count(Box<S<ConstraintExpr>>),
@@ -120,9 +119,9 @@ pub enum ConstraintExpr {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldOrigin {
-    None,                     // No annotation - implicit name match
-    Generated,                // Type*
-    Mapped(Vec<String>),      // Type = path.to.field
+    None,                       // No annotation - implicit name match
+    Generated,                  // Type*
+    Mapped(Vec<String>),        // Type = path.to.field
     Computed(Vec<Vec<String>>), // Type = compute(path1, path2)
 }
 
@@ -130,7 +129,7 @@ pub enum FieldOrigin {
 pub struct InstanceField {
     pub name: S<String>,
     pub optional: bool,
-    pub assocs: Vec<S<String>>,  // inline assocs: fieldName <inst1, inst2> {...}
+    pub assocs: Vec<S<String>>, // inline assocs: fieldName <inst1, inst2> {...}
     pub value: S<Value>,
     pub origin: FieldOrigin,
     pub doc: Option<String>,
@@ -139,14 +138,14 @@ pub struct InstanceField {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Value {
-    TypeRef(String),                       // String, Int, etc.
-    LitString(String),                     // "hello"
-    LitInt(i64),                           // 42
-    LitBool(bool),                         // true/false
-    BindingRef(String),                    // someBinding
-    Struct(Vec<S<InstanceField>>),         // {x Int, y String}
-    List(Vec<S<ListElement>>),             // [a, b, c]
-    Variant(String, Box<S<Value>>),        // VariantName body
+    TypeRef(String),                                           // String, Int, etc.
+    LitString(String),                                         // "hello"
+    LitInt(i64),                                               // 42
+    LitBool(bool),                                             // true/false
+    BindingRef(String),                                        // someBinding
+    Struct(Vec<S<InstanceField>>),                             // {x Int, y String}
+    List(Vec<S<ListElement>>),                                 // [a, b, c]
+    Variant(String, Box<S<Value>>),                            // VariantName body
     Refinement(String, Vec<S<String>>, Vec<S<InstanceField>>), // binding <assocs> & {fields}
 }
 
@@ -173,7 +172,7 @@ pub struct Instance {
     pub type_name: S<String>,
     pub assocs: Vec<S<String>>,
     pub body: S<Value>,
-    pub annotations: Vec<S<Annotation>>,  // can have @main
+    pub annotations: Vec<S<Annotation>>, // can have @main
     pub doc: Option<String>,
 }
 

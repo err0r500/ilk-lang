@@ -27,7 +27,7 @@
 (doc_annotation) @attribute
 
 ; Constraint functions
-"forall" @function.builtin
+"all" @function.builtin
 "exists" @function.builtin
 "unique" @function.builtin
 "count" @function.builtin
