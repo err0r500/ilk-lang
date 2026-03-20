@@ -1,0 +1,55 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+addItem = ChangeSlice {
+    name "registerUser"
+
+    actor userActor
+
+    endpoint {
+        method POST
+        path "/carts/{cartId}/items"
+        params {cartId Uuid}
+        auth {userId Uuid}
+        body {
+            productId Uuid
+            description String
+            imageURL String
+            sku String
+            price Int
+            quantity Int
+        }
+
+        responses []
+    }
+
+    command {
+        fields {
+			shopperId   Uuid = endpoint.auth.userId
+			cartId      Uuid
+			productId   Uuid
+			quantity    Int
+			description String
+			image       String = endpoint.body.imageURL
+			itemId      String = endpoint.body.sku
+			price       Int
+        }
+
+        query []
+
+        // {
+        //     eventTypes [userRegistered]
+        //     tags [userIdTag & {userId Uuid = fields.cartId}]
+        // }
+        // {
+        //     eventTypes [userRegistered]
+        //     tags [userNameTag]
+        // }
+        emits []
+    }
+
+    scenarios []
+}
