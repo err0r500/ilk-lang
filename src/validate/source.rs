@@ -189,9 +189,10 @@ fn validate_field_source_with_assocs(
                     }
                     // For value types, validate the referenced instance's fields
                     if let Some(ref_inst) = ctx.get_instance(name) {
+                        let ref_ctx = ctx.for_instance(name);
                         if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, parent_fields, assocs, elem_type, errors);
+                                validate_refinement_field(&ref_ctx, ref_field, sources, parent_fields, assocs, elem_type, errors);
                             }
                         }
                     }
@@ -210,10 +211,11 @@ fn validate_field_source_with_assocs(
                         }
                         // For value types, validate the referenced instance's fields
                         if let Some(ref_inst) = ctx.get_instance(name) {
+                            let ref_ctx = ctx.for_instance(name);
                             if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
                                     validate_refinement_field(
-                                        ctx, ref_field, sources, parent_fields, assocs, elem_type, errors,
+                                        &ref_ctx, ref_field, sources, parent_fields, assocs, elem_type, errors,
                                     );
                                 }
                             }
@@ -260,6 +262,7 @@ fn validate_field_source_with_assocs(
 
         // Validate non-refined fields from referenced instance
         if let Some(ref_inst) = ctx.get_instance(ref_name) {
+            let ref_ctx = ctx.for_instance(ref_name);
             if let Value::Struct(inst_fields) = &ref_inst.body.node {
                 let fields_to_skip = get_fields_to_skip(field_type, ctx);
                 let refined_names: std::collections::HashSet<_> = ref_fields.iter().map(|f| &f.node.name.node).collect();
@@ -268,7 +271,7 @@ fn validate_field_source_with_assocs(
                         continue;
                     }
                     let nested_assocs = if nested.node.assocs.is_empty() { active_assocs } else { &nested.node.assocs };
-                    validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, Some(field_type), errors);
+                    validate_refinement_field(&ref_ctx, nested, sources, parent_fields, nested_assocs, Some(field_type), errors);
                 }
             }
         }
@@ -389,6 +392,7 @@ fn validate_refinement_field(
                 }
                 // Also validate non-refined fields from referenced instance
                 if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                    let ref_ctx = ctx.for_instance(ref_name);
                     if let Value::Struct(inst_fields) = &ref_inst.body.node {
                         let refined_names: std::collections::HashSet<_> = ref_fields.iter().map(|f| &f.node.name.node).collect();
                         for nested in inst_fields {
@@ -396,7 +400,7 @@ fn validate_refinement_field(
                                 continue;
                             }
                             let nested_assocs = if nested.node.assocs.is_empty() { ref_active_assocs } else { &nested.node.assocs };
-                            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, nested_type, errors);
+                            validate_refinement_field(&ref_ctx, nested, sources, parent_fields, nested_assocs, nested_type, errors);
                         }
                     }
                 }
@@ -425,9 +429,10 @@ fn validate_refinement_field(
                             }
                             // Value list: validate referenced instance's fields
                             if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                                let ref_ctx = ctx.for_instance(ref_name);
                                 if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                     for ref_field in ref_fields {
-                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
+                                        validate_refinement_field(&ref_ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
                                     }
                                 }
                             }
@@ -449,9 +454,10 @@ fn validate_refinement_field(
                             }
                             // Value list: validate referenced instance's fields
                             if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                                let ref_ctx = ctx.for_instance(ref_name);
                                 if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                     for ref_field in ref_fields {
-                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
+                                        validate_refinement_field(&ref_ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
                                     }
                                 }
                             }

@@ -2,12 +2,13 @@ use crate::ast::*;
 use crate::error::Diagnostic;
 use crate::span::{S, Span};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
     pub types: HashMap<String, S<TypeDecl>>,
     pub instances: HashMap<String, S<Instance>>,
+    pub instance_files: HashMap<String, PathBuf>,
     pub main_instance: Option<String>,
 }
 
@@ -16,6 +17,7 @@ impl TypeEnv {
         Self {
             types: HashMap::new(),
             instances: HashMap::new(),
+            instance_files: HashMap::new(),
             main_instance: None,
         }
     }
@@ -26,6 +28,10 @@ impl TypeEnv {
 
     pub fn get_instance(&self, name: &str) -> Option<&S<Instance>> {
         self.instances.get(name)
+    }
+
+    pub fn get_instance_file(&self, name: &str) -> Option<&Path> {
+        self.instance_files.get(name).map(|p| p.as_path())
     }
 
     pub fn main(&self) -> Option<&S<Instance>> {
@@ -97,6 +103,7 @@ pub fn resolve_with_imports(
                 ));
             } else {
                 env.instances.insert(name.clone(), S::new(inst.clone(), item.span.clone()));
+                env.instance_files.insert(name.clone(), path.to_path_buf());
             }
 
             // Check for @main

@@ -111,6 +111,16 @@ impl Compiler {
                     .instances
                     .entry(name.clone())
                     .or_insert_with(|| inst.clone());
+                merged
+                    .instance_files
+                    .entry(name.clone())
+                    .or_insert_with(|| {
+                        imported_env
+                            .instance_files
+                            .get(name)
+                            .cloned()
+                            .unwrap_or_else(|| import_path.clone())
+                    });
             }
         }
 

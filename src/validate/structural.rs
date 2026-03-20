@@ -57,6 +57,20 @@ impl<'a> ValidationContext<'a> {
     pub fn get_instance(&self, name: &str) -> Option<&Instance> {
         self.env.get_instance(name).map(|s| &s.node)
     }
+
+    pub fn get_instance_file(&self, name: &str) -> Option<&Path> {
+        self.env.get_instance_file(name)
+    }
+
+    /// Return a context with the correct file path for a referenced instance.
+    /// Falls back to self if the instance file is unknown.
+    pub fn for_instance(&self, name: &str) -> ValidationContext<'a> {
+        if let Some(p) = self.env.get_instance_file(name) {
+            ValidationContext::new(self.env, p)
+        } else {
+            ValidationContext::new(self.env, self.path)
+        }
+    }
 }
 
 pub fn validate_structural(
