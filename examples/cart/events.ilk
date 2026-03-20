@@ -2,6 +2,25 @@ import "./types.ilk"
 import "./tags.ilk"
 
 
+cartCreated = Event {
+    cartId Uuid
+    shopperId Uuid
+    tags [
+        cartIdTag
+        shopperIdTag
+    ]
+}
+
+itemAdded = Event {
+    cartId Uuid
+    itemId Uuid
+    tags [
+        cartIdTag
+    ]
+}
+
+
+
 userRegistered = Event {
     id Uuid
     name String

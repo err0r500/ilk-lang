@@ -1,10 +1,16 @@
 import "./types.ilk"
 
+
 userIdTag = Tag {userId String}
+
+
+cartIdTag = Tag {cartId Uuid}
+
+
+shopperIdTag = Tag {shopperId Uuid}
 
 
 userNameTag = Tag {name String}
 
 
 otherTag = Tag "other"
-

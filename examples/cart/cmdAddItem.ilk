@@ -28,28 +28,39 @@ addItem = ChangeSlice {
 
     command {
         fields {
-			shopperId   Uuid = endpoint.auth.userId
-			cartId      Uuid
-			productId   Uuid
-			quantity    Int
-			description String
-			image       String = endpoint.body.imageURL
-			itemId      String = endpoint.body.sku
-			price       Int
+            itemId Uuid*
+            shopperId Uuid = endpoint.auth.userId
+            cartId Uuid
+            quantity Int
+            description String
+            image String = endpoint.body.imageURL
+            productId String = endpoint.body.sku
+            price Int
         }
 
-        query []
+        query [
+            {
+                eventTypes [cartCreated]
+                tags [
+                    cartIdTag
+                    shopperIdTag
+                ]
+            }
+            {
+                eventTypes [itemAdded]
+                tags [cartIdTag]
+            }
+        ]
 
-        // {
-        //     eventTypes [userRegistered]
-        //     tags [userIdTag & {userId Uuid = fields.cartId}]
-        // }
-        // {
-        //     eventTypes [userRegistered]
-        //     tags [userNameTag]
-        // }
-        emits []
+        emits [cartCreated, itemAdded]
     }
 
-    scenarios []
+    scenarios [
+		{
+			name "OK: Add item automatically opens the cart"
+			given [cartCreated & {cartId "abc"}]
+			when {}
+			then [cartCreated, itemAdded]
+		},
+    ]
 }
