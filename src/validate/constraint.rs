@@ -44,15 +44,14 @@ enum ConstraintError {
 
 pub fn validate_constraints(
     ctx: &ValidationContext,
-    file: &File,
-    errors: &mut Vec<Diagnostic>,
-) {
-    for inst in file.instances() {
-        let type_name = &inst.type_name.node;
-        if let Some(type_decl) = ctx.env.get_type(type_name) {
-            validate_instance_constraints(ctx, inst, &type_decl.node, errors);
-        }
+    inst: &Instance,
+) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    let type_name = &inst.type_name.node;
+    if let Some(type_decl) = ctx.env.get_type(type_name) {
+        validate_instance_constraints(ctx, inst, &type_decl.node, &mut errors);
     }
+    errors
 }
 
 fn validate_instance_constraints(
@@ -795,7 +794,9 @@ mod tests {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_constraints(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_constraints(&ctx, inst));
+        }
         errors
     }
 
@@ -1005,7 +1006,9 @@ outer = Outer {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_constraints(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_constraints(&ctx, inst));
+        }
 
         assert_eq!(errors.len(), 1);
         // Error should point to instance name (after type def ends at 44)
@@ -1022,7 +1025,9 @@ outer = Outer {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_constraints(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_constraints(&ctx, inst));
+        }
 
         assert_eq!(errors.len(), 1);
         // Error should point to constraint (within type def, before byte 48)
@@ -1038,7 +1043,9 @@ outer = Outer {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_constraints(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_constraints(&ctx, inst));
+        }
 
         assert_eq!(errors.len(), 1);
         // Error should point to instance (after type def)

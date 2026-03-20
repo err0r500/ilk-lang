@@ -46,9 +46,11 @@ impl Compiler {
         let ctx = validate::ValidationContext::new(env, path);
         let mut errors = Vec::new();
 
-        validate::validate_structural(&ctx, file, &mut errors);
-        validate::validate_source(&ctx, file, &mut errors);
-        validate::validate_constraints(&ctx, file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate::validate_structural(&ctx, inst));
+            errors.extend(validate::validate_source(&ctx, inst));
+            errors.extend(validate::validate_constraints(&ctx, inst));
+        }
 
         if errors.is_empty() {
             Ok(())
@@ -87,9 +89,11 @@ pub fn compile(src: &str, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
     let env = resolve::resolve(&file, path)?;
     let ctx = validate::ValidationContext::new(&env, path);
     let mut errors = Vec::new();
-    validate::validate_structural(&ctx, &file, &mut errors);
-    validate::validate_source(&ctx, &file, &mut errors);
-    validate::validate_constraints(&ctx, &file, &mut errors);
+    for inst in file.instances() {
+        errors.extend(validate::validate_structural(&ctx, inst));
+        errors.extend(validate::validate_source(&ctx, inst));
+        errors.extend(validate::validate_constraints(&ctx, inst));
+    }
     if errors.is_empty() {
         Ok(env)
     } else {

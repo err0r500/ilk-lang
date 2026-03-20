@@ -1,13 +1,6 @@
 use crate::span::{Span, S};
 use serde::Serialize;
 
-// ============= Comments =============
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct Comment {
-    pub span: Span,
-    pub text: String,
-}
 
 // ============= Type-Level AST (formerly ilk/ast.rs) =============
 
@@ -46,7 +39,7 @@ pub enum StructKind {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Field {
     pub name: S<String>,
-    pub optional: bool,  // ilk uses this for optional fields in kli validation
+    pub optional: bool,
     pub ty: S<TypeExpr>,
     pub annotations: Vec<S<Annotation>>,
 }
@@ -197,6 +190,14 @@ pub enum Item {
     TypeDecl(TypeDecl),
     Instance(Instance),
     Import(Import),
+}
+
+// NB : we keep comments in the AST for code formatting
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Comment {
+    pub span: Span,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

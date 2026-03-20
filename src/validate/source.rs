@@ -3,13 +3,13 @@ use crate::error::Diagnostic;
 use crate::span::S;
 use crate::validate::structural::{ValidationContext, get_field_type_from_type_expr};
 
-pub fn validate_source(ctx: &ValidationContext, file: &File, errors: &mut Vec<Diagnostic>) {
-    for inst in file.instances() {
-        let type_name = &inst.type_name.node;
-        if let Some(type_decl) = ctx.env.get_type(type_name) {
-            validate_instance_sources(ctx, inst, &type_decl.node, errors);
-        }
+pub fn validate_source(ctx: &ValidationContext, inst: &Instance) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    let type_name = &inst.type_name.node;
+    if let Some(type_decl) = ctx.env.get_type(type_name) {
+        validate_instance_sources(ctx, inst, &type_decl.node, &mut errors);
     }
+    errors
 }
 
 fn validate_instance_sources(
@@ -845,8 +845,10 @@ mod tests {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_structural(&ctx, &file, &mut errors);
-        validate_source(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_structural(&ctx, inst));
+            errors.extend(validate_source(&ctx, inst));
+        }
         errors
     }
 

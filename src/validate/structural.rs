@@ -61,21 +61,19 @@ impl<'a> ValidationContext<'a> {
 
 pub fn validate_structural(
     ctx: &ValidationContext,
-    file: &File,
-    errors: &mut Vec<Diagnostic>,
-) {
-    // Validate each instance against its type
-    for inst in file.instances() {
-        let type_name = &inst.type_name.node;
+    inst: &Instance,
+) -> Vec<Diagnostic> {
+    let mut errors = Vec::new();
+    let type_name = &inst.type_name.node;
 
-        if let Some(type_decl) = ctx.env.get_type(type_name) {
-            validate_value_against_type(ctx, &inst.body, &type_decl.node.body, errors);
+    if let Some(type_decl) = ctx.env.get_type(type_name) {
+        validate_value_against_type(ctx, &inst.body, &type_decl.node.body, &mut errors);
 
-            // Validate associations
-            validate_associations(ctx, inst, &type_decl.node, errors);
-        }
-        // Unknown type errors are already caught in resolve
+        // Validate associations
+        validate_associations(ctx, inst, &type_decl.node, &mut errors);
     }
+    // Unknown type errors are already caught in resolve
+    errors
 }
 
 fn validate_associations(
@@ -1080,7 +1078,9 @@ mod tests {
         let env = resolve(&file, Path::new("test.ilk")).unwrap();
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
-        validate_structural(&ctx, &file, &mut errors);
+        for inst in file.instances() {
+            errors.extend(validate_structural(&ctx, inst));
+        }
         errors
     }
 
