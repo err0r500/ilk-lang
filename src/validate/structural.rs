@@ -769,7 +769,7 @@ fn validate_list(
 }
 
 /// Extract field type from a TypeExpr (handles Named, Intersection, Struct)
-fn get_field_type_from_type_expr<'a>(
+pub(crate) fn get_field_type_from_type_expr<'a>(
     ctx: &'a ValidationContext,
     ty: &'a TypeExpr,
     field_name: &str,
@@ -792,6 +792,30 @@ fn get_field_type_from_type_expr<'a>(
                 .or_else(|| get_field_type_from_type_expr(ctx, &left.node, field_name))
         }
         _ => None,
+    }
+}
+
+/// Check if a field is required in the type declaration
+fn is_field_required_in_type(ctx: &ValidationContext, ty: &TypeExpr, field_name: &str) -> bool {
+    match ty {
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
+            fields
+                .iter()
+                .find(|f| f.node.name.node == field_name)
+                .map(|f| !f.node.optional)
+                .unwrap_or(false)
+        }
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
+            ctx.env
+                .get_type(name)
+                .map(|decl| is_field_required_in_type(ctx, &decl.node.body.node, field_name))
+                .unwrap_or(false)
+        }
+        TypeExpr::Intersection(left, right) => {
+            is_field_required_in_type(ctx, &right.node, field_name)
+                || is_field_required_in_type(ctx, &left.node, field_name)
+        }
+        _ => false,
     }
 }
 
@@ -978,10 +1002,15 @@ fn validate_refinement_fields_against_instance(
 
     // Check all required instance fields are present in refinement
     // Only for non-refinable types (refinable refs are just documentation)
+    // Use type-level optionality (!) rather than instance-level
     if !is_refinable {
+        let type_decl = ctx.env.get_type(&inst.type_name.node);
         for inst_field in inst_fields {
-            if !inst_field.node.optional {
-                let fname = &inst_field.node.name.node;
+            let fname = &inst_field.node.name.node;
+            let required_in_type = type_decl
+                .map(|td| is_field_required_in_type(ctx, &td.node.body.node, fname))
+                .unwrap_or(!inst_field.node.optional);
+            if required_in_type {
                 if !fields.iter().any(|f| &f.node.name.node == fname) {
                     errors.push(Diagnostic::error(
                         refinement_span.clone(),

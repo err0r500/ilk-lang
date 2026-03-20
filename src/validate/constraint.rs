@@ -680,7 +680,17 @@ fn eval_constraint(
                         Err(ConstraintError::Failed(trace))
                     }
                 }
-                _ => Err(ConstraintError::Eval("in requires element and set".to_string())),
+                (EvalValue::BindingRef(key), EvalValue::List(items)) => {
+                    let found = items.iter().any(|item| matches!(item, EvalValue::BindingRef(k) if k == key));
+                    if found {
+                        Ok(EvalValue::Bool(true))
+                    } else {
+                        let trace = FailureTrace::new()
+                            .with_binding(format!("{} in {}", key, eval_value_to_string(&s)), "false");
+                        Err(ConstraintError::Failed(trace))
+                    }
+                }
+                _ => Err(ConstraintError::Eval("in requires element and set or list".to_string())),
             }
         }
 

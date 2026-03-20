@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::error::Diagnostic;
 use crate::span::S;
-use crate::validate::structural::ValidationContext;
+use crate::validate::structural::{ValidationContext, get_field_type_from_type_expr};
 
 pub fn validate_source(ctx: &ValidationContext, file: &File, errors: &mut Vec<Diagnostic>) {
     for inst in file.instances() {
@@ -166,6 +166,12 @@ fn validate_field_source_with_assocs(
         // since references don't carry data - only validate refinements
         let is_ref_list = is_reference_list(field_type);
 
+        // Get the element type for list types
+        let elem_type = match field_type {
+            TypeExpr::List(_, inner) => Some(&inner.node),
+            _ => None,
+        };
+
         for elem in elements {
             match &elem.node {
                 ListElement::Refinement(_name, elem_assocs, ref_fields) => {
@@ -173,7 +179,7 @@ fn validate_field_source_with_assocs(
                     let active_assocs = if elem_assocs.is_empty() { assocs } else { elem_assocs };
                     // Refinements introduce inline modifications that need source validation
                     for ref_field in ref_fields {
-                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, errors);
+                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
                     }
                 }
                 ListElement::BindingRef(name) => {
@@ -185,7 +191,7 @@ fn validate_field_source_with_assocs(
                     if let Some(ref_inst) = ctx.get_instance(name) {
                         if let Value::Struct(ref_fields) = &ref_inst.body.node {
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, parent_fields, assocs, errors);
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, assocs, elem_type, errors);
                             }
                         }
                     }
@@ -194,7 +200,7 @@ fn validate_field_source_with_assocs(
                     Value::Struct(fields) => {
                         // Inline structs need source validation
                         for field in fields {
-                            validate_refinement_field(ctx, field, sources, parent_fields, assocs, errors);
+                            validate_refinement_field(ctx, field, sources, parent_fields, assocs, elem_type, errors);
                         }
                     }
                     Value::BindingRef(name) => {
@@ -207,7 +213,7 @@ fn validate_field_source_with_assocs(
                             if let Value::Struct(ref_fields) = &ref_inst.body.node {
                                 for ref_field in ref_fields {
                                     validate_refinement_field(
-                                        ctx, ref_field, sources, parent_fields, assocs, errors,
+                                        ctx, ref_field, sources, parent_fields, assocs, elem_type, errors,
                                     );
                                 }
                             }
@@ -229,7 +235,7 @@ fn validate_field_source_with_assocs(
             }
             // Use nested field's assocs if present, otherwise use parent assocs
             let nested_assocs = if nested.node.assocs.is_empty() { assocs } else { &nested.node.assocs };
-            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
+            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, Some(field_type), errors);
         }
     } else if let Value::BindingRef(ref_name) | Value::Refinement(ref_name, _, _) = &inst_field.node.value.node {
         // Extract refinement info if present
@@ -241,7 +247,7 @@ fn validate_field_source_with_assocs(
 
         // Validate explicit refinement fields first
         for field in ref_fields {
-            validate_refinement_field(ctx, field, sources, parent_fields, active_assocs, errors);
+            validate_refinement_field(ctx, field, sources, parent_fields, active_assocs, Some(field_type), errors);
         }
 
         // Validate non-refined fields from referenced instance
@@ -254,7 +260,7 @@ fn validate_field_source_with_assocs(
                         continue;
                     }
                     let nested_assocs = if nested.node.assocs.is_empty() { active_assocs } else { &nested.node.assocs };
-                    validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
+                    validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, Some(field_type), errors);
                 }
             }
         }
@@ -318,6 +324,7 @@ fn validate_refinement_field(
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
     assocs: &[S<String>],
+    parent_type: Option<&TypeExpr>,
     errors: &mut Vec<Diagnostic>,
 ) {
     let name = &field.node.name.node;
@@ -353,8 +360,11 @@ fn validate_refinement_field(
         FieldOrigin::None => {
             // If this is a struct, validate children recursively
             if let Value::Struct(nested_fields) = &field.node.value.node {
+                let nested_type = parent_type
+                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
+                    .map(|t| &t.node);
                 for nested in nested_fields {
-                    validate_refinement_field(ctx, nested, sources, parent_fields, active_assocs, errors);
+                    validate_refinement_field(ctx, nested, sources, parent_fields, active_assocs, nested_type, errors);
                 }
                 // Don't error on parent - child errors are sufficient
                 return;
@@ -362,9 +372,12 @@ fn validate_refinement_field(
 
             // If this is a refinement, validate its fields
             if let Value::Refinement(ref_name, ref_assocs, ref_fields) = &field.node.value.node {
+                let nested_type = parent_type
+                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
+                    .map(|t| &t.node);
                 let ref_active_assocs = if ref_assocs.is_empty() { active_assocs } else { ref_assocs };
                 for ref_field in ref_fields {
-                    validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_active_assocs, errors);
+                    validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_active_assocs, nested_type, errors);
                 }
                 // Also validate non-refined fields from referenced instance
                 if let Some(ref_inst) = ctx.get_instance(ref_name) {
@@ -375,7 +388,7 @@ fn validate_refinement_field(
                                 continue;
                             }
                             let nested_assocs = if nested.node.assocs.is_empty() { ref_active_assocs } else { &nested.node.assocs };
-                            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, errors);
+                            validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, nested_type, errors);
                         }
                     }
                 }
@@ -383,29 +396,57 @@ fn validate_refinement_field(
             }
 
             // If this is a list, validate its elements recursively
-            // Note: we skip binding refs here because we don't have type context
-            // to know if this is a reference list ([]&Type). Reference lists should
-            // not validate their elements. If this list has @source, it will be
-            // validated properly by validate_field_source with type info.
             if let Value::List(elements) = &field.node.value.node {
+                // Resolve the field's type to check if it's a reference list
+                let field_type_expr = parent_type
+                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
+                    .map(|t| &t.node);
+                let is_ref_list = field_type_expr.map(|t| is_reference_list(t)).unwrap_or(true);
+
+                // For list types, get the element type
+                let elem_type = field_type_expr.and_then(|t| match t {
+                    TypeExpr::List(_, inner) => Some(&inner.node),
+                    _ => None,
+                });
+
                 for elem in elements {
                     match &elem.node {
-                        ListElement::BindingRef(_) => {
-                            // Skip - no type context to know if this is a reference list
+                        ListElement::BindingRef(ref_name) => {
+                            if is_ref_list {
+                                continue;
+                            }
+                            // Value list: validate referenced instance's fields
+                            if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
+                                    for ref_field in ref_fields {
+                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
+                                    }
+                                }
+                            }
                         }
                         ListElement::Refinement(_, elem_assocs, ref_fields) => {
                             let ref_assocs = if elem_assocs.is_empty() { active_assocs } else { elem_assocs };
                             for ref_field in ref_fields {
-                                validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_assocs, errors);
+                                validate_refinement_field(ctx, ref_field, sources, parent_fields, ref_assocs, elem_type, errors);
                             }
                         }
                         ListElement::Value(Value::Struct(fields)) => {
                             for f in fields {
-                                validate_refinement_field(ctx, f, sources, parent_fields, active_assocs, errors);
+                                validate_refinement_field(ctx, f, sources, parent_fields, active_assocs, elem_type, errors);
                             }
                         }
-                        ListElement::Value(Value::BindingRef(_)) => {
-                            // Skip - no type context to know if this is a reference list
+                        ListElement::Value(Value::BindingRef(ref_name)) => {
+                            if is_ref_list {
+                                continue;
+                            }
+                            // Value list: validate referenced instance's fields
+                            if let Some(ref_inst) = ctx.get_instance(ref_name) {
+                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
+                                    for ref_field in ref_fields {
+                                        validate_refinement_field(ctx, ref_field, sources, parent_fields, active_assocs, elem_type, errors);
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     }
