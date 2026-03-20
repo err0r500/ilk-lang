@@ -1,5 +1,5 @@
 import "./types.ilk"
-import "./createCart.ilk"
+import "./cmdAddItem.ilk"
 
 @main
-board = Board {changes [createCart]}
+board = Board {changes [addItem]}

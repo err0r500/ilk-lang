@@ -9,6 +9,9 @@ type Event = {...} & {
 }
 
 
+type Actor = {name Concrete<String>}
+
+
 type QueryItem = {
     @constraint all(tags, t => all(eventTypes, e => t in e.tags))
     eventTypes! []&Event
@@ -37,12 +40,13 @@ type HttpResponse = {
 
 
 type HttpEndpoint = {
-    method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+    method! GET | POST | DELETE | PUT | PATCH
 
     @constraint all(templateVars(path), v => v in keys(params))
     path! Concrete<String>
     params {...}
     body {...}
+    auth {...}
 
     responses! []HttpResponse
 }
@@ -51,8 +55,9 @@ type HttpEndpoint = {
 type ChangeSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
+    actor Actor
 
-    @source [endpoint.params, endpoint.body]
+    @source [endpoint.params, endpoint.body, endpoint.auth]
     command! Command
 
     @constraint all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))

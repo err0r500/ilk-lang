@@ -229,12 +229,20 @@ fn validate_field_source_with_assocs(
         let fields_to_skip = get_fields_to_skip(field_type, ctx);
 
         for nested in nested_fields {
-            // Skip fields with own @source or @out annotation - they're validated separately
-            if fields_to_skip.contains(&nested.node.name.node) {
-                continue;
-            }
             // Use nested field's assocs if present, otherwise use parent assocs
             let nested_assocs = if nested.node.assocs.is_empty() { assocs } else { &nested.node.assocs };
+            // Source root fields are declarations, but their children
+            // must still be validated against parent @source (both explicit
+            // mappings and implicit name+type matching)
+            if fields_to_skip.contains(&nested.node.name.node) {
+                if let Value::Struct(inner_fields) = &nested.node.value.node {
+                    for inner in inner_fields {
+                        let inner_assocs = if inner.node.assocs.is_empty() { nested_assocs } else { &inner.node.assocs };
+                        validate_refinement_field(ctx, inner, sources, parent_fields, inner_assocs, None, errors);
+                    }
+                }
+                continue;
+            }
             validate_refinement_field(ctx, nested, sources, parent_fields, nested_assocs, Some(field_type), errors);
         }
     } else if let Value::BindingRef(ref_name) | Value::Refinement(ref_name, _, _) = &inst_field.node.value.node {
@@ -728,15 +736,30 @@ fn check_implicit_source(
             if root == "assoc" {
                 return None;
             }
-            let source_field = parent_fields.iter().find(|f| f.node.name.node == root)?;
-            if let Value::Struct(source_fields) = &source_field.node.value.node {
-                let src_field = source_fields
-                    .iter()
-                    .find(|f| &f.node.name.node == field_name)?;
-                Some((root, src_field))
-            } else {
-                None
+            // Navigate the full source path to find the leaf struct
+            let source_path_parts: Vec<&str> = match &source.node {
+                SourcePath::Simple(name) => vec![name.as_str()],
+                SourcePath::Dotted(parts) => parts.iter().map(|s| s.as_str()).collect(),
+            };
+            let mut current_fields: &[S<InstanceField>] = parent_fields;
+            for part in &source_path_parts {
+                let f = current_fields.iter().find(|f| f.node.name.node == *part)?;
+                match &f.node.value.node {
+                    Value::Struct(fields) => current_fields = fields,
+                    Value::BindingRef(name) | Value::Refinement(name, _, _) => {
+                        let inst = ctx.get_instance(name)?;
+                        match &inst.body.node {
+                            Value::Struct(fields) => current_fields = fields,
+                            _ => return None,
+                        }
+                    }
+                    _ => return None,
+                }
             }
+            let src_field = current_fields
+                .iter()
+                .find(|f| &f.node.name.node == field_name)?;
+            Some((root, src_field))
         })
         .collect();
 
@@ -1015,7 +1038,7 @@ type Wrapper = {
 }
 ev = Event {userId String}
 wrapper = Wrapper {
-  outerFields {x Int}
+  outerFields {userId String}
   command {
     fields {userId String}
     emits [ev]
@@ -1023,7 +1046,8 @@ wrapper = Wrapper {
 }
 "#,
         );
-        // Should pass: ev.userId is found in command.fields, not wrapper.outerFields
+        // Should pass: ev.userId is found in command.fields,
+        // and fields.userId is implicitly matched against outerFields.userId
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
@@ -1045,7 +1069,7 @@ type Wrapper = {
 }
 ev = Event {userId String}
 wrapper = Wrapper {
-  outerFields {userId String}
+  outerFields {userId String, x Int}
   command {
     fields {x Int}
     emits [ev]
@@ -1056,7 +1080,11 @@ wrapper = Wrapper {
         // Should fail: ev.userId is NOT in command.fields (only has x)
         // Even though wrapper.outerFields has userId, that's the wrong context
         assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("No source found for field 'userId'"));
+        assert!(
+            errors.iter().any(|e| e.message.contains("No source found for field 'userId'")),
+            "Expected 'No source found for field userId', got: {:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1302,5 +1330,97 @@ endpoint = Endpoint {
 "#,
         );
         assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_mapped_in_source_root_field_validates_path() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Command = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+}
+type Slice = {
+    endpoint Endpoint
+    @source [endpoint.params, endpoint.body]
+    command Command
+}
+ev = Event {userId String}
+slice = Slice {
+    endpoint {
+        method "POST"
+        params {cartId Uuid}
+        body {description String}
+    }
+    command {
+        fields {
+            id Uuid = endpoint.params.id
+            name String = endpoint.body.name
+        }
+        emits [ev & {userId String = fields.id}]
+    }
+}
+"#,
+        );
+        assert!(!errors.is_empty(), "Expected errors for invalid source paths in source root fields");
+        let messages: Vec<&str> = errors.iter().map(|e| e.message.as_str()).collect();
+        assert!(
+            messages.iter().any(|m| m.contains("not found")),
+            "Expected 'not found' error, got: {:?}",
+            messages
+        );
+    }
+
+    #[test]
+    fn test_implicit_in_source_root_field_validates() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Command = {
+  fields {...}
+  @source [fields]
+  emits []Event
+}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+}
+type Slice = {
+    endpoint Endpoint
+    @source [endpoint.params, endpoint.body]
+    command Command
+}
+ev = Event {userId String}
+slice = Slice {
+    endpoint {
+        method "POST"
+        params {cartId Uuid}
+        body {description String}
+    }
+    command {
+        fields {
+            cartId Uuid
+            description String
+            shopperId String
+        }
+        emits [ev & {userId String = fields.cartId}]
+    }
+}
+"#,
+        );
+        assert!(!errors.is_empty(), "Expected error for unmatched field 'shopperId'");
+        assert!(
+            errors.iter().any(|e| e.message.contains("shopperId")),
+            "Expected error about 'shopperId', got: {:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 }

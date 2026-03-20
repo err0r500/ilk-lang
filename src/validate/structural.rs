@@ -426,7 +426,8 @@ fn validate_value_against_type(
                         ctx.path,
                     ));
                 }
-            } else {
+            } else if !type_matches_ref(name, expected_type, ctx.env) {
+                // Not an instance and not a valid union variant
                 errors.push(Diagnostic::error(
                     value.span.clone(),
                     format!("Unknown instance: {}", name),
