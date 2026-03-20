@@ -112,6 +112,7 @@ pub enum ConstraintExpr {
     Gt(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
     Ge(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
     Int(i64),
+    IsType(Box<S<ConstraintExpr>>, String), // isType(expr, TypeName)
 }
 
 // ============= Instance-Level AST (formerly kli/ast.rs) =============

@@ -244,6 +244,13 @@ fn constraint_expr<'a>(
                 .then_ignore(just(')'))
                 .map(|e| ConstraintExpr::Keys(Box::new(e)))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("isType(")
+                .ignore_then(expr.clone())
+                .then_ignore(ws().then(just(',')).then(ws()))
+                .then(ident())
+                .then_ignore(just(')'))
+                .map(|(e, type_name)| ConstraintExpr::IsType(Box::new(e), type_name.node))
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just('(')
                 .ignore_then(ws_nl())
                 .ignore_then(expr.clone())

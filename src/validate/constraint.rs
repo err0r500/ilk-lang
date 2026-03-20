@@ -719,6 +719,25 @@ fn eval_constraint(
             }
         }
 
+        ConstraintExpr::IsType(inner, type_name) => {
+            let val = eval_constraint(&inner.node, env, assocs, ctx)?;
+            let kind = type_kind(type_name, ctx);
+            let matches = match kind {
+                "list" => matches!(val, EvalValue::List(_)),
+                "struct" => matches!(val, EvalValue::Struct(_) | EvalValue::BindingRef(_)),
+                "bool" => matches!(val, EvalValue::Bool(_)),
+                "int" => matches!(val, EvalValue::Int(_)),
+                "string" => matches!(val, EvalValue::String(_)),
+                _ => {
+                    return Err(ConstraintError::Eval(format!(
+                        "isType: unknown type '{}'",
+                        type_name
+                    )))
+                }
+            };
+            Ok(EvalValue::Bool(matches))
+        }
+
         ConstraintExpr::Lt(left, right) => {
             eval_int_cmp(left, right, "<", env, assocs, ctx, |a, b| a < b)
         }
@@ -759,6 +778,21 @@ fn eval_int_cmp(
             "{} requires integer operands",
             op
         ))),
+    }
+}
+
+fn type_kind(type_name: &str, ctx: &ValidationContext) -> &'static str {
+    match ctx.env.get_type(type_name) {
+        Some(decl) => match &decl.node.body.node {
+            TypeExpr::List(_, _) => "list",
+            TypeExpr::Struct(_) | TypeExpr::Intersection(_, _) => "struct",
+            TypeExpr::Base(BaseType::Bool) | TypeExpr::LitBool(_) => "bool",
+            TypeExpr::Base(BaseType::Int) | TypeExpr::LitInt(_) => "int",
+            TypeExpr::Base(BaseType::String) | TypeExpr::LitString(_) => "string",
+            TypeExpr::Named(inner) => type_kind(inner, ctx),
+            _ => "unknown",
+        },
+        None => "unknown",
     }
 }
 
@@ -1102,5 +1136,98 @@ outer = Outer {
             "Expected instance error span, got {:?}",
             errors[0].span
         );
+    }
+
+    #[test]
+    fn test_is_type_struct() {
+        let errors = validate_constraints_src(
+            r#"
+type Inner = {x Int}
+type Foo = {
+    @constraint isType(val, Inner)
+    val Inner
+}
+inner = Inner {x Int}
+foo = Foo {val inner}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_is_type_list() {
+        let errors = validate_constraints_src(
+            r#"
+type Item = {x Int}
+type Items = []Item
+type Foo = {
+    @constraint isType(val, Items)
+    val []Item
+}
+i1 = Item {x Int}
+foo = Foo {val [i1]}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_is_type_mismatch() {
+        let errors = validate_constraints_src(
+            r#"
+type Resp = {status Int}
+type Foo = {
+    @constraint isType(val, Resp)
+    val []Resp
+}
+foo = Foo {val []}
+"#,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_conditional_constraint_skip_for_error_variant() {
+        // when then is a struct (error), the events constraint is vacuously skipped
+        let errors = validate_constraints_src(
+            r#"
+type Event = {...}
+type Resp = {status Int}
+type Emitter = {
+    @constraint isType(then, Resp) || all(then, e => e in emits)
+    emits []Event
+    then []Event | Resp
+}
+ev1 = Event {a String}
+ok = Emitter {
+    emits [ev1]
+    then { status 404 }
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_conditional_constraint_enforced_for_event_list() {
+        // when then is a list, the events constraint is enforced
+        let errors = validate_constraints_src(
+            r#"
+type Event = {...}
+type Resp = {status Int}
+type Emitter = {
+    @constraint isType(then, Resp) || all(then, e => e in emits)
+    emits []Event
+    then []Event | Resp
+}
+ev1 = Event {a String}
+ev2 = Event {b String}
+bad = Emitter {
+    emits [ev1]
+    then [ev2]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
     }
 }

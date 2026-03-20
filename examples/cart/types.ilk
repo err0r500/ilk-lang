@@ -62,7 +62,7 @@ type ChangeSlice = {
 
     @constraint all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
     @constraint all(scenarios, s => all(keys(s.when), k => k in keys(command.fields)))
-    @constraint all(scenarios, s => all(s.then, event => event in command.emits))
+    @constraint all(scenarios, s => isType(s.then, HttpResponse) || all(s.then, event => event in command.emits))
     scenarios []ChangeScenario
 }
 
@@ -72,7 +72,7 @@ type ChangeScenario = {
 
     given! []-Event
     when! {...}
-    then! []-Event
+    then []-Event | HttpResponse
 }
 
 
