@@ -76,13 +76,15 @@ type CommandScenario = {
 type Board = {changes! [1..]ChangeSlice}
 // Instance bindings
 
+
+
 userIdTag = Tag {userId String}
-
-
 userNameTag = Tag {userName String}
 
 
+
 otherTag = Tag "other"
+
 
 
 userRegistered = Event {

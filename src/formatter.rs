@@ -39,10 +39,10 @@ impl<'a> Formatter<'a> {
         newline_count.saturating_sub(1)
     }
 
-    /// Emit blank lines (capped at 2) based on original source
+    /// Emit blank lines (capped at 1) based on original source
     fn emit_preserved_blank_lines(&mut self, next_pos: usize) {
         let blank_lines = self.count_blank_lines_between(self.last_pos, next_pos);
-        let capped = blank_lines.min(2);
+        let capped = blank_lines.min(1);
         for _ in 0..capped {
             self.writeln();
         }
@@ -100,10 +100,9 @@ impl<'a> Formatter<'a> {
             self.emit_comments_before(item.span.start);
 
             if !first {
-                // Always emit at least one blank line between items
+                // Two blank lines between top-level items
                 self.writeln();
-                // Preserve additional blank lines from original (capped at 2 total)
-                self.emit_preserved_blank_lines(item.span.start);
+                self.writeln();
             }
             first = false;
 
