@@ -52,15 +52,28 @@ addItem = ChangeSlice {
             }
         ]
 
-        emits [cartCreated, itemAdded]
+        emits [
+            cartCreated
+            itemAdded
+        ]
     }
 
     scenarios [
-		{
-			name "OK: Add item automatically opens the cart"
-			given [cartCreated & {cartId "abc"}]
-			when {}
-			then [cartCreated, itemAdded]
-		},
+        {
+            name "OK: Add item automatically opens the cart"
+            given [cartCreated & {cartId "abc"}]
+            when {}
+            then [
+                cartCreated
+                itemAdded
+            ]
+        },
+
+        {
+            name "Err: duplicate cart creation"
+            given [cartCreated & {cartId "abc"}]
+            when {}
+            then {error "already created"}
+        }
     ]
 }
