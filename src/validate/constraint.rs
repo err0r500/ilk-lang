@@ -428,78 +428,68 @@ fn eval_constraint(
             }
         }
 
-        ConstraintExpr::ForAll(col, var, body) => {
-            let col_val = env
-                .get(col)
-                .ok_or_else(|| ConstraintError::Eval(format!("Unknown collection: {}", col)))?;
-
-            if let EvalValue::List(items) = col_val {
-                for item in items {
-                    let mut inner_env = env.clone();
-                    inner_env.insert(var.clone(), item.clone());
-                    let item_assocs = assocs_for_item(item, ctx);
-                    match eval_constraint(&body.node, &inner_env, &item_assocs, ctx) {
-                        Ok(EvalValue::Bool(false)) => {
-                            let trace = FailureTrace::new()
-                                .with_binding(var, eval_value_to_string(item));
-                            return Err(ConstraintError::Failed(trace));
-                        }
-                        Ok(EvalValue::Bool(true)) => continue,
-                        Ok(_) => return Err(ConstraintError::Eval("forall body must be boolean".to_string())),
-                        Err(ConstraintError::Failed(inner_trace)) => {
-                            let trace = FailureTrace::new()
-                                .with_binding(var, eval_value_to_string(item))
-                                .merge(inner_trace);
-                            return Err(ConstraintError::Failed(trace));
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
-                Ok(EvalValue::Bool(true))
-            } else {
-                Err(ConstraintError::Eval(format!("{} is not a list", col)))
-            }
-        }
-
-        ConstraintExpr::ForAllExpr(col_expr, var, body) => {
+        ConstraintExpr::ForAll(col_expr, var, body) => {
             let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
-            let col_str = eval_value_to_string(&col_val);
 
-            if let EvalValue::Set(items) = col_val {
-                for item in &items {
-                    let mut inner_env = env.clone();
-                    inner_env.insert(var.clone(), EvalValue::String(item.clone()));
-
-                    match eval_constraint(&body.node, &inner_env, assocs, ctx) {
-                        Ok(EvalValue::Bool(false)) => {
-                            let trace = FailureTrace::new()
-                                .with_binding(var, format!("\"{}\"", item));
-                            return Err(ConstraintError::Failed(trace));
+            match col_val {
+                EvalValue::List(ref items) => {
+                    for item in items {
+                        let mut inner_env = env.clone();
+                        inner_env.insert(var.clone(), item.clone());
+                        let item_assocs = assocs_for_item(item, ctx);
+                        match eval_constraint(&body.node, &inner_env, &item_assocs, ctx) {
+                            Ok(EvalValue::Bool(false)) => {
+                                let trace = FailureTrace::new()
+                                    .with_binding(var, eval_value_to_string(item));
+                                return Err(ConstraintError::Failed(trace));
+                            }
+                            Ok(EvalValue::Bool(true)) => continue,
+                            Ok(_) => return Err(ConstraintError::Eval("forall body must be boolean".to_string())),
+                            Err(ConstraintError::Failed(inner_trace)) => {
+                                let trace = FailureTrace::new()
+                                    .with_binding(var, eval_value_to_string(item))
+                                    .merge(inner_trace);
+                                return Err(ConstraintError::Failed(trace));
+                            }
+                            Err(e) => return Err(e),
                         }
-                        Ok(EvalValue::Bool(true)) => continue,
-                        Ok(_) => return Err(ConstraintError::Eval("forall body must be boolean".to_string())),
-                        Err(ConstraintError::Failed(inner_trace)) => {
-                            let trace = FailureTrace::new()
-                                .with_binding(format!("iterating over {}", col_str), format!("failed at \"{}\"", item))
-                                .merge(inner_trace);
-                            return Err(ConstraintError::Failed(trace));
-                        }
-                        Err(e) => return Err(e),
                     }
+                    Ok(EvalValue::Bool(true))
                 }
-                Ok(EvalValue::Bool(true))
-            } else {
-                Err(ConstraintError::Eval("ForAllExpr collection must be a set".to_string()))
+                EvalValue::Set(ref items) => {
+                    let col_str = eval_value_to_string(&col_val);
+                    for item in items {
+                        let mut inner_env = env.clone();
+                        inner_env.insert(var.clone(), EvalValue::String(item.clone()));
+
+                        match eval_constraint(&body.node, &inner_env, assocs, ctx) {
+                            Ok(EvalValue::Bool(false)) => {
+                                let trace = FailureTrace::new()
+                                    .with_binding(var, format!("\"{}\"", item));
+                                return Err(ConstraintError::Failed(trace));
+                            }
+                            Ok(EvalValue::Bool(true)) => continue,
+                            Ok(_) => return Err(ConstraintError::Eval("forall body must be boolean".to_string())),
+                            Err(ConstraintError::Failed(inner_trace)) => {
+                                let trace = FailureTrace::new()
+                                    .with_binding(format!("iterating over {}", col_str), format!("failed at \"{}\"", item))
+                                    .merge(inner_trace);
+                                return Err(ConstraintError::Failed(trace));
+                            }
+                            Err(e) => return Err(e),
+                        }
+                    }
+                    Ok(EvalValue::Bool(true))
+                }
+                _ => Err(ConstraintError::Eval("forall collection must be a list or set".to_string()))
             }
         }
 
-        ConstraintExpr::Exists(col, var, body) => {
-            let col_val = env
-                .get(col)
-                .ok_or_else(|| ConstraintError::Eval(format!("Unknown collection: {}", col)))?;
+        ConstraintExpr::Exists(col_expr, var, body) => {
+            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
 
             if let EvalValue::List(items) = col_val {
-                for item in items {
+                for item in &items {
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
                     let item_assocs = assocs_for_item(item, ctx);
@@ -510,18 +500,16 @@ fn eval_constraint(
                 }
                 Ok(EvalValue::Bool(false))
             } else {
-                Err(ConstraintError::Eval(format!("{} is not a list", col)))
+                Err(ConstraintError::Eval("exists collection must be a list".to_string()))
             }
         }
 
-        ConstraintExpr::Unique(col, var, body) => {
-            let col_val = env
-                .get(col)
-                .ok_or_else(|| ConstraintError::Eval(format!("Unknown collection: {}", col)))?;
+        ConstraintExpr::Unique(col_expr, var, body) => {
+            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
 
             if let EvalValue::List(items) = col_val {
                 let mut seen = HashSet::new();
-                for item in items {
+                for item in &items {
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
 
@@ -536,19 +524,17 @@ fn eval_constraint(
                 }
                 Ok(EvalValue::Bool(true))
             } else {
-                Err(ConstraintError::Eval(format!("{} is not a list", col)))
+                Err(ConstraintError::Eval("unique collection must be a list".to_string()))
             }
         }
 
-        ConstraintExpr::Count(col) => {
-            let col_val = env
-                .get(col)
-                .ok_or_else(|| ConstraintError::Eval(format!("Unknown collection: {}", col)))?;
+        ConstraintExpr::Count(col_expr) => {
+            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
 
             if let EvalValue::List(items) = col_val {
                 Ok(EvalValue::Int(items.len() as i64))
             } else {
-                Err(ConstraintError::Eval(format!("{} is not a list", col)))
+                Err(ConstraintError::Eval("count argument must be a list".to_string()))
             }
         }
 

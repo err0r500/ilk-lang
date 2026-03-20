@@ -205,16 +205,7 @@ impl<'a> Formatter<'a> {
             }
             ConstraintExpr::ForAll(col, var, body) => {
                 self.write("forall(");
-                self.write(col);
-                self.write(", ");
-                self.write(var);
-                self.write(" => ");
-                self.format_constraint_expr(body);
-                self.write(")");
-            }
-            ConstraintExpr::ForAllExpr(col_expr, var, body) => {
-                self.write("forall(");
-                self.format_constraint_expr(col_expr);
+                self.format_constraint_expr(col);
                 self.write(", ");
                 self.write(var);
                 self.write(" => ");
@@ -223,7 +214,7 @@ impl<'a> Formatter<'a> {
             }
             ConstraintExpr::Exists(col, var, body) => {
                 self.write("exists(");
-                self.write(col);
+                self.format_constraint_expr(col);
                 self.write(", ");
                 self.write(var);
                 self.write(" => ");
@@ -232,7 +223,7 @@ impl<'a> Formatter<'a> {
             }
             ConstraintExpr::Unique(col, var, body) => {
                 self.write("unique(");
-                self.write(col);
+                self.format_constraint_expr(col);
                 self.write(", ");
                 self.write(var);
                 self.write(" => ");
@@ -241,7 +232,7 @@ impl<'a> Formatter<'a> {
             }
             ConstraintExpr::Count(col) => {
                 self.write("count(");
-                self.write(col);
+                self.format_constraint_expr(col);
                 self.write(")");
             }
             ConstraintExpr::Assoc(e, arg) => {

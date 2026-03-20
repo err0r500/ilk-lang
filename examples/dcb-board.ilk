@@ -3,20 +3,18 @@
 type Tag = {_ String} | Concrete<String>
 
 
-
 type Event = {...} & {
     timestamp Int
     tags []&Tag
 }
 
 
-
 type QueryItem = {
     @constraint forall(tags, t => forall(eventTypes, e => t in e.tags))
     eventTypes! []&Event
+
     tags []Tag
 }
-
 
 
 type Command = {
@@ -30,12 +28,10 @@ type Command = {
 }
 
 
-
 type HttpResponse = {
     status! Concrete<Int>
     body {...}
 }
-
 
 
 type HttpEndpoint = {
@@ -50,7 +46,6 @@ type HttpEndpoint = {
 }
 
 
-
 type ChangeSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
@@ -58,12 +53,13 @@ type ChangeSlice = {
     @source [endpoint.params, endpoint.body]
     command! Command
 
-    scenarios []CommandScenario
+    @constraint forall(scenarios, s => forall(s.given, g => exists(command.query, q => g in q.eventTypes)))
+    @constraint forall(scenarios, s => forall(s.then, t => t in command.emits))
+    scenarios []ChangeScenario
 }
 
 
-
-type CommandScenario = {
+type ChangeScenario = {
     name! Concrete<String>
 
     given! []-Event
@@ -72,19 +68,16 @@ type CommandScenario = {
 }
 
 
-
 type Board = {changes! [1..]ChangeSlice}
-// Instance bindings
-
 
 
 userIdTag = Tag {userId String}
-userNameTag = Tag {userName String}
 
+
+userNameTag = Tag {name String}
 
 
 otherTag = Tag "other"
-
 
 
 userRegistered = Event {
@@ -97,6 +90,9 @@ userRegistered = Event {
     ]
 }
 
+otherEvent = Event {
+    id Uuid
+}
 
 
 registerUser = ChangeSlice {
@@ -133,7 +129,7 @@ registerUser = ChangeSlice {
             }
             {
                 eventTypes [userRegistered]
-                tags [userNameTag & {userName String = fields.name}]
+                tags [userNameTag]
             }
         ]
 
@@ -147,7 +143,6 @@ registerUser = ChangeSlice {
         then [userRegistered & {id "123"}]
     }]
 }
-
 
 
 @main
