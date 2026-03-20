@@ -283,18 +283,16 @@ type Bag = {
     contents! [1..3]Item
 }`,
   instances: [
-    { label: 'One item', expect: 'pass', code: `item = Item "apple"
-bag  = Bag { contents [item] }` },
-    { label: 'Three items (max)', expect: 'pass', code: `i1 = Item "apple"
-i2 = Item "cherry"
-i3 = Item "peach"
-bag = Bag { contents [i1, i2, i3] }` },
+    { label: 'One item', expect: 'pass', code: `
+bag  = Bag {
+    contents ["apple", "orange"]
+}` },
     { label: 'Empty — below minimum', expect: 'fail', code: `bag = Bag { contents [] }` },
-    { label: 'Four items — above maximum', expect: 'fail', code: `i1 = Item "a"
-i2 = Item "b"
-i3 = Item "c"
-i4 = Item "d"
-bag = Bag { contents [i1, i2, i3, i4] }` },
+    { label: 'Four items — above maximum', expect: 'fail', code: `
+bag = Bag {
+    contents ["1", "2", "3", "4"]
+}`
+},
   ]
 }
 
@@ -583,7 +581,7 @@ Think of it as a catalog: types define what an *Event* is in the abstract;
 instance bindings say "in *my* system, the specific events are `userRegistered` and
 `orderPlaced`."
 
----
+
 
 ## Comments
 
@@ -594,12 +592,12 @@ Single-line comments only, using `//`:
 userIdTag = Tag {userId String} // inline comment
 ```
 
----
+
 
 ## Base types
 
 | Token | Description |
-|-------|-------------|
+|-|-|
 | `*` | Wildcard — matches any type. Usable as a field type or in struct cardinality notation. |
 | `Bool` | Boolean |
 | `Int` | Integer |
@@ -613,7 +611,7 @@ userIdTag = Tag {userId String} // inline comment
 `*` can be used as a field type (any concrete type or value is accepted) or in struct
 cardinality notation like `{_}` (shorthand for `{_ *}`).
 
----
+
 
 ## Type declarations
 
@@ -628,14 +626,37 @@ Type names start with a capital letter.
 Declarations may be annotated : annotations appear on the line immediately
 before the declaration they annotate.
 
----
+
+## Instance bindings
+
+A binding assigns a name to a typed instance:
+
+```ilk
+name = TypeName body
+```
+
+Bindings are:
+- **Top-level only** — not nested inside other constructs
+- **Unordered** — order does not matter for validation
+- **Unique** — each name may be declared at most once
+
+Names follow standard identifier rules and may start with lowercase or uppercase.
+
+```ilk
+userIdTag      = Parametrized {userId String}
+simpleTag      = Unique "simple-tag"
+userRegistered = Event<userIdTag> {
+    id   String
+    name String
+}
+```
 
 ## Value constraint levels
 
 Three forms express how tightly a field's value is constrained:
 
 | Form | Constraint | Meaning |
-|------|------------|---------|
+|--|--|--|
 | `String`, `Int`, … | Open | Instance must accept any value of that type |
 | `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the type does not prescribe which |
 | `"hello"`, `42`, `true`, … | Type-fixed | Only this exact value is valid |
@@ -649,19 +670,9 @@ Three forms express how tightly a field's value is constrained:
 > **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
 > allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
 
-Literal types are most useful in union positions:
-
-<TypeExample :example="exLitteralsUnion" />
-
----
-
 ## Struct types
 
-Structs have named fields. The **anonymous-field shorthand** uses `_` as a placeholder
-for "a field of any name":
-
-<TypeExample :example="exStruct" />
-
+Structs have named fields.
 
 ### Fields declaration
 Fields are separated by **newlines or commas inline**:
@@ -675,11 +686,16 @@ Fields are separated by **newlines or commas inline**:
 { id Uuid, name String }
 ```
 
-### Optional, Required and additional fields
+### Declaration
+The **anonymous-field shorthand** uses `_` as a placeholder for "a field of any name":
+
+<TypeExample :example="exStruct" />
+
+### Optional, Required and Additional fields
 
 <TypeExample :example="exStruct2" />
 
-### Intersection Types
+### Struct Intersection
 
 `A & B` produces a type whose instances must satisfy **both** `A` and `B`. All fields
 from both sides are merged into a single struct.
@@ -688,8 +704,6 @@ from both sides are merged into a single struct.
 <TypeExample :example="exIntersection" />
 
 NB : Reference types (`&T`) cannot participate in intersections.
-
----
 
 ## Union types
 
@@ -716,13 +730,11 @@ same shape, the name distinguishes them:
 
 <TypeExample :example="exNamedUnion" />
 
----
-# DRAFT DOCUMENTATION BELOW
 
 ## List types
 
 | Syntax | Meaning |
-|--------|---------|
+|--|--|
 | `[]T` | 0+ elements |
 | `[N]T` | exactly N elements |
 | `[N..]T` | N+ elements |
@@ -750,14 +762,18 @@ List values in instances are separated by **commas** (or newlines):
 
 <TypeExample :example="exList" />
 
----
+## >>> DRAFT DOCUMENTATION BELOW
 
-## Reference types
+
+## Reference types (add to advanced topic, after @source)
 
 `&T` — a reference to a binding of type `T`.
 
 Reference types point to an existing binding without instantiating it or flowing data
 through it. The validator checks that the referenced binding exists and is of the correct type.
+
+The main purpose of reference type is to be able to use them in overall validation
+without them participating in the data flow.
 
 ```ilk
 &Event      // reference to an Event binding
@@ -771,8 +787,6 @@ through it. The validator checks that the referenced binding exists and is of th
 - No data flows through references — `@source` checks do not apply
 
 <TypeExample :example="exRef" />
-
----
 
 ## Refinable type references
 
@@ -800,9 +814,9 @@ scenarios [
 Without the `-` prefix, providing concrete values in a refinement is an error. With `-`,
 the validator allows concrete literals for open fields in the refinement struct.
 
----
 
----
+
+
 
 ## Subtyping
 
@@ -836,20 +850,20 @@ References are covariant — `&S` is a subtype of `&T` when `S` is a subtype of 
 &Event            // accepts reference to Event or Event subtype
 ```
 
----
+
 
 ## Annotations
 
 Annotations appear on the line immediately before the declaration they annotate.
 
 | Annotation | Valid target | Meaning |
-|---|---|---|
+|--|--|--|
 | `@main` | instance binding | Entry point — the file is validated starting from this instance |
-| `@assoc [T]` | type declaration | Instances may carry associated values of type `T` |
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
-| `@out` | field | Field is an output — exempt from `@source` checks, can be referenced by other `@source` |
 | `@constraint <expr>` | type body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field | Implementation hint preserved in AST; not stripped during parsing |
+| `@assoc [T]` | type declaration | (deprecated, in favor of ref) Instances may carry associated values of type `T` |
+| `@out` | field | (maybe deprecate also, in favor of ref) Field is an output — exempt from `@source` checks, can be referenced by other `@source` |
 
 ### `@main`
 
@@ -945,7 +959,7 @@ Direct field mapping (implicit or explicit `= path`) requires the source type to
 **subtype** of the target type. Narrowing mappings require `compute()`.
 
 | Mapping | Syntax | Type rule | Example |
-|---|---|---|---|
+|--|--|--|--|
 | Author-chosen | `field "hello"` / `Concrete<T>` value | n/a | no source check |
 | Generated | `field Type*` | n/a | no source check |
 | Direct (implicit) | `field Type` | source ≤ target | `Uuid` → `String` ✓ |
@@ -1042,7 +1056,7 @@ Use `@doc` to provide implementation hints — transformation semantics, generat
 strategy, domain context for AI or human implementers. Multiple `@doc` annotations on the
 same element concatenate.
 
----
+
 
 ## Field origins
 
@@ -1051,7 +1065,7 @@ provably traceable to the listed sources. Three **origin annotations** override 
 implicit resolution:
 
 | Form | Meaning |
-|---|---|
+|||
 | `fieldName Type*` | **Generated** — value is auto-produced at runtime; provenance not checked |
 | `fieldName Type = path` | **Mapped** — value copied from a dot-path in a source field |
 | `fieldName Type = compute(path, ...)` | **Computed** — derived from multiple source fields |
@@ -1088,42 +1102,9 @@ require runtime validation.
 
 <TypeExample :example="exOrigins" />
 
----
 
-## Instance bindings
 
-A binding assigns a name to a typed instance:
 
-```ilk
-name = TypeName body
-```
-
-Bindings are:
-- **Top-level only** — not nested inside other constructs
-- **Unordered** — order does not matter for validation
-- **Unique** — each name may be declared at most once
-
-Names follow standard identifier rules and may start with lowercase or uppercase.
-
-```ilk
-userIdTag      = Parametrized {userId String}
-simpleTag      = Unique "simple-tag"
-userRegistered = Event<userIdTag> {
-    id   String
-    name String
-}
-```
-
-The `@main` annotation on a binding designates the file's entry point:
-
-```ilk
-@main
-board = Board {
-    commands [registerUser]
-}
-```
-
----
 
 ## Struct values
 
@@ -1141,78 +1122,7 @@ A struct value is a `{ ... }` block of named fields separated by **newlines**:
 Each field is a `name value` pair. The value is a type name, a literal, a reference to a
 binding, or another nested struct/list.
 
----
 
-## List values
-
-A list value is `[ ... ]` with elements separated by **commas** or **newlines**:
-
-```ilk
-[userRegistered, other]
-
-[
-    userRegistered
-    other
-]
-```
-
-All elements must conform to the type declared in the schema.
-
-**List cardinality validation:**
-
-| Type form | Valid instance |
-|-----------|----------------|
-| `[]T` | any count |
-| `[N]T` | exactly N |
-| `[N..]T` | N or more |
-| `[N..M]T` | N to M (inclusive) |
-| `[..M]T` | 0 to M |
-
----
-
-## Union values
-
-### Named type branches
-
-When a union branch is a named type, write the type name in the instance value:
-
-```ilk
-// type: type Status = Started | Finished
-current = Started { at Timestamp }
-
-// inline in a list:
-history [
-    Started  { at Timestamp }
-    Finished { at Timestamp }
-]
-```
-
-### Anonymous struct branches
-
-When a union branch is an anonymous struct type (`{_ String}`, `{...}`, etc.), supply a
-struct value directly — no type name prefix:
-
-```ilk
-// type Tag = {_ String} | Concrete<String>
-userIdTag = Tag {userId String}   // {_ String} branch — struct value
-simpleTag = Tag "simple-tag"      // Concrete<String> branch — literal
-```
-
-### Literal and `Concrete<T>` branches
-
-Literal branches and `Concrete<T>` branches are matched by the value's syntax — a string
-literal satisfies a `Concrete<String>` branch, an integer literal satisfies a `Concrete<Int>`
-branch, etc.:
-
-```ilk
-// type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
-method "GET"
-
-// type Verb = "POST" | "DELETE" | "PUT" | "PATCH"
-verb "DELETE"
-```
-
----
 
 ## Reference values
 
@@ -1226,7 +1136,7 @@ eventTypes [cartCreated, itemAdded]
 The binding must exist in the file and be of type `T`. References are not strings —
 `"cartCreated"` (quoted) would not satisfy `&Event`. No data flows through references.
 
----
+
 
 ## Associated values
 
@@ -1252,7 +1162,7 @@ The angle-bracket list is **not** a generic type parameter. It is a set of refer
 named bindings. The `.assoc(t)` predicate in `@constraint` expressions tests membership
 in this set.
 
----
+
 
 ## Optional fields
 
@@ -1308,7 +1218,7 @@ emits [userRegistered & {
 
 <TypeExample :example="exOptional" />
 
----
+
 
 ## Anonymous struct instantiation
 
@@ -1330,7 +1240,7 @@ query [
 This is only valid when the expected element type is a single unambiguous named type
 (not a union). For union-typed lists, write the branch name explicitly.
 
----
+
 
 ## Imports
 
@@ -1344,7 +1254,7 @@ import "./common-tags.ilk" as tags   // namespaced: tags.SomeType
 All types in a file are automatically exported — no explicit export annotation needed.
 Files without a `@main` instance are pure type libraries.
 
----
+
 
 ## Constraint expression language
 
@@ -1353,7 +1263,7 @@ A minimal expression language for `@constraint` predicates.
 ### Built-in functions
 
 | Expression | Meaning |
-|---|---|
+|--|--|
 | `forall(col, x => body)` | True if `body` holds for every element `x` in collection `col` |
 | `exists(col, x => body)` | True if `body` holds for at least one element `x` in collection `col` |
 | `unique(col, x => expr)` | True if `expr` yields distinct values for all elements in `col` |
@@ -1365,7 +1275,7 @@ A minimal expression language for `@constraint` predicates.
 ### Operators
 
 | Operator | Meaning |
-|---|---|
+|--|--|
 | `&&` | Logical and |
 | `\|\|` | Logical or |
 | `!` | Logical not |
@@ -1383,283 +1293,3 @@ Examples:
 ```
 
 User-defined predicates are not currently supported.
-
----
-
-## Separator rules (summary)
-
-One rule everywhere: **newlines, or commas where elements fit on one line**.
-
-| Context | Separator |
-|---|---|
-| Struct fields (`{ ... }`) | Newlines (or commas inline) |
-| Type body entries | Newlines |
-| List values (`[ ... ]`) | Commas or newlines |
-| Annotation arguments (`[...]`) | Commas or newlines |
-
----
-
-## Full example
-
-### DCB board (`dcb-board.ilk`)
-
-```ilk
-// Type declarations
-
-// Tag: either a single-field String struct or a concrete string literal.
-// Anonymous struct and Concrete<T> branches are valid directly in the union.
-type Tag = {_ String} | Concrete<String>
-
-// Event has any fields plus a required timestamp; instances carry Tag associations.
-@assoc [Tag]
-type Event = {...} & {timestamp Int}
-
-// QueryItem: every event in eventTypes must be associated with every tag in tags.
-type QueryItem = {
-    @constraint forall(tags, t => forall(eventTypes, e => e.assoc(t)))
-    eventTypes []&Event   // list of references to Event bindings
-    tags []Tag
-}
-
-// Command: fields drive both query and emits via @source.
-type Command = {
-    fields {...}
-
-    @source [fields]
-    query []QueryItem
-
-    @source [fields]
-    emits []Event
-}
-
-type HttpResponse = {
-    status Concrete<Int>
-    body {...}
-}
-
-type HttpEndpoint = {
-    method "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
-
-    @constraint forall(templateVars(path), v => v in keys(params))
-    path Concrete<String>
-    params {...}
-    body {...}
-
-    responses []HttpResponse
-}
-
-// ChangeSlice bundles an endpoint and a command; endpoint drives command via @source.
-type ChangeSlice = {
-    name Concrete<String>
-    endpoint HttpEndpoint
-
-    @source [endpoint]
-    command Command
-
-    scenarios []CommandScenario
-}
-
-// CommandScenario: a BDD-style test scenario.
-type CommandScenario = {
-    name Concrete<String>
-
-    given []-Event   // refinable Event references for preconditions
-    when Command
-    then []-Event    // refinable Event references for postconditions
-}
-
-// Board is the entry point.
-type Board = {
-    changes []ChangeSlice
-}
-
-
-// Instance bindings
-
-// Tag bindings — {_ String} branch: single-field structs
-userIdTag   = Tag {userId String}
-userNameTag = Tag {name String}
-
-// Event bindings with their associated tags.
-userRegistered = Event<userIdTag, userNameTag> {
-    id   Uuid
-    name String
-    ts   Timestamp
-}
-
-// ChangeSlice instance bundling endpoint + command + scenarios.
-registerUser = ChangeSlice {
-    name "registerUser"
-
-    // HttpEndpoint value — type name omitted (anonymous struct matches structurally)
-    endpoint {
-        path   "/users/{id}"
-        method "POST"
-        params { id Uuid }
-        body   { name String }
-    }
-
-    // Command value — @source [endpoint] is in effect.
-    // fields are mapped explicitly from endpoint.params and endpoint.body.
-    command {
-        fields {
-            id   Uuid   = endpoint.params.id
-            name String = endpoint.body.name
-        }
-
-        // @source [fields] — eventTypes is []&Event (references, no @source check)
-        query [
-            {
-                eventTypes [userRegistered],
-                tags [userIdTag & {userId Uuid = fields.id}]   // refinable tag
-            },
-            {
-                eventTypes [userRegistered],
-                tags [userNameTag & {name String = fields.name}]
-            }
-        ]
-
-        // @source [fields] — ts is generated, other fields trace implicitly.
-        emits [userRegistered & {ts Timestamp*}]
-    }
-
-    scenarios [
-        {
-            name  "happy path",
-            given [userRegistered & {id 123}, userRegistered]
-            when  {}
-            then  [userRegistered & {id "123"}]
-        }
-    ]
-}
-
-@main
-board = Board {
-    changes [registerUser]
-}
-```
-
----
-
-## API endpoint example
-
-### Schema and instances (`api.ilk`)
-
-```ilk
-// Type declarations
-
-// HTTP method union — literal branches matched by value syntax
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
-
-// Database method abstraction — returns is an output field
-type DbMethod = {
-    name    Concrete<String>
-    args    {...}
-
-    @out
-    returns {...}
-}
-
-// Response: each endpoint declares one or more possible responses
-type Response = {
-    status Concrete<Int>
-    body   {...}
-}
-
-// API endpoint with data flow constraints
-type Endpoint = {
-    @constraint forall(templateVars(path), v => v in keys(params))
-    path    Concrete<String>
-    method  HttpMethod
-    params  {...}
-    body    {...}
-
-    @source [params, body]
-    db DbMethod
-
-    @source [params, body, db.returns]
-    responses []Response
-}
-
-type Api = {
-    endpoints []Endpoint
-}
-
-
-// Instance bindings
-
-insertUser = DbMethod {
-    name    "users.insert"
-    args    {name String, email String}
-    returns {id Uuid, name String, email String}
-}
-
-findUser = DbMethod {
-    name    "users.findById"
-    args    {id Uuid}
-    returns {id Uuid, name String, email String}
-}
-
-createUser = Endpoint {
-    path   "/users"
-    method "POST"
-    body   {name String, email String}
-
-    // @source [params, body] in effect — db.args traces to body
-    db insertUser & {
-        name  String = body.name
-        email String = body.email
-    }
-
-    // status codes and static messages are Concrete<T> — exempt from @source
-    responses [
-        {
-            status 201
-            body {
-                id    Uuid   = db.returns.id
-                name  String = db.returns.name
-                email String = db.returns.email
-            }
-        }
-        {
-            status 422
-            body { message "Validation failed" }
-        }
-    ]
-}
-
-getUser = Endpoint {
-    path   "/users/{id}"
-    method "GET"
-    params {id Uuid}
-
-    db findUser & {
-        id Uuid = params.id
-    }
-
-    responses [
-        {
-            status 200
-            body {
-                id   Uuid   = db.returns.id
-                name String = db.returns.name
-            }
-        }
-        {
-            status 404
-            body { message "User not found" }
-        }
-    ]
-}
-
-@main
-api = Api {
-    endpoints [createUser, getUser]
-}
-```
-
-Data flows through each endpoint:
-- `params`/`body` → `@source` → `db.args`
-- `db.returns` → `@source` → `responses[*].body` (for data-carrying responses)
-- `Concrete<Int>` status codes and `Concrete<String>` error messages are author-chosen and
-  exempt from `@source`
