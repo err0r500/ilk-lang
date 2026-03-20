@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod emit;
+pub mod emit_schema;
 pub mod error;
 pub mod formatter;
 #[cfg(feature = "cli")]
