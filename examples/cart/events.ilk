@@ -1,0 +1,17 @@
+import "./types.ilk"
+import "./tags.ilk"
+
+
+userRegistered = Event {
+    id Uuid
+    name String
+    ts Timestamp
+
+    tags [
+        userIdTag
+        userNameTag
+    ]
+}
+
+
+otherEvent = Event {id Uuid}

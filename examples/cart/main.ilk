@@ -1,0 +1,5 @@
+import "./types.ilk"
+import "./createCart.ilk"
+
+@main
+board = Board {changes [registerUser]}

@@ -1,0 +1,52 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+
+registerUser = ChangeSlice {
+    name "registerUser"
+
+    endpoint {
+        path "/users/{id}"
+        method "POST"
+        params {id Uuid}
+        body {name String}
+
+        responses [
+            {
+                status 201
+                body {
+                    id Uuid
+                    name String
+                }
+            }
+            {status 404}
+        ]
+    }
+
+    command {
+        fields {
+            id Uuid = endpoint.params.id
+            name String = endpoint.body.name
+        }
+
+        query [
+            {
+                eventTypes [userRegistered]
+                tags [userIdTag & {userId Uuid = fields.id}]
+            }
+            {
+                eventTypes [userRegistered]
+                tags [userNameTag]
+            }
+        ]
+
+        emits [userRegistered & {id Uuid*, name String = fields.name, ts Timestamp*}]
+    }
+
+    scenarios [{
+        name "happy path"
+        given [userRegistered & {id "124"}]
+        when {id "bla"}
+        then [userRegistered & {id "123"}]
+    }]
+}

@@ -130,7 +130,7 @@ fn run_format(file: &PathBuf) {
             print!("{}", formatted);
         }
         Err(errors) => {
-            print_errors(&errors, file);
+            print_errors(&errors);
             std::process::exit(1);
         }
     }
@@ -150,7 +150,7 @@ fn run_check(file: &PathBuf, json: bool) {
             if json {
                 JsonOutput::error(errors).print();
             } else {
-                print_errors(&errors, file);
+                print_errors(&errors);
             }
             std::process::exit(1);
         }
@@ -177,9 +177,15 @@ fn run_watch(file: &PathBuf, json: bool) {
     )
     .expect("Failed to create watcher");
 
+    // Watch the main file
     watcher
         .watch(file, RecursiveMode::NonRecursive)
         .expect("Failed to watch file");
+
+    // Also watch the directory for imported files
+    if let Some(dir) = file.parent() {
+        let _ = watcher.watch(dir, RecursiveMode::Recursive);
+    }
 
     loop {
         match rx.recv() {
@@ -219,7 +225,7 @@ fn run_validation(file: &PathBuf, json: bool) {
             if json {
                 JsonOutput::error(errors).print();
             } else {
-                print_errors(&errors, file);
+                print_errors(&errors);
             }
         }
     }
@@ -247,9 +253,7 @@ fn run_parse(file: &PathBuf, json: bool) {
             if json {
                 JsonOutput::error(errors).print();
             } else {
-                for err in errors {
-                    eprintln!("{}", err.to_report(&src));
-                }
+                print_errors(&errors);
             }
             std::process::exit(1);
         }
@@ -269,9 +273,7 @@ fn run_json(file: &PathBuf, pretty: bool) {
             println!("{}", output);
         }
         Err(errors) => {
-            for err in &errors {
-                eprintln!("{}", err.to_report(&src));
-            }
+            print_errors(&errors);
             std::process::exit(1);
         }
     }
@@ -283,7 +285,7 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     let ast = match ilk::parser::parse(&src, file) {
         Ok(ast) => ast,
         Err(errors) => {
-            print_errors(&errors, file);
+            print_errors(&errors);
             std::process::exit(1);
         }
     };
@@ -291,7 +293,7 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     let env = match ilk::resolve::resolve(&ast, file) {
         Ok(env) => env,
         Err(errors) => {
-            print_errors(&errors, file);
+            print_errors(&errors);
             std::process::exit(1);
         }
     };
@@ -305,10 +307,9 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     println!("{}", json_str);
 }
 
-fn print_errors(errors: &[Diagnostic], file: &PathBuf) {
-    let src = std::fs::read_to_string(file).unwrap_or_default();
-
+fn print_errors(errors: &[Diagnostic]) {
     for err in errors {
+        let src = std::fs::read_to_string(&err.file).unwrap_or_default();
         eprintln!("{}", err.to_report(&src));
     }
 }

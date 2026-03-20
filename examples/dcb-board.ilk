@@ -25,7 +25,6 @@ type Command = {
 
     @source [fields]
     emits! []Event
-
 }
 
 
@@ -92,9 +91,8 @@ userRegistered = Event {
     ]
 }
 
-otherEvent = Event {
-    id Uuid
-}
+
+otherEvent = Event {id Uuid}
 
 
 registerUser = ChangeSlice {

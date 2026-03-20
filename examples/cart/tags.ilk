@@ -1,0 +1,10 @@
+import "./types.ilk"
+
+userIdTag = Tag {userId String}
+
+
+userNameTag = Tag {name String}
+
+
+otherTag = Tag "other"
+

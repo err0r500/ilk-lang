@@ -1,0 +1,74 @@
+// Type declarations
+// A tag is a single-field String struct, or a unique concrete string
+type Tag = {_ String} | Concrete<String>
+
+
+type Event = {...} & {
+    timestamp Timestamp
+    tags []&Tag
+}
+
+
+type QueryItem = {
+    @constraint all(tags, t => all(eventTypes, e => t in e.tags))
+    eventTypes! []&Event
+
+    tags []Tag
+}
+
+
+type Command = {
+    fields! {...}
+
+    @source [fields]
+    query! []QueryItem
+
+    @source [fields]
+    emits! []Event
+}
+
+
+type HttpResponse = {
+    @constraint status > 0 && status < 600
+    status! Concrete<Int>
+
+    body {...}
+}
+
+
+type HttpEndpoint = {
+    method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
+
+    @constraint all(templateVars(path), v => v in keys(params))
+    path! Concrete<String>
+    params {...}
+    body {...}
+
+    responses! []HttpResponse
+}
+
+
+type ChangeSlice = {
+    name! Concrete<String>
+    endpoint! HttpEndpoint
+
+    @source [endpoint.params, endpoint.body]
+    command! Command
+
+    @constraint all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
+    @constraint all(scenarios, s => all(keys(s.when), k => k in keys(command.fields)))
+    @constraint all(scenarios, s => all(s.then, event => event in command.emits))
+    scenarios []ChangeScenario
+}
+
+
+type ChangeScenario = {
+    name! Concrete<String>
+
+    given! []-Event
+    when! {...}
+    then! []-Event
+}
+
+
+type Board = {changes! [1..]ChangeSlice}

@@ -40,7 +40,15 @@ impl Default for TypeEnv {
 }
 
 pub fn resolve(file: &File, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
-    let mut env = TypeEnv::new();
+    resolve_with_imports(file, path, TypeEnv::new())
+}
+
+pub fn resolve_with_imports(
+    file: &File,
+    path: &Path,
+    imported_env: TypeEnv,
+) -> Result<TypeEnv, Vec<Diagnostic>> {
+    let mut env = imported_env;
     let mut errors = Vec::new();
 
     // Collect all type declarations

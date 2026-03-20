@@ -16,7 +16,7 @@ pub mod wasm;
 use ast::File;
 use error::Diagnostic;
 use resolve::TypeEnv;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub struct Compiler {
@@ -32,24 +32,104 @@ impl Compiler {
 
     pub fn load(&mut self, path: &Path, src: &str) -> Result<&TypeEnv, Vec<Diagnostic>> {
         let file = parser::parse(src, path)?;
-        let env = resolve::resolve(&file, path)?;
+        let imported_env = self.load_imports_from_file(&file, path, &mut HashSet::new())?;
+        let env = resolve::resolve_with_imports(&file, path, imported_env)?;
         self.cache.insert(path.to_path_buf(), (file, env));
         Ok(&self.cache.get(path).unwrap().1)
     }
 
+    /// Load a file from disk, recursively loading its imports.
+    pub fn load_file(&mut self, path: &Path) -> Result<&TypeEnv, Vec<Diagnostic>> {
+        let canonical = path.canonicalize().map_err(|e| {
+            vec![Diagnostic::error(
+                0..0,
+                format!("Cannot resolve path: {}", e),
+                path,
+            )]
+        })?;
+        if self.cache.contains_key(&canonical) {
+            return Ok(&self.cache.get(&canonical).unwrap().1);
+        }
+        self.load_file_recursive(&canonical, &mut HashSet::new())
+    }
+
+    fn load_file_recursive(
+        &mut self,
+        path: &Path,
+        loading: &mut HashSet<PathBuf>,
+    ) -> Result<&TypeEnv, Vec<Diagnostic>> {
+        if self.cache.contains_key(path) {
+            return Ok(&self.cache.get(path).unwrap().1);
+        }
+        if !loading.insert(path.to_path_buf()) {
+            return Err(vec![Diagnostic::error(
+                0..0,
+                format!("Circular import: {}", path.display()),
+                path,
+            )]);
+        }
+
+        let src = std::fs::read_to_string(path).map_err(|e| {
+            vec![Diagnostic::error(
+                0..0,
+                format!("Failed to read file: {}", e),
+                path,
+            )]
+        })?;
+        let file = parser::parse(&src, path)?;
+        let imported_env = self.load_imports_from_file(&file, path, loading)?;
+        let env = resolve::resolve_with_imports(&file, path, imported_env)?;
+        self.cache.insert(path.to_path_buf(), (file, env));
+        loading.remove(path);
+        Ok(&self.cache.get(path).unwrap().1)
+    }
+
+    fn load_imports_from_file(
+        &mut self,
+        file: &File,
+        file_path: &Path,
+        loading: &mut HashSet<PathBuf>,
+    ) -> Result<TypeEnv, Vec<Diagnostic>> {
+        let mut merged = TypeEnv::new();
+        let dir = file_path.parent().unwrap_or(Path::new("."));
+
+        for import in file.imports() {
+            let import_path = dir.join(&import.path.node).canonicalize().map_err(|e| {
+                vec![Diagnostic::error(
+                    import.path.span.clone(),
+                    format!("Cannot resolve import '{}': {}", import.path.node, e),
+                    file_path,
+                )]
+            })?;
+            self.load_file_recursive(&import_path, loading)?;
+            let (_, imported_env) = self.cache.get(&import_path).unwrap();
+            for (name, ty) in &imported_env.types {
+                merged.types.entry(name.clone()).or_insert_with(|| ty.clone());
+            }
+            for (name, inst) in &imported_env.instances {
+                merged
+                    .instances
+                    .entry(name.clone())
+                    .or_insert_with(|| inst.clone());
+            }
+        }
+
+        Ok(merged)
+    }
+
     pub fn validate(&self, path: &Path) -> Result<(), Vec<Diagnostic>> {
-        let (file, env) = self
-            .cache
-            .get(path)
-            .ok_or_else(|| vec![Diagnostic::error(0..0, "file not loaded", path)])?;
+        if !self.cache.contains_key(path) {
+            return Err(vec![Diagnostic::error(0..0, "file not loaded", path)]);
+        }
 
-        let ctx = validate::ValidationContext::new(env, path);
         let mut errors = Vec::new();
-
-        for inst in file.instances() {
-            errors.extend(validate::validate_structural(&ctx, inst));
-            errors.extend(validate::validate_source(&ctx, inst));
-            errors.extend(validate::validate_constraints(&ctx, inst));
+        for (file_path, (file, env)) in &self.cache {
+            let ctx = validate::ValidationContext::new(env, file_path);
+            for inst in file.instances() {
+                errors.extend(validate::validate_structural(&ctx, inst));
+                errors.extend(validate::validate_source(&ctx, inst));
+                errors.extend(validate::validate_constraints(&ctx, inst));
+            }
         }
 
         if errors.is_empty() {
@@ -101,19 +181,18 @@ pub fn compile(src: &str, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
     }
 }
 
-/// Convenience function to validate a single file
+/// Convenience function to validate a single file (with imports)
 pub fn validate_file(path: &Path) -> Result<(), Vec<Diagnostic>> {
-    let src = std::fs::read_to_string(path).map_err(|e| {
+    let canonical = path.canonicalize().map_err(|e| {
         vec![Diagnostic::error(
             0..0,
-            format!("Failed to read file: {}", e),
+            format!("Cannot resolve path: {}", e),
             path,
         )]
     })?;
-
     let mut compiler = Compiler::new();
-    compiler.load(path, &src)?;
-    compiler.validate(path)
+    compiler.load_file(&canonical)?;
+    compiler.validate(&canonical)
 }
 
 #[cfg(test)]
@@ -123,6 +202,12 @@ mod tests {
     #[test]
     fn test_validate_dcb_board() {
         let result = validate_file(Path::new("examples/dcb-board.ilk"));
+        assert!(result.is_ok(), "Validation failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_validate_cart_with_imports() {
+        let result = validate_file(Path::new("examples/cart/main.ilk"));
         assert!(result.is_ok(), "Validation failed: {:?}", result.err());
     }
 }

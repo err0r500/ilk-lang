@@ -32,6 +32,7 @@ impl Backend {
         let mut compiler = self.compiler.write().await;
         compiler.invalidate(&path);
 
+        // Load the file with its source text (imports loaded from disk)
         let diags = match compiler.load(&path, text) {
             Ok(_) => match compiler.validate(&path) {
                 Ok(()) => vec![],

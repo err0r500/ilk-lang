@@ -95,16 +95,23 @@ impl<'a> Formatter<'a> {
     }
 
     fn format_file(&mut self, file: &File) {
+        let mut prev_import = false;
         let mut first = true;
         for item in &file.items {
             self.emit_comments_before(item.span.start);
 
+            let is_import = matches!(&item.node, Item::Import(_));
             if !first {
-                // Two blank lines between top-level items
-                self.writeln();
-                self.writeln();
+                if prev_import && is_import {
+                    // No blank line between consecutive imports
+                } else {
+                    // Two blank lines between top-level items
+                    self.writeln();
+                    self.writeln();
+                }
             }
             first = false;
+            prev_import = is_import;
 
             self.format_item(item);
             self.last_pos = item.span.end;
