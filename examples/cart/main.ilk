@@ -1,5 +1,17 @@
 import "./types.ilk"
 import "./cmdAddItem.ilk"
 
+
 @main
-board = Board {changes [addItem]}
+board = Board {
+    name "Shopping Cart"
+    contexts [{
+        name "Shopping"
+        description "Shopping Cart Context"
+        chapters [{
+            name "Cart Items"
+            description "Customer browses products and fills their cart"
+            flow [addItem]
+        }]
+    }]
+}

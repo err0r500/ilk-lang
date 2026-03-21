@@ -280,25 +280,18 @@ fn run_json(file: &PathBuf, pretty: bool) {
 }
 
 fn run_emit(file: &PathBuf, pretty: bool) {
-    let src = std::fs::read_to_string(file).expect("Failed to read file");
+    let canonical = file.canonicalize().expect("Cannot resolve path");
+    let mut compiler = ilk::Compiler::new();
 
-    let ast = match ilk::parser::parse(&src, file) {
-        Ok(ast) => ast,
-        Err(errors) => {
-            print_errors(&errors);
-            std::process::exit(1);
-        }
-    };
+    if let Err(errors) = compiler.load_file(&canonical) {
+        print_errors(&errors);
+        std::process::exit(1);
+    }
 
-    let env = match ilk::resolve::resolve(&ast, file) {
-        Ok(env) => env,
-        Err(errors) => {
-            print_errors(&errors);
-            std::process::exit(1);
-        }
-    };
+    let ast = compiler.get_file(&canonical).unwrap();
+    let env = compiler.get_env(&canonical).unwrap();
 
-    let output = ilk::emit_schema::emit_schema(&ast, &env);
+    let output = ilk::emit_schema::emit_schema(ast, env);
     let json_str = if pretty {
         serde_json::to_string_pretty(&output).unwrap()
     } else {

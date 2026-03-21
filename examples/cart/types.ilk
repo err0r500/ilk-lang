@@ -51,7 +51,9 @@ type HttpEndpoint = {
     responses! []HttpResponse
 }
 
+
 type Error = {error Concrete<String>}
+
 
 type ChangeSlice = {
     name! Concrete<String>
@@ -67,13 +69,36 @@ type ChangeSlice = {
     scenarios []ChangeScenario
 }
 
+
 type ChangeScenario = {
     name! Concrete<String>
 
     given! []-Event
     when! {...}
-    then []-Event | Error
+    then! []-Event | Error
 }
 
 
-type Board = {changes! [1..]ChangeSlice}
+type Context = {
+    name Concrete<String>
+    description Concrete<String>
+    chapters []{...}
+}
+
+
+type Slice = ChangeSlice | {...}
+
+
+type Chapter = {
+    name Concrete<String>
+    description Concrete<String>
+    flow []Slice
+}
+
+
+type Board = {
+    name Concrete<String>
+    contexts []Context
+
+    //changes! [1..]ChangeSlice
+}
