@@ -142,6 +142,8 @@ impl Compiler {
             }
         }
 
+        errors.retain(|e| e.file == path);
+
         if errors.is_empty() {
             Ok(())
         } else {

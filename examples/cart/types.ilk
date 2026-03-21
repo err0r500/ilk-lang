@@ -105,7 +105,6 @@ type ReadModelHandler = {
 
 type ReadModel = {
     name! Concrete<String>
-    cardinality! "single" | "collection"
     schema! {...}
 
     on! []ReadModelHandler
@@ -129,7 +128,6 @@ type ViewSlice = {
     @source [endpoint.params, endpoint.body, endpoint.auth]
     query! []QueryItem
 
-    //@source [endpoint.params, endpoint.body, endpoint.auth, query]
     readModel! ReadModel
 
     @constraint all(readModel.on, h => exists(query, q => h.event in q.eventTypes))

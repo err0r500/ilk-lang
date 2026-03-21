@@ -42,7 +42,6 @@ viewCartItems = ViewSlice {
 
     readModel {
         name "CartItemsView"
-        cardinality "single"
         schema {
             cartId Uuid
             items [{
