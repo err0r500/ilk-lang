@@ -3,7 +3,7 @@ layout: home
 hero:
   name: ilk
   text: Model your Domain, type check your data flow
-  tagline: Define your types. Name your entities. Trace your data.
+  tagline: Example concrete usecase is declare a json-schema with higher-level constraints it has to respect
   actions:
     - theme: brand
       text: Language Specification

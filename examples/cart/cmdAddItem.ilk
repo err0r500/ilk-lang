@@ -61,7 +61,7 @@ addItem = ChangeSlice {
     scenarios [
         {
             name "OK: Add item automatically opens the cart"
-            given [cartCreated & {cartId "abc"}]
+            given [cartCreated & {fields {cartId "hello"}}]
             when {}
             then [
                 cartCreated
@@ -70,7 +70,7 @@ addItem = ChangeSlice {
         }
         {
             name "Err: duplicate cart creation"
-            given [cartCreated & {cartId "abc"}]
+            given [cartCreated & {fields {cartId "abc"}}]
             when {}
             then {error "already created"}
         }

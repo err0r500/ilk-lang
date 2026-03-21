@@ -913,6 +913,8 @@ fn refinement_value_matches_type(
         (Value::Struct(_), TypeExpr::Struct(StructKind::Open(_))) => true,
         // Struct value against closed struct - compatible (detailed check happens elsewhere)
         (Value::Struct(_), TypeExpr::Struct(StructKind::Closed(_))) => true,
+        // Struct value against intersection - compatible (detailed check happens elsewhere)
+        (Value::Struct(_), TypeExpr::Intersection(_, _)) => true,
         // String literals are valid for Uuid, Date, Timestamp (they're string-based types)
         (Value::LitString(_), TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp)) => true,
         // Int literal doesn't match Uuid, Date, etc.
@@ -1003,19 +1005,55 @@ fn validate_refinement_fields_against_instance(
                 for nested_field in ref_nested {
                     let nested_name = &nested_field.node.name.node;
                     if let Some(inst_nested_field) = inst_nested.iter().find(|f| &f.node.name.node == nested_name) {
-                        // Check type compatibility between refinement and instance field
-                        let ref_type = get_value_type_name(&nested_field.node.value.node);
-                        let inst_type = get_value_type_name(&inst_nested_field.node.value.node);
-                        if let (Some(rt), Some(it)) = (ref_type, inst_type) {
-                            if rt != it {
+                        // Resolve declared type: first from type declaration, then from instance field value
+                        let nested_type_from_decl = type_decl
+                            .and_then(|td| get_field_type_from_type_expr(ctx, &td.node.body.node, field_name))
+                            .and_then(|field_ty| get_field_type_from_type_expr(ctx, &field_ty.node, nested_name));
+
+                        let declared_type: Option<TypeExpr> = nested_type_from_decl
+                            .map(|t| t.node.clone())
+                            .or_else(|| {
+                                // Infer type from instance's nested field value (for open structs)
+                                match &inst_nested_field.node.value.node {
+                                    Value::TypeRef(name) => Some(TypeExpr::Named(name.clone())),
+                                    _ => None,
+                                }
+                            });
+
+                        if let Some(ref field_type) = declared_type {
+                            if !refinement_value_matches_type(ctx, &nested_field.node.value.node, field_type) {
                                 errors.push(Diagnostic::error(
                                     nested_field.node.value.span.clone(),
                                     format!(
-                                        "Type mismatch in nested refinement: field '{}' is {} but refinement specifies {}",
-                                        nested_name, it, rt
+                                        "Type mismatch in nested refinement: field '{}' expects {}, got {}",
+                                        nested_name,
+                                        format_type(field_type),
+                                        match &nested_field.node.value.node {
+                                            Value::LitInt(_) => "Int".to_string(),
+                                            Value::LitString(_) => "String".to_string(),
+                                            Value::LitBool(_) => "Bool".to_string(),
+                                            Value::TypeRef(t) => t.clone(),
+                                            _ => "?".to_string(),
+                                        }
                                     ),
                                     ctx.path,
                                 ));
+                            }
+                        } else {
+                            // Fallback: naive string comparison when type info unavailable
+                            let ref_type = get_value_type_name(&nested_field.node.value.node);
+                            let inst_type = get_value_type_name(&inst_nested_field.node.value.node);
+                            if let (Some(rt), Some(it)) = (ref_type, inst_type) {
+                                if rt != it {
+                                    errors.push(Diagnostic::error(
+                                        nested_field.node.value.span.clone(),
+                                        format!(
+                                            "Type mismatch in nested refinement: field '{}' is {} but refinement specifies {}",
+                                            nested_name, it, rt
+                                        ),
+                                        ctx.path,
+                                    ));
+                                }
                             }
                         }
                     } else {

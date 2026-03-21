@@ -162,10 +162,6 @@ fn validate_field_source_with_assocs(
     // Only validate lists (refinements and inline elements)
     // Nested struct values are handled by recursive validate_struct_sources
     if let Value::List(elements) = &inst_field.node.value.node {
-        // For reference lists ([]&Type), skip validation of plain binding refs
-        // since references don't carry data - only validate refinements
-        let is_ref_list = is_reference_list(field_type);
-
         // Get the element type for list types
         let elem_type = match field_type {
             TypeExpr::List(_, inner) => Some(&inner.node),
@@ -183,10 +179,6 @@ fn validate_field_source_with_assocs(
                     }
                 }
                 ListElement::BindingRef(name) => {
-                    // Skip validation for reference types - they're just pointers
-                    if is_ref_list {
-                        continue;
-                    }
                     // For value types, validate the referenced instance's fields
                     if let Some(ref_inst) = ctx.get_instance(name) {
                         let ref_ctx = ctx.for_instance(name);
@@ -205,10 +197,6 @@ fn validate_field_source_with_assocs(
                         }
                     }
                     Value::BindingRef(name) => {
-                        // Skip validation for reference types - they're just pointers
-                        if is_ref_list {
-                            continue;
-                        }
                         // For value types, validate the referenced instance's fields
                         if let Some(ref_inst) = ctx.get_instance(name) {
                             let ref_ctx = ctx.for_instance(name);
@@ -1381,6 +1369,51 @@ slice = Slice {
             messages.iter().any(|m| m.contains("not found")),
             "Expected 'not found' error, got: {:?}",
             messages
+        );
+    }
+
+    #[test]
+    fn test_explicit_source_on_ref_list_valid() {
+        let errors = validate_source_src(
+            r#"
+type Tag = {name String}
+type Event = {
+    fields {...}
+    @source [fields]
+    tags []&Tag
+}
+t = Tag {name String}
+ev = Event {
+    fields {name String}
+    tags [t]
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_explicit_source_on_ref_list_missing() {
+        let errors = validate_source_src(
+            r#"
+type Tag = {name String}
+type Event = {
+    fields {...}
+    @source [fields]
+    tags []&Tag
+}
+t = Tag {name String}
+ev = Event {
+    fields {x Int}
+    tags [t]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(
+            errors.iter().any(|e| e.message.contains("No source found for field 'name'")),
+            "Expected 'No source found for field name', got: {:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
         );
     }
 

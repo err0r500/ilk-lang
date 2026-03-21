@@ -1,9 +1,6 @@
 import "./types.ilk"
 
 
-userIdTag = Tag {userId String}
-
-
 cartIdTag = Tag {cartId Uuid}
 
 

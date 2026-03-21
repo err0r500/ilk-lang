@@ -2,9 +2,11 @@ import "./types.ilk"
 import "./tags.ilk"
 
 
-cartCreated = Event {
-    cartId Uuid
-    shopperId Uuid
+cartCreated = TaggedEvent {
+    fields {
+        cartId Uuid
+        shopperId Uuid
+    }
 
     tags [
         cartIdTag
@@ -12,43 +14,31 @@ cartCreated = Event {
     ]
 }
 
-itemAdded = Event {
-    cartId Uuid
-    itemId Uuid
-    productId String
-    price Int
-    quantity Int
 
-    tags [
-        cartIdTag
-    ]
-}
-
-itemRemoved = Event {
-    cartId Uuid
-    itemId Uuid
+itemAdded = TaggedEvent {
+    fields {
+        cartId Uuid
+        itemId Uuid
+        productId String
+        price Int
+        quantity Int
+    }
 
     tags [cartIdTag]
 }
 
 
+itemRemoved = TaggedEvent {
+    fields {
+        cartId Uuid
+        itemId Uuid
+    }
 
-userRegistered = Event {
-    id Uuid
-    name String
-    ts Timestamp
-
-    tags [
-        userIdTag
-        userNameTag
-    ]
-}
-
-
-cartCleared = Event {
-    cartId Uuid
     tags [cartIdTag]
 }
 
 
-otherEvent = Event {id Uuid}
+cartCleared = TaggedEvent {
+    fields {cartId Uuid}
+    tags [cartIdTag]
+}

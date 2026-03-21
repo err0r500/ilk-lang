@@ -14,22 +14,28 @@ viewCartItems = ViewSlice {
     endpoint {
         method GET
         path "/carts/{cartId}"
-        params {cartId String}
-        auth {userId String}
+        params {cartId Uuid}
+        auth {userId Uuid}
         responses []
     }
 
     query [
         {
             eventTypes [cartCreated]
-            tags [cartIdTag, shopperIdTag]
+            tags [
+                cartIdTag
+                shopperIdTag & {shopperId Uuid = endpoint.auth.userId}
+            ]
         }
         {
             eventTypes [cartCleared]
             tags [cartIdTag]
         }
         {
-            eventTypes [itemAdded, itemRemoved]
+            eventTypes [
+                itemAdded
+                itemRemoved
+            ]
             tags [cartIdTag]
         }
     ]
@@ -37,23 +43,45 @@ viewCartItems = ViewSlice {
     readModel {
         name "CartItemsView"
         cardinality "single"
-        fields {
-            cartId String
+        schema {
+            cartId Uuid
             items [{
-                itemId String
+                itemId Uuid
                 productId String
                 price Int
                 quantity Int
             }]
             totalPrice Int
         }
+        on [
+            {
+                event cartCreated
+                action "upsert"
+                fields {cartId Uuid}
+            }
+            {
+                event itemAdded
+                action "upsert"
+                fields {
+                    itemId Uuid
+                    productId String
+                    price Int
+                    quantity Int
+                }
+            }
+            {
+                event itemRemoved
+                action "delete"
+                fields {itemId Uuid}
+            }
+        ]
     }
 
     scenarios [
         {
             name "Ex: Empty cart"
             given [
-                cartCreated & {cartId "abc"}
+                cartCreated & {fields {cartId "abc"}}
                 itemAdded
                 itemRemoved
             ]
@@ -68,7 +96,7 @@ viewCartItems = ViewSlice {
             name "Ex: Cart with one item"
             given [
                 cartCreated
-                itemAdded & {price 10, quantity 2}
+                itemAdded & {fields {price 10, quantity 2}}
             ]
             query {cartId "abc"}
             expect {
@@ -87,8 +115,14 @@ viewCartItems = ViewSlice {
             name "Ex: Cart with 2 items"
             given [
                 cartCreated
-                itemAdded & {itemId "item-1", price 999}
-                itemAdded & {itemId "item-2", price 999}
+                itemAdded & {fields {
+                    itemId "item-1"
+                    price 999
+                }}
+                itemAdded & {fields {
+                    itemId "item-2"
+                    price 999
+                }}
             ]
             query {cartId "abc"}
             expect {

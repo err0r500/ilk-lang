@@ -9,12 +9,20 @@ type Event = {...} & {
 }
 
 
+type TaggedEvent = {
+    fields {...} & {timestamp Timestamp}
+
+    @source [fields]
+    tags []&Tag
+}
+
+
 type Actor = {name Concrete<String>}
 
 
 type QueryItem = {
     @constraint all(tags, t => all(eventTypes, e => t in e.tags))
-    eventTypes! []&Event
+    eventTypes! []&TaggedEvent
 
     tags []Tag
 }
@@ -27,7 +35,7 @@ type Command = {
     query! []QueryItem
 
     @source [fields]
-    emits! []Event
+    emits! []TaggedEvent
 }
 
 
@@ -73,9 +81,9 @@ type ChangeSlice = {
 type ChangeScenario = {
     name! Concrete<String>
 
-    given! []-Event
+    given! []-TaggedEvent
     when! {...}
-    then! []-Event | Error
+    then! []-TaggedEvent | Error
 }
 
 
@@ -86,24 +94,27 @@ type Context = {
 }
 
 
-type FieldMapping = {
-    path! Concrete<String>
-    event! &Event
-    field! Concrete<String>
+type ReadModelHandler = {
+    event! &TaggedEvent
+    action! "upsert" | "delete"
+
+    @source [event]
+    fields! {...}
 }
 
 
 type ReadModel = {
     name! Concrete<String>
     cardinality! "single" | "collection"
-    fields! {...}
-    //mapping! []FieldMapping
+    schema! {...}
+
+    on! []ReadModelHandler
 }
 
 
 type ViewScenario = {
     name! Concrete<String>
-    given! []-Event
+    given! []-TaggedEvent
     query! {...}
     expect! {...}
 }
@@ -115,10 +126,13 @@ type ViewSlice = {
     actor Actor
     image Concrete<String>
 
+    @source [endpoint.params, endpoint.body, endpoint.auth]
     query! []QueryItem
 
+    //@source [endpoint.params, endpoint.body, endpoint.auth, query]
     readModel! ReadModel
 
+    @constraint all(readModel.on, h => exists(query, q => h.event in q.eventTypes))
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(query, q => event in q.eventTypes)))
     scenarios []ViewScenario
 }
@@ -137,6 +151,5 @@ type Chapter = {
 type Board = {
     name Concrete<String>
     contexts []Context
-
-    //changes! [1..]ChangeSlice
 }
+//changes! [1..]ChangeSlice
