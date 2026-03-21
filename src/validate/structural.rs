@@ -738,6 +738,7 @@ fn validate_list(
                     let expected = match &elem_ty.node {
                         TypeExpr::Named(t) => Some(t),
                         TypeExpr::RefinableRef(t) => Some(t),
+                        TypeExpr::Reference(t) => Some(t),
                         _ => None,
                     };
                     if let Some(expected) = expected {
@@ -768,6 +769,7 @@ fn validate_list(
                     let expected_type = match &elem_ty.node {
                         TypeExpr::RefinableRef(t) => t,
                         TypeExpr::Named(t) => t,
+                        TypeExpr::Reference(t) => t,
                         _ => {
                             errors.push(Diagnostic::error(
                                 elem.span.clone(),
@@ -790,7 +792,7 @@ fn validate_list(
                     }
 
                     // Validate refinement fields against the instance's actual fields
-                    let is_refinable = matches!(&elem_ty.node, TypeExpr::RefinableRef(_));
+                    let is_refinable = matches!(&elem_ty.node, TypeExpr::RefinableRef(_) | TypeExpr::Reference(_));
                     validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, elem.span.clone(), errors);
                 } else {
                     errors.push(Diagnostic::error(

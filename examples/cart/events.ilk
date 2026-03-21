@@ -11,6 +11,7 @@ cartCreated = TaggedEvent {
     tags [
         cartIdTag
         shopperIdTag
+        cartTag & {cart Uuid = fields.cartId}
     ]
 }
 
