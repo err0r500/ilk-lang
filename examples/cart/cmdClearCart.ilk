@@ -1,0 +1,37 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+clearCart = ChangeSlice {
+    name "ClearCart"
+
+    actor userActor
+
+    endpoint {
+        method DELETE
+        path "/carts/{cartId}/items"
+        params {cartId Uuid}
+        auth {userId Uuid}
+
+        responses []
+    }
+
+    command {
+        fields {
+            cartId Uuid
+            shopperId Uuid = endpoint.auth.userId
+        }
+
+        query [
+            {
+                eventTypes [cartCreated]
+                tags [cartIdTag]
+            }
+        ]
+
+        emits [cartCleared]
+    }
+    scenarios []
+}

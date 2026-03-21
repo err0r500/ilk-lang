@@ -67,7 +67,7 @@ addItem = ChangeSlice {
                 cartCreated
                 itemAdded
             ]
-        },
+        }
         {
             name "Err: duplicate cart creation"
             given [cartCreated & {cartId "abc"}]

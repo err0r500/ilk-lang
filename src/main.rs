@@ -234,6 +234,14 @@ fn run_validation(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
 
     match compiler.load_file(&canonical) {
         Ok(_) => {
+            if let Err(errors) = compiler.validate(&canonical) {
+                if json {
+                    JsonOutput::error(errors).print();
+                } else {
+                    print_errors(&errors);
+                }
+                return;
+            }
             if emit {
                 let ast = compiler.get_file(&canonical).unwrap();
                 let env = compiler.get_env(&canonical).unwrap();
@@ -313,6 +321,11 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     let mut compiler = ilk::Compiler::new();
 
     if let Err(errors) = compiler.load_file(&canonical) {
+        print_errors(&errors);
+        std::process::exit(1);
+    }
+
+    if let Err(errors) = compiler.validate(&canonical) {
         print_errors(&errors);
         std::process::exit(1);
     }

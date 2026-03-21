@@ -33,4 +33,10 @@ userRegistered = Event {
 }
 
 
+cartCleared = Event {
+    cartId Uuid
+    tags [cartIdTag]
+}
+
+
 otherEvent = Event {id Uuid}
