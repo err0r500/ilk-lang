@@ -1,0 +1,74 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+
+
+// Sub-projection: the shape of each cart item, sourced from itemAdded events.
+// Composing this into the parent state demonstrates nested field traceability.
+cartItemState = ReadModel {
+    events [itemAdded]
+
+    state {
+        itemId Uuid = itemAdded.itemId
+        description String = itemAdded.description
+        price Int = itemAdded.price
+        quantity Int = itemAdded.quantity
+    }
+}
+
+
+// Top-level cart read model.
+// cartItemState is referenced as a nested projection for the items field,
+// so each item's fields are independently traced to itemAdded events.
+cartState = QuerySlice {
+    name "Get Cart State"
+
+    endpoint {
+        method GET
+        path "/carts/{cartId}"
+        params {cartId Uuid}
+        auth {}
+        responses []
+    }
+
+    readModel {
+        events [cartCreated, itemAdded, cartCleared]
+
+        state {
+            cartId Uuid = cartCreated.cartId
+            shopperId Uuid = cartCreated.shopperId
+            items cartItemState
+        }
+    }
+
+    scenarios [
+        {
+            name "Cart with two items"
+            given [
+                cartCreated & {cartId "abc" shopperId "user1"}
+                itemAdded & {cartId "abc" itemId "item1" description "Widget" price 1000 quantity 2}
+                itemAdded & {cartId "abc" itemId "item2" description "Gadget" price 500 quantity 1}
+            ]
+            then {
+                cartId "abc"
+                shopperId "user1"
+                items [
+                    {itemId "item1" description "Widget" price 1000 quantity 2}
+                    {itemId "item2" description "Gadget" price 500 quantity 1}
+                ]
+            }
+        }
+        {
+            name "Empty cart after clearing"
+            given [
+                cartCreated & {cartId "abc" shopperId "user1"}
+                cartCleared & {cartId "abc"}
+            ]
+            then {
+                cartId "abc"
+                shopperId "user1"
+                items []
+            }
+        }
+    ]
+}

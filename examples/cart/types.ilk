@@ -86,7 +86,37 @@ type Context = {
 }
 
 
-type Slice = ChangeSlice | {...}
+type ReadModel = {
+    events! []&Event
+
+    // state is an output projection — fields are mapped from events via explicit = assignments.
+    // Full @source tracing from events list requires a compiler extension (see design notes).
+    @out
+    state! {...}
+}
+
+
+type QueryScenario = {
+    name! Concrete<String>
+
+    given! []-Event
+    then! {...}
+}
+
+
+type QuerySlice = {
+    name! Concrete<String>
+    endpoint! HttpEndpoint
+
+    readModel! ReadModel
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => event in readModel.events))
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(keys(s.then), k => k in keys(readModel.state)))
+    scenarios []QueryScenario
+}
+
+
+type Slice = ChangeSlice | QuerySlice | {...}
 
 
 type Chapter = {

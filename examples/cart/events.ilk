@@ -14,6 +14,9 @@ cartCreated = Event {
 itemAdded = Event {
     cartId Uuid
     itemId Uuid
+    description String
+    price Int
+    quantity Int
     tags [
         cartIdTag
     ]
