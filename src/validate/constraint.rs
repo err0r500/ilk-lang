@@ -738,6 +738,10 @@ fn eval_constraint(
             Ok(EvalValue::Bool(matches))
         }
 
+        ConstraintExpr::IsPresent(field_name) => {
+            Ok(EvalValue::Bool(env.contains_key(field_name.as_str())))
+        }
+
         ConstraintExpr::Lt(left, right) => {
             eval_int_cmp(left, right, "<", env, assocs, ctx, |a, b| a < b)
         }
@@ -1229,5 +1233,51 @@ bad = Emitter {
 "#,
         );
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_is_present_true() {
+        let errors = validate_constraints_src(
+            r#"
+type Foo = {
+    @constraint isPresent(name)
+    name String
+}
+foo = Foo {name String}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_is_present_false_for_absent_optional() {
+        let errors = validate_constraints_src(
+            r#"
+type Foo = {
+    @constraint isPresent(name)
+    name String
+}
+foo = Foo {}
+"#,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_is_present_short_circuit() {
+        // !isPresent(opt) || ... should pass when opt is absent
+        let errors = validate_constraints_src(
+            r#"
+type Event = {...}
+type Foo = {
+    @constraint !isPresent(items) || all(items, i => i in allowed)
+    allowed []Event
+    items []Event
+}
+ev1 = Event {a String}
+foo = Foo {allowed [ev1]}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 }

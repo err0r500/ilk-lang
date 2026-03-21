@@ -307,6 +307,11 @@ impl<'a> Formatter<'a> {
                 self.write(" in ");
                 self.format_constraint_expr(r);
             }
+            ConstraintExpr::IsPresent(field_name) => {
+                self.write("isPresent(");
+                self.write(field_name);
+                self.write(")");
+            }
             ConstraintExpr::IsType(e, type_name) => {
                 self.write("isType(");
                 self.format_constraint_expr(e);

@@ -33,5 +33,4 @@ clearCart = ChangeSlice {
 
         emits [cartCleared]
     }
-    scenarios []
 }

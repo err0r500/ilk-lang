@@ -244,6 +244,11 @@ fn constraint_expr<'a>(
                 .then_ignore(just(')'))
                 .map(|e| ConstraintExpr::Keys(Box::new(e)))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("isPresent(")
+                .ignore_then(ident())
+                .then_ignore(just(')'))
+                .map(|name| ConstraintExpr::IsPresent(name.node))
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("isType(")
                 .ignore_then(expr.clone())
                 .then_ignore(ws().then(just(',')).then(ws()))
@@ -256,10 +261,6 @@ fn constraint_expr<'a>(
                 .ignore_then(expr.clone())
                 .then_ignore(ws_nl())
                 .then_ignore(just(')')),
-            just('!')
-                .ignore_then(expr.clone())
-                .map(|e| ConstraintExpr::Not(Box::new(e)))
-                .map_with(|c, e| Spanned::from_simple(c, e.span())),
             ident()
                 .map(|n| ConstraintExpr::Var(n.node))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
@@ -299,7 +300,15 @@ fn constraint_expr<'a>(
             },
         );
 
-        let cmp = postfix.clone().foldl(
+        let unary = choice((
+            just('!')
+                .ignore_then(postfix.clone())
+                .map(|e| ConstraintExpr::Not(Box::new(e)))
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            postfix.clone(),
+        ));
+
+        let cmp = unary.clone().foldl(
             ws().ignore_then(choice((
                 just("==").to("=="),
                 just("!=").to("!="),
@@ -310,7 +319,7 @@ fn constraint_expr<'a>(
                 just("in").to("in"),
             )))
             .then_ignore(ws())
-            .then(postfix.clone())
+            .then(unary.clone())
             .repeated(),
             |left, (op, right)| {
                 let span = left.span.start..right.span.end;

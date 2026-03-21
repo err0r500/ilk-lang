@@ -1271,6 +1271,7 @@ A minimal expression language for `@constraint` predicates.
 | `e.assoc(t)` | True if instance `e` has `t` as one of its associated values. Available only when `e`'s type carries `@assoc [T]` and `t` is of type `T`. |
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
+| `isPresent(field)` | True if the optional field is present in the current instance |
 
 ### Operators
 
