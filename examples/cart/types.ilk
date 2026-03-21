@@ -86,7 +86,45 @@ type Context = {
 }
 
 
-type Slice = ChangeSlice | {...}
+type FieldMapping = {
+    path! Concrete<String>
+    event! &Event
+    field! Concrete<String>
+}
+
+
+type ReadModel = {
+    name! Concrete<String>
+    cardinality! "single" | "collection"
+    fields! {...}
+    //mapping! []FieldMapping
+}
+
+
+type ViewScenario = {
+    name! Concrete<String>
+    given! []-Event
+    query! {...}
+    expect! {...}
+}
+
+
+type ViewSlice = {
+    name! Concrete<String>
+    endpoint! HttpEndpoint
+    actor Actor
+    image Concrete<String>
+
+    query! []QueryItem
+
+    readModel! ReadModel
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(query, q => event in q.eventTypes)))
+    scenarios []ViewScenario
+}
+
+
+type Slice = ChangeSlice | ViewSlice
 
 
 type Chapter = {

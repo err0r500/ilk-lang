@@ -501,9 +501,15 @@ fn eval_constraint(
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
                     let item_assocs = assocs_for_item(item, ctx);
-                    let result = eval_constraint(&body.node, &inner_env, &item_assocs, ctx)?;
-                    if let EvalValue::Bool(true) = result {
-                        return Ok(EvalValue::Bool(true));
+                    match eval_constraint(&body.node, &inner_env, &item_assocs, ctx) {
+                        Ok(EvalValue::Bool(true)) => return Ok(EvalValue::Bool(true)),
+                        Ok(EvalValue::Bool(false)) | Err(ConstraintError::Failed(_)) => continue,
+                        Ok(_) => {
+                            return Err(ConstraintError::Eval(
+                                "exists body must return a boolean".to_string(),
+                            ))
+                        }
+                        Err(e) => return Err(e),
                     }
                 }
                 Ok(EvalValue::Bool(false))

@@ -5,6 +5,7 @@ import "./tags.ilk"
 cartCreated = Event {
     cartId Uuid
     shopperId Uuid
+
     tags [
         cartIdTag
         shopperIdTag
@@ -14,9 +15,20 @@ cartCreated = Event {
 itemAdded = Event {
     cartId Uuid
     itemId Uuid
+    productId String
+    price Int
+    quantity Int
+
     tags [
         cartIdTag
     ]
+}
+
+itemRemoved = Event {
+    cartId Uuid
+    itemId Uuid
+
+    tags [cartIdTag]
 }
 
 

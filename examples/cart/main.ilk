@@ -1,6 +1,7 @@
 import "./types.ilk"
 import "./cmdAddItem.ilk"
 import "./cmdClearCart.ilk"
+import "./viewCartItems.ilk"
 
 
 @main
@@ -12,7 +13,7 @@ board = Board {
         chapters [{
             name "Cart Items"
             description "Customer browses products and fills their cart"
-            flow [addItem, clearCart]
+            flow [addItem, clearCart, viewCartItems]
         }]
     }]
 }

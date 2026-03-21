@@ -1,0 +1,115 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+viewCartItems = ViewSlice {
+    name "ViewCartItems"
+
+    actor userActor
+
+    image "./mockups/one_item_cart.png"
+
+    endpoint {
+        method GET
+        path "/carts/{cartId}"
+        params {cartId String}
+        auth {userId String}
+        responses []
+    }
+
+    query [
+        {
+            eventTypes [cartCreated]
+            tags [cartIdTag, shopperIdTag]
+        }
+        {
+            eventTypes [cartCleared]
+            tags [cartIdTag]
+        }
+        {
+            eventTypes [itemAdded, itemRemoved]
+            tags [cartIdTag]
+        }
+    ]
+
+    readModel {
+        name "CartItemsView"
+        cardinality "single"
+        fields {
+            cartId String
+            items [{
+                itemId String
+                productId String
+                price Int
+                quantity Int
+            }]
+            totalPrice Int
+        }
+    }
+
+    scenarios [
+        {
+            name "Ex: Empty cart"
+            given [
+                cartCreated & {cartId "abc"}
+                itemAdded
+                itemRemoved
+            ]
+            query {cartId "abc"}
+            expect {
+                cartId "abc"
+                items []
+                totalPrice 0
+            }
+        }
+        {
+            name "Ex: Cart with one item"
+            given [
+                cartCreated
+                itemAdded & {price 10, quantity 2}
+            ]
+            query {cartId "abc"}
+            expect {
+                cartId "abc"
+                items [{
+                    itemId "item-1"
+                    productId "prod-1"
+                    price 10
+                    quantity 2
+                }]
+                @doc "items[0].price * items[0].quantity"
+                totalPrice 20
+            }
+        }
+        {
+            name "Ex: Cart with 2 items"
+            given [
+                cartCreated
+                itemAdded & {itemId "item-1", price 999}
+                itemAdded & {itemId "item-2", price 999}
+            ]
+            query {cartId "abc"}
+            expect {
+                cartId "abc"
+                items [
+                    {
+                        itemId "item-1"
+                        productId "prod-1"
+                        price 999
+                        quantity 1
+                    }
+                    {
+                        itemId "item-2"
+                        productId "prod-2"
+                        price 999
+                        quantity 1
+                    }
+                ]
+                @doc "sum(items, i => i.price * i.quantity)"
+                totalPrice 1998
+            }
+        }
+    ]
+}
