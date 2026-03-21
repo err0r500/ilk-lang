@@ -103,14 +103,6 @@ type ReadModelHandler = {
 }
 
 
-type ReadModel = {
-    name! Concrete<String>
-    schema! {...}
-
-    on! []ReadModelHandler
-}
-
-
 type ViewScenario = {
     name! Concrete<String>
     given! []-TaggedEvent
@@ -128,9 +120,8 @@ type ViewSlice = {
     @source [endpoint.params, endpoint.body, endpoint.auth]
     query! []QueryItem
 
-    readModel! ReadModel
+    readModel! {...}
 
-    @constraint all(readModel.on, h => exists(query, q => h.event in q.eventTypes))
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(query, q => event in q.eventTypes)))
     scenarios []ViewScenario
 }

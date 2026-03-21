@@ -41,39 +41,14 @@ viewCartItems = ViewSlice {
     ]
 
     readModel {
-        name "CartItemsView"
-        schema {
-            cartId Uuid
-            items [{
-                itemId Uuid
-                productId String
-                price Int
-                quantity Int
-            }]
-            totalPrice Int
-        }
-        on [
-            {
-                event cartCreated
-                action "upsert"
-                fields {cartId Uuid}
-            }
-            {
-                event itemAdded
-                action "upsert"
-                fields {
-                    itemId Uuid
-                    productId String
-                    price Int
-                    quantity Int
-                }
-            }
-            {
-                event itemRemoved
-                action "delete"
-                fields {itemId Uuid}
-            }
-        ]
+        cartId Uuid
+        items [{
+            itemId Uuid
+            productId String
+            price Int
+            quantity Int
+        }]
+        totalPrice Int
     }
 
     scenarios [
@@ -95,7 +70,10 @@ viewCartItems = ViewSlice {
             name "Ex: Cart with one item"
             given [
                 cartCreated
-                itemAdded & {fields {price 10, quantity 2}}
+                itemAdded & {fields {
+                    price 10
+                    quantity 2
+                }}
             ]
             query {cartId "abc"}
             expect {
