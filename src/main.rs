@@ -29,6 +29,12 @@ enum Commands {
     Watch {
         /// Path to the ilk file
         file: PathBuf,
+        /// Emit JSON schema on successful validation
+        #[arg(long)]
+        emit: bool,
+        /// Pretty-print the emitted JSON output
+        #[arg(long)]
+        pretty: bool,
     },
     /// Parse a file and dump the AST
     Parse {
@@ -98,8 +104,12 @@ fn main() {
         Commands::Check { file } => {
             run_check(&file, cli.json);
         }
-        Commands::Watch { file } => {
-            run_watch(&file, cli.json);
+        Commands::Watch {
+            file,
+            emit,
+            pretty,
+        } => {
+            run_watch(&file, cli.json, emit, pretty);
         }
         Commands::Parse { file } => {
             run_parse(&file, cli.json);
@@ -157,13 +167,13 @@ fn run_check(file: &PathBuf, json: bool) {
     }
 }
 
-fn run_watch(file: &PathBuf, json: bool) {
+fn run_watch(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
     if !json {
         println!("Watching {}", file.display());
     }
 
     // Initial validation
-    run_validation(file, json);
+    run_validation(file, json, emit, pretty);
 
     let (tx, rx) = channel();
 
@@ -199,7 +209,7 @@ fn run_watch(file: &PathBuf, json: bool) {
                     let now = chrono::Local::now();
                     println!("\n--- Re-validating at {} ---", now.format("%H:%M:%S"));
                 }
-                run_validation(file, json);
+                run_validation(file, json, emit, pretty);
                 if !json {
                     println!("Completed in {:?}", start.elapsed());
                 }
@@ -212,10 +222,29 @@ fn run_watch(file: &PathBuf, json: bool) {
     }
 }
 
-fn run_validation(file: &PathBuf, json: bool) {
-    match ilk::validate_file(file) {
-        Ok(()) => {
-            if json {
+fn run_validation(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
+    let canonical = match file.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Cannot resolve path: {}", e);
+            return;
+        }
+    };
+    let mut compiler = ilk::Compiler::new();
+
+    match compiler.load_file(&canonical) {
+        Ok(_) => {
+            if emit {
+                let ast = compiler.get_file(&canonical).unwrap();
+                let env = compiler.get_env(&canonical).unwrap();
+                let output = ilk::emit_schema::emit_schema(ast, env);
+                let json_str = if pretty {
+                    serde_json::to_string_pretty(&output).unwrap()
+                } else {
+                    serde_json::to_string(&output).unwrap()
+                };
+                println!("{}", json_str);
+            } else if json {
                 JsonOutput::success().print();
             } else {
                 println!("Validation passed");
