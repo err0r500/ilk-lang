@@ -81,6 +81,7 @@ impl SourcePath {
 #[serde(rename_all = "snake_case")]
 pub enum Annotation {
     Main,
+    Artifact,
     Assoc(Vec<S<String>>),
     Source(Vec<S<SourcePath>>),
     Out,

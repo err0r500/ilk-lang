@@ -63,6 +63,9 @@ enum Commands {
         /// Pretty-print the JSON output
         #[arg(long)]
         pretty: bool,
+        /// Write split JSON files to this directory (one per @artifact instance + main)
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
     },
 }
 
@@ -125,8 +128,8 @@ fn main() {
         Commands::Format { file } => {
             run_format(&file);
         }
-        Commands::Emit { file, pretty } => {
-            run_emit(&file, pretty);
+        Commands::Emit { file, pretty, out_dir } => {
+            run_emit(&file, pretty, out_dir.as_deref());
         }
     }
 }
@@ -316,7 +319,7 @@ fn run_json(file: &PathBuf, pretty: bool) {
     }
 }
 
-fn run_emit(file: &PathBuf, pretty: bool) {
+fn run_emit(file: &PathBuf, pretty: bool, out_dir: Option<&std::path::Path>) {
     let canonical = file.canonicalize().expect("Cannot resolve path");
     let mut compiler = ilk::Compiler::new();
 
@@ -333,13 +336,39 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     let ast = compiler.get_file(&canonical).unwrap();
     let env = compiler.get_env(&canonical).unwrap();
 
-    let output = ilk::emit_schema::emit_schema(ast, env);
-    let json_str = if pretty {
-        serde_json::to_string_pretty(&output).unwrap()
+    if let Some(dir) = out_dir {
+        std::fs::create_dir_all(dir).expect("Failed to create output directory");
+        let result = ilk::emit_schema::emit_schema_split(ast, env);
+
+        let stem = canonical
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        write_json_file(&dir.join(format!("{}.json", stem)), &result.main, pretty);
+
+        for (name, value) in &result.artifacts {
+            write_json_file(&dir.join(format!("{}.json", name)), value, pretty);
+        }
     } else {
-        serde_json::to_string(&output).unwrap()
-    };
-    println!("{}", json_str);
+        let output = ilk::emit_schema::emit_schema(ast, env);
+        let json_str = to_json_str(&output, pretty);
+        println!("{}", json_str);
+    }
+}
+
+fn write_json_file(path: &std::path::Path, value: &serde_json::Value, pretty: bool) {
+    let s = to_json_str(value, pretty);
+    std::fs::write(path, &s)
+        .unwrap_or_else(|e| eprintln!("Failed to write {}: {}", path.display(), e));
+    println!("Wrote {}", path.display());
+}
+
+fn to_json_str(value: &serde_json::Value, pretty: bool) -> String {
+    if pretty {
+        serde_json::to_string_pretty(value).unwrap()
+    } else {
+        serde_json::to_string(value).unwrap()
+    }
 }
 
 fn print_errors(errors: &[Diagnostic]) {

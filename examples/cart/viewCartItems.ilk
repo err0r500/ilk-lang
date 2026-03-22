@@ -4,6 +4,7 @@ import "./tags.ilk"
 import "./actors.ilk"
 
 
+@artifact
 viewCartItems = ViewSlice {
     name "ViewCartItems"
 

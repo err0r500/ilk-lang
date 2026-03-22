@@ -4,6 +4,7 @@ import "./tags.ilk"
 import "./actors.ilk"
 
 
+@artifact
 addItem = ChangeSlice {
     name "registerUser"
 

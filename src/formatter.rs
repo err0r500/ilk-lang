@@ -153,6 +153,7 @@ impl<'a> Formatter<'a> {
     fn format_annotation(&mut self, ann: &S<Annotation>) {
         match &ann.node {
             Annotation::Main => self.write("@main"),
+            Annotation::Artifact => self.write("@artifact"),
             Annotation::Out => self.write("@out"),
             Annotation::Doc(s) => {
                 self.write("@doc \"");

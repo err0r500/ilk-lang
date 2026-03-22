@@ -899,13 +899,19 @@ fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> 
         .then_ignore(ws_nl())
         .or_not();
 
-    // Collect @main and @doc annotations
+    // Collect @artifact, @main and @doc annotations
+    let artifact_ann = just("@artifact")
+        .then_ignore(ws_nl())
+        .or_not()
+        .map(|o| o.is_some());
+
     let main_ann = just("@main")
         .then_ignore(ws_nl())
         .or_not()
         .map(|o| o.is_some());
 
-    main_ann
+    artifact_ann
+        .then(main_ann)
         .then(doc)
         .then(ident())
         .then_ignore(ws())
@@ -915,12 +921,14 @@ fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> 
         .then(assocs())
         .then_ignore(ws())
         .then(value())
-        .map(|(((((is_main, doc), name), type_name), assocs), body)| {
-            let annotations = if is_main {
-                vec![Spanned::new(Annotation::Main, 0..0)]
-            } else {
-                vec![]
-            };
+        .map(|((((((is_artifact, is_main), doc), name), type_name), assocs), body)| {
+            let mut annotations = Vec::new();
+            if is_main {
+                annotations.push(Spanned::new(Annotation::Main, 0..0));
+            }
+            if is_artifact {
+                annotations.push(Spanned::new(Annotation::Artifact, 0..0));
+            }
             Item::Instance(Instance {
                 name,
                 type_name,
