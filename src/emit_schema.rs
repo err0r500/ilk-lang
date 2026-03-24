@@ -40,7 +40,7 @@ fn emit_value(value: &Value, type_name: Option<&str>, env: &TypeEnv) -> JsonValu
         Value::Struct(fields) => emit_struct(fields, type_name, env),
         Value::List(elements) => emit_list(elements, type_name, env),
         Value::Variant(name, body) => emit_variant(name, &body.node, env),
-        Value::Refinement(base, _assocs, overrides) => emit_refinement(base, overrides, env),
+        Value::Refinement(base, overrides) => emit_refinement(base, overrides, env),
     }
 }
 
@@ -51,11 +51,7 @@ fn emit_binding_ref(name: &str, env: &TypeEnv) -> JsonValue {
     }
 }
 
-fn emit_struct(
-    fields: &[S<InstanceField>],
-    type_name: Option<&str>,
-    env: &TypeEnv,
-) -> JsonValue {
+fn emit_struct(fields: &[S<InstanceField>], type_name: Option<&str>, env: &TypeEnv) -> JsonValue {
     let mut map = Map::new();
     if let Some(tn) = type_name {
         map.insert("$type".to_string(), json!(tn));
@@ -71,11 +67,7 @@ fn emit_struct(
     JsonValue::Object(map)
 }
 
-fn emit_list(
-    elements: &[S<ListElement>],
-    elem_type: Option<&str>,
-    env: &TypeEnv,
-) -> JsonValue {
+fn emit_list(elements: &[S<ListElement>], elem_type: Option<&str>, env: &TypeEnv) -> JsonValue {
     JsonValue::Array(
         elements
             .iter()
@@ -88,7 +80,7 @@ fn emit_list_element(elem: &ListElement, elem_type: Option<&str>, env: &TypeEnv)
     match elem {
         ListElement::Value(v) => emit_value(v, elem_type, env),
         ListElement::BindingRef(name) => emit_binding_ref(name, env),
-        ListElement::Refinement(base, _assocs, overrides) => emit_refinement(base, overrides, env),
+        ListElement::Refinement(base, overrides) => emit_refinement(base, overrides, env),
     }
 }
 
@@ -107,10 +99,9 @@ fn emit_refinement(base: &str, overrides: &[S<InstanceField>], env: &TypeEnv) ->
     if let JsonValue::Object(ref mut map) = val {
         for f in overrides {
             let field_name = &f.node.name.node;
-            let field_type =
-                base_type
-                    .as_deref()
-                    .and_then(|tn| resolve_field_type(tn, field_name, env));
+            let field_type = base_type
+                .as_deref()
+                .and_then(|tn| resolve_field_type(tn, field_name, env));
             map.insert(
                 field_name.clone(),
                 emit_value(&f.node.value.node, field_type.as_deref(), env),

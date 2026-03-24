@@ -20,7 +20,6 @@
 "@" @attribute
 "main" @attribute
 "out" @attribute
-"assoc" @attribute
 "source" @attribute
 "constraint" @attribute
 "doc" @attribute

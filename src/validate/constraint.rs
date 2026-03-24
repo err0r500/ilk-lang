@@ -64,10 +64,9 @@ fn validate_instance_constraints(
 
     for constraint in constraints {
         let env = build_eval_env(ctx, inst);
-        let assocs = build_assoc_map(inst);
         let fail_msg = format!("Constraint failed for instance '{}'", inst.name.node);
         report_constraint_result(
-            eval_constraint(&constraint.node, &env, &assocs, ctx),
+            eval_constraint(&constraint.node, &env, ctx),
             &constraint.span,
             &inst.name.span,
             &fail_msg,
@@ -102,7 +101,6 @@ fn validate_nested_constraints(
                     for (i, elem) in elements.iter().enumerate() {
                         if let ListElement::Value(Value::Struct(fields)) = &elem.node {
                             let env = build_env_from_fields(fields, ctx);
-                            let assocs = HashSet::new();
 
                             for constraint in &constraints {
                                 let fail_msg = format!(
@@ -110,7 +108,7 @@ fn validate_nested_constraints(
                                     type_decl.node.name.node, parent_path, i
                                 );
                                 report_constraint_result(
-                                    eval_constraint(&constraint.node, &env, &assocs, ctx),
+                                    eval_constraint(&constraint.node, &env, ctx),
                                     &elem.span,
                                     &elem.span,
                                     &fail_msg,
@@ -163,7 +161,6 @@ fn validate_nested_constraints(
                 let type_fields = type_field_names(&type_decl.node.body);
                 if !constraints.is_empty() {
                     let env = build_env_from_fields(val_fields, ctx);
-                    let assocs = HashSet::new();
 
                     for constraint in &constraints {
                         let fail_msg = format!(
@@ -171,7 +168,7 @@ fn validate_nested_constraints(
                             type_name, parent_path
                         );
                         report_constraint_result(
-                            eval_constraint(&constraint.node, &env, &assocs, ctx),
+                            eval_constraint(&constraint.node, &env, ctx),
                             &constraint.span,
                             &value.span,
                             &fail_msg,
@@ -266,10 +263,6 @@ fn build_eval_env(ctx: &ValidationContext, inst: &Instance) -> HashMap<String, E
     env
 }
 
-fn build_assoc_map(inst: &Instance) -> HashSet<String> {
-    inst.assocs.iter().map(|a| a.node.clone()).collect()
-}
-
 /// Report the outcome of a single constraint evaluation, pushing diagnostics as needed.
 /// `constraint_span` points to the constraint in the type definition.
 /// `instance_span` points to the instance being validated.
@@ -335,17 +328,6 @@ fn report_constraint_result(
     }
 }
 
-/// Resolve the assoc set for an item in a collection iteration.
-fn assocs_for_item(item: &EvalValue, ctx: &ValidationContext) -> HashSet<String> {
-    if let EvalValue::BindingRef(name) = item {
-        ctx.get_instance(name)
-            .map(|inst| inst.assocs.iter().map(|a| a.node.clone()).collect())
-            .unwrap_or_default()
-    } else {
-        HashSet::new()
-    }
-}
-
 fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
     match &value.node {
         Value::LitString(s) => EvalValue::String(s.clone()),
@@ -371,20 +353,19 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
                         value_to_eval_value(&spanned, ctx)
                     }
                     ListElement::BindingRef(name) => EvalValue::BindingRef(name.clone()),
-                    ListElement::Refinement(name, _, _) => EvalValue::BindingRef(name.clone()),
+                    ListElement::Refinement(name, _) => EvalValue::BindingRef(name.clone()),
                 })
                 .collect();
             EvalValue::List(vals)
         }
         Value::Variant(_, body) => value_to_eval_value(body, ctx),
-        Value::Refinement(name, _, _) => EvalValue::BindingRef(name.clone()),
+        Value::Refinement(name, _) => EvalValue::BindingRef(name.clone()),
     }
 }
 
 fn eval_constraint(
     expr: &ConstraintExpr,
     env: &HashMap<String, EvalValue>,
-    assocs: &HashSet<String>,
     ctx: &ValidationContext,
 ) -> Result<EvalValue, ConstraintError> {
     match expr {
@@ -397,7 +378,7 @@ fn eval_constraint(
             .ok_or_else(|| ConstraintError::Eval(format!("Unknown variable: {}", name))),
 
         ConstraintExpr::FieldAccess(obj, field) => {
-            let obj_val = eval_constraint(&obj.node, env, assocs, ctx)?;
+            let obj_val = eval_constraint(&obj.node, env, ctx)?;
             match obj_val {
                 EvalValue::Struct(map) => map
                     .get(field)
@@ -424,15 +405,14 @@ fn eval_constraint(
         }
 
         ConstraintExpr::All(col_expr, var, body) => {
-            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
+            let col_val = eval_constraint(&col_expr.node, env, ctx)?;
 
             match col_val {
                 EvalValue::List(ref items) => {
                     for item in items {
                         let mut inner_env = env.clone();
                         inner_env.insert(var.clone(), item.clone());
-                        let item_assocs = assocs_for_item(item, ctx);
-                        match eval_constraint(&body.node, &inner_env, &item_assocs, ctx) {
+                        match eval_constraint(&body.node, &inner_env, ctx) {
                             Ok(EvalValue::Bool(false)) => {
                                 let trace = FailureTrace::new()
                                     .with_binding(var, eval_value_to_string(item));
@@ -461,7 +441,7 @@ fn eval_constraint(
                         let mut inner_env = env.clone();
                         inner_env.insert(var.clone(), EvalValue::String(item.clone()));
 
-                        match eval_constraint(&body.node, &inner_env, assocs, ctx) {
+                        match eval_constraint(&body.node, &inner_env, ctx) {
                             Ok(EvalValue::Bool(false)) => {
                                 let trace =
                                     FailureTrace::new().with_binding(var, format!("\"{}\"", item));
@@ -494,14 +474,13 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Exists(col_expr, var, body) => {
-            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
+            let col_val = eval_constraint(&col_expr.node, env, ctx)?;
 
             if let EvalValue::List(items) = col_val {
                 for item in &items {
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
-                    let item_assocs = assocs_for_item(item, ctx);
-                    match eval_constraint(&body.node, &inner_env, &item_assocs, ctx) {
+                    match eval_constraint(&body.node, &inner_env, ctx) {
                         Ok(EvalValue::Bool(true)) => return Ok(EvalValue::Bool(true)),
                         Ok(EvalValue::Bool(false)) | Err(ConstraintError::Failed(_)) => continue,
                         Ok(_) => {
@@ -521,7 +500,7 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Unique(col_expr, var, body) => {
-            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
+            let col_val = eval_constraint(&col_expr.node, env, ctx)?;
 
             if let EvalValue::List(items) = col_val {
                 let mut seen = HashSet::new();
@@ -529,7 +508,7 @@ fn eval_constraint(
                     let mut inner_env = env.clone();
                     inner_env.insert(var.clone(), item.clone());
 
-                    let result = eval_constraint(&body.node, &inner_env, assocs, ctx)?;
+                    let result = eval_constraint(&body.node, &inner_env, ctx)?;
                     let key = eval_value_to_string(&result);
                     if seen.contains(&key) {
                         let trace = FailureTrace::new().with_binding("duplicate value", key);
@@ -546,7 +525,7 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Count(col_expr) => {
-            let col_val = eval_constraint(&col_expr.node, env, assocs, ctx)?;
+            let col_val = eval_constraint(&col_expr.node, env, ctx)?;
 
             if let EvalValue::List(items) = col_val {
                 Ok(EvalValue::Int(items.len() as i64))
@@ -557,33 +536,8 @@ fn eval_constraint(
             }
         }
 
-        ConstraintExpr::Assoc(obj, tag) => {
-            let tag_val = eval_constraint(&tag.node, env, assocs, ctx)?;
-            let tag_name = match tag_val {
-                EvalValue::BindingRef(name) => name,
-                _ => {
-                    return Err(ConstraintError::Eval(
-                        "assoc tag must be a binding reference".to_string(),
-                    ))
-                }
-            };
-
-            let obj_val = eval_constraint(&obj.node, env, assocs, ctx)?;
-            match obj_val {
-                EvalValue::BindingRef(name) => {
-                    if let Some(inst) = ctx.get_instance(&name) {
-                        let has = inst.assocs.iter().any(|a| a.node == tag_name);
-                        Ok(EvalValue::Bool(has))
-                    } else {
-                        Err(ConstraintError::Eval(format!("Unknown instance: {}", name)))
-                    }
-                }
-                _ => Ok(EvalValue::Bool(assocs.contains(&tag_name))),
-            }
-        }
-
         ConstraintExpr::TemplateVars(expr) => {
-            let val = eval_constraint(&expr.node, env, assocs, ctx)?;
+            let val = eval_constraint(&expr.node, env, ctx)?;
             if let EvalValue::String(s) = val {
                 let vars = extract_template_vars(&s);
                 Ok(EvalValue::Set(vars))
@@ -595,7 +549,7 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Keys(expr) => {
-            let val = eval_constraint(&expr.node, env, assocs, ctx)?;
+            let val = eval_constraint(&expr.node, env, ctx)?;
             match val {
                 EvalValue::Struct(map) => {
                     let keys: HashSet<_> = map.keys().cloned().collect();
@@ -619,11 +573,11 @@ fn eval_constraint(
         }
 
         ConstraintExpr::And(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
+            let l = eval_constraint(&left.node, env, ctx)?;
             match l {
                 EvalValue::Bool(false) => Ok(EvalValue::Bool(false)),
                 EvalValue::Bool(true) => {
-                    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+                    let r = eval_constraint(&right.node, env, ctx)?;
                     match r {
                         EvalValue::Bool(b) => Ok(EvalValue::Bool(b)),
                         _ => Err(ConstraintError::Eval(
@@ -638,11 +592,11 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Or(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
+            let l = eval_constraint(&left.node, env, ctx)?;
             match l {
                 EvalValue::Bool(true) => Ok(EvalValue::Bool(true)),
                 EvalValue::Bool(false) => {
-                    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+                    let r = eval_constraint(&right.node, env, ctx)?;
                     match r {
                         EvalValue::Bool(b) => Ok(EvalValue::Bool(b)),
                         _ => Err(ConstraintError::Eval(
@@ -657,7 +611,7 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Not(inner) => {
-            let v = eval_constraint(&inner.node, env, assocs, ctx)?;
+            let v = eval_constraint(&inner.node, env, ctx)?;
             match v {
                 EvalValue::Bool(b) => Ok(EvalValue::Bool(!b)),
                 _ => Err(ConstraintError::Eval(
@@ -667,20 +621,20 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Eq(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
+            let l = eval_constraint(&left.node, env, ctx)?;
+            let r = eval_constraint(&right.node, env, ctx)?;
             Ok(EvalValue::Bool(eval_values_equal(&l, &r)))
         }
 
         ConstraintExpr::Ne(left, right) => {
-            let l = eval_constraint(&left.node, env, assocs, ctx)?;
-            let r = eval_constraint(&right.node, env, assocs, ctx)?;
+            let l = eval_constraint(&left.node, env, ctx)?;
+            let r = eval_constraint(&right.node, env, ctx)?;
             Ok(EvalValue::Bool(!eval_values_equal(&l, &r)))
         }
 
         ConstraintExpr::In(elem, set) => {
-            let e = eval_constraint(&elem.node, env, assocs, ctx)?;
-            let s = eval_constraint(&set.node, env, assocs, ctx)?;
+            let e = eval_constraint(&elem.node, env, ctx)?;
+            let s = eval_constraint(&set.node, env, ctx)?;
 
             match (&e, &s) {
                 (EvalValue::String(key), EvalValue::Set(set_vals)) => {
@@ -726,7 +680,7 @@ fn eval_constraint(
         }
 
         ConstraintExpr::IsType(inner, type_name) => {
-            let val = eval_constraint(&inner.node, env, assocs, ctx)?;
+            let val = eval_constraint(&inner.node, env, ctx)?;
             let kind = type_kind(type_name, ctx);
             let matches = match kind {
                 "list" => matches!(val, EvalValue::List(_)),
@@ -748,18 +702,10 @@ fn eval_constraint(
             Ok(EvalValue::Bool(env.contains_key(field_name.as_str())))
         }
 
-        ConstraintExpr::Lt(left, right) => {
-            eval_int_cmp(left, right, "<", env, assocs, ctx, |a, b| a < b)
-        }
-        ConstraintExpr::Le(left, right) => {
-            eval_int_cmp(left, right, "<=", env, assocs, ctx, |a, b| a <= b)
-        }
-        ConstraintExpr::Gt(left, right) => {
-            eval_int_cmp(left, right, ">", env, assocs, ctx, |a, b| a > b)
-        }
-        ConstraintExpr::Ge(left, right) => {
-            eval_int_cmp(left, right, ">=", env, assocs, ctx, |a, b| a >= b)
-        }
+        ConstraintExpr::Lt(left, right) => eval_int_cmp(left, right, "<", env, ctx, |a, b| a < b),
+        ConstraintExpr::Le(left, right) => eval_int_cmp(left, right, "<=", env, ctx, |a, b| a <= b),
+        ConstraintExpr::Gt(left, right) => eval_int_cmp(left, right, ">", env, ctx, |a, b| a > b),
+        ConstraintExpr::Ge(left, right) => eval_int_cmp(left, right, ">=", env, ctx, |a, b| a >= b),
     }
 }
 
@@ -768,12 +714,11 @@ fn eval_int_cmp(
     right: &S<ConstraintExpr>,
     op: &str,
     env: &HashMap<String, EvalValue>,
-    assocs: &HashSet<String>,
     ctx: &ValidationContext,
     cmp: impl Fn(i64, i64) -> bool,
 ) -> Result<EvalValue, ConstraintError> {
-    let l = eval_constraint(&left.node, env, assocs, ctx)?;
-    let r = eval_constraint(&right.node, env, assocs, ctx)?;
+    let l = eval_constraint(&left.node, env, ctx)?;
+    let r = eval_constraint(&right.node, env, ctx)?;
     match (&l, &r) {
         (EvalValue::Int(a), EvalValue::Int(b)) => {
             if cmp(*a, *b) {
@@ -960,67 +905,6 @@ foo = Foo {items []}
         assert!(vars.contains("id"));
         assert!(vars.contains("postId"));
         assert_eq!(vars.len(), 2);
-    }
-
-    #[test]
-    fn test_nested_constraint_pass() {
-        let errors = validate_constraints_src(
-            r#"
-type Tag = {_ String}
-
-@assoc [Tag]
-type Event = {...}
-
-type QueryItem = {
-    @constraint all(tags, t => all(events, e => e.assoc(t)))
-    events []Event
-    tags []Tag
-}
-
-type Container = { items []QueryItem }
-
-tag1 = Tag {x String}
-ev1 = Event<tag1> {a String}
-ev2 = Event<tag1> {b String}
-container = Container {
-    items [
-        { events [ev1, ev2], tags [tag1] }
-    ]
-}
-"#,
-        );
-        assert!(errors.is_empty(), "{:?}", errors);
-    }
-
-    #[test]
-    fn test_nested_constraint_fail() {
-        let errors = validate_constraints_src(
-            r#"
-type Tag = {_ String}
-
-@assoc [Tag]
-type Event = {...}
-
-type QueryItem = {
-    @constraint all(tags, t => all(events, e => e.assoc(t)))
-    events []Event
-    tags []Tag
-}
-
-type Container = { items []QueryItem }
-
-tag1 = Tag {x String}
-tag2 = Tag {y String}
-ev1 = Event<tag1> {a String}
-container = Container {
-    items [
-        { events [ev1], tags [tag1, tag2] }
-    ]
-}
-"#,
-        );
-        assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("Constraint failed"));
     }
 
     #[test]

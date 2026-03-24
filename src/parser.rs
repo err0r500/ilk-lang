@@ -158,13 +158,7 @@ fn refinable_ref<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserEx
 }
 
 fn source_path<'a>() -> impl Parser<'a, ParserInput<'a>, S<SourcePath>, ParserExtra<'a>> + Clone {
-    // Allow $assoc as a special root identifier
-    let assoc_root =
-        just("$assoc").map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
-
-    let path_segment = choice((assoc_root, ident()));
-
-    path_segment
+    ident()
         .separated_by(just('.'))
         .at_least(1)
         .collect::<Vec<_>>()
@@ -266,39 +260,13 @@ fn constraint_expr<'a>(
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
         ));
 
-        let postfix = atom.foldl(
-            choice((
-                just(".assoc(")
-                    .ignore_then(expr.clone())
-                    .then_ignore(just(')'))
-                    .map(|arg| (true, arg)),
-                just('.').ignore_then(ident()).map(|field| {
-                    (
-                        false,
-                        Spanned::from_simple(
-                            ConstraintExpr::Var(field.node.clone()),
-                            field.span.into(),
-                        ),
-                    )
-                }),
-            ))
-            .repeated(),
-            |left, (is_assoc, right)| {
-                let span = left.span.start..right.span.end;
-                if is_assoc {
-                    Spanned::new(ConstraintExpr::Assoc(Box::new(left), Box::new(right)), span)
-                } else {
-                    if let ConstraintExpr::Var(field) = &right.node {
-                        Spanned::new(
-                            ConstraintExpr::FieldAccess(Box::new(left), field.clone()),
-                            span,
-                        )
-                    } else {
-                        unreachable!()
-                    }
-                }
-            },
-        );
+        let postfix = atom.foldl(just('.').ignore_then(ident()).repeated(), |left, field| {
+            let span = left.span.start..field.span.end;
+            Spanned::new(
+                ConstraintExpr::FieldAccess(Box::new(left), field.node),
+                span,
+            )
+        });
 
         let unary = choice((
             just('!')
@@ -365,20 +333,6 @@ fn annotation<'a>() -> impl Parser<'a, ParserInput<'a>, S<Annotation>, ParserExt
     choice((
         just("@main")
             .to(Annotation::Main)
-            .map_with(|a, e| Spanned::from_simple(a, e.span())),
-        just("@assoc")
-            .ignore_then(ws())
-            .ignore_then(just('['))
-            .ignore_then(ws_nl())
-            .ignore_then(
-                ident()
-                    .separated_by(ws_nl().then(just(',')).then(ws_nl()))
-                    .allow_trailing()
-                    .collect::<Vec<_>>(),
-            )
-            .then_ignore(ws_nl())
-            .then_ignore(just(']'))
-            .map(Annotation::Assoc)
             .map_with(|a, e| Spanned::from_simple(a, e.span())),
         just("@source")
             .ignore_then(ws())
@@ -565,13 +519,7 @@ fn type_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtr
 }
 
 fn dot_path<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<String>, ParserExtra<'a>> + Clone {
-    // Allow $assoc as a special root identifier
-    let assoc_root =
-        just("$assoc").map_with(|_, e| Spanned::from_simple("$assoc".to_string(), e.span()));
-
-    let path_segment = choice((assoc_root, ident()));
-
-    path_segment
+    ident()
         .separated_by(just('.'))
         .at_least(1)
         .collect::<Vec<_>>()
@@ -595,23 +543,6 @@ fn field_origin<'a>() -> impl Parser<'a, ParserInput<'a>, FieldOrigin, ParserExt
     ))
 }
 
-fn inline_assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone
-{
-    just('<')
-        .ignore_then(ws())
-        .ignore_then(
-            ident()
-                .separated_by(just(',').then(ws()))
-                .at_least(1)
-                .collect::<Vec<_>>(),
-        )
-        .then_ignore(ws())
-        .then_ignore(just('>'))
-        .then_ignore(ws())
-        .or_not()
-        .map(|o| o.unwrap_or_default())
-}
-
 fn instance_field<'a>(
     value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone,
 ) -> impl Parser<'a, ParserInput<'a>, S<InstanceField>, ParserExtra<'a>> + Clone {
@@ -626,19 +557,15 @@ fn instance_field<'a>(
     doc.then(ident())
         .then(just('?').or_not().map(|o| o.is_some()))
         .then_ignore(ws())
-        .then(inline_assocs())
         .then(value)
         .then(field_origin())
-        .map(
-            |(((((doc, name), optional), assocs), value), origin)| InstanceField {
-                name,
-                optional,
-                assocs,
-                value,
-                origin,
-                doc: doc.map(|s: &str| s.to_string()),
-            },
-        )
+        .map(|((((doc, name), optional), value), origin)| InstanceField {
+            name,
+            optional,
+            value,
+            origin,
+            doc: doc.map(|s: &str| s.to_string()),
+        })
         .map_with(|f, e| Spanned::from_simple(f, e.span()))
 }
 
@@ -699,19 +626,15 @@ fn refinement_field_inner<'a>(
     doc.then(ident())
         .then(just('?').or_not().map(|o| o.is_some()))
         .then_ignore(ws())
-        .then(inline_assocs())
         .then(value)
         .then(field_origin())
-        .map(
-            |(((((doc, name), optional), assocs), value), origin)| InstanceField {
-                name,
-                optional,
-                assocs,
-                value,
-                origin,
-                doc: doc.map(|s: &str| s.to_string()),
-            },
-        )
+        .map(|((((doc, name), optional), value), origin)| InstanceField {
+            name,
+            optional,
+            value,
+            origin,
+            doc: doc.map(|s: &str| s.to_string()),
+        })
         .map_with(|f, e| Spanned::from_simple(f, e.span()))
 }
 
@@ -725,7 +648,6 @@ fn list_element<'a>(
 ) -> impl Parser<'a, ParserInput<'a>, S<ListElement>, ParserExtra<'a>> + Clone {
     let refinement = ident()
         .then_ignore(ws())
-        .then(inline_assocs())
         .then_ignore(just('&'))
         .then_ignore(ws())
         .then_ignore(just('{'))
@@ -738,7 +660,7 @@ fn list_element<'a>(
         )
         .then_ignore(ws_nl())
         .then_ignore(just('}'))
-        .map(|((name, assocs), fields)| ListElement::Refinement(name.node, assocs, fields))
+        .map(|(name, fields)| ListElement::Refinement(name.node, fields))
         .map_with(|e, ex| Spanned::from_simple(e, ex.span()));
 
     let anon_struct = value
@@ -791,7 +713,6 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         })
         .map(|s: &str| s.to_string())
         .then_ignore(ws())
-        .then(inline_assocs())
         .then_ignore(just('&'))
         .then_ignore(ws())
         .then_ignore(just('{'))
@@ -804,7 +725,7 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         )
         .then_ignore(ws_nl())
         .then_ignore(just('}'))
-        .map(|((name, assocs), fields)| Value::Refinement(name, assocs, fields))
+        .map(|(name, fields)| Value::Refinement(name, fields))
         .map_with(|v, e| Spanned::from_simple(v, e.span()));
 
     let simple = text::ident()
@@ -853,19 +774,6 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>
 
 // ============= Top-Level Item Parsers =============
 
-fn assocs<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<S<String>>, ParserExtra<'a>> + Clone {
-    just('<')
-        .ignore_then(
-            ident()
-                .separated_by(just(',').then(ws()))
-                .at_least(1)
-                .collect::<Vec<_>>(),
-        )
-        .then_ignore(just('>'))
-        .or_not()
-        .map(|o| o.unwrap_or_default())
-}
-
 // type Name = TypeExpr
 fn type_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
     annotation()
@@ -889,7 +797,7 @@ fn type_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>>
         .map_with(|i, e| Spanned::from_simple(i, e.span()))
 }
 
-// name = TypeName<assocs> body
+// name = TypeName body
 fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
     let doc = just("@doc")
         .ignore_then(ws())
@@ -912,10 +820,9 @@ fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> 
         .then_ignore(just('='))
         .then_ignore(ws())
         .then(ident())
-        .then(assocs())
         .then_ignore(ws())
         .then(value())
-        .map(|(((((is_main, doc), name), type_name), assocs), body)| {
+        .map(|((((is_main, doc), name), type_name), body)| {
             let annotations = if is_main {
                 vec![Spanned::new(Annotation::Main, 0..0)]
             } else {
@@ -924,7 +831,6 @@ fn instance<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> 
             Item::Instance(Instance {
                 name,
                 type_name,
-                assocs,
                 body,
                 annotations,
                 doc: doc.map(|s: &str| s.to_string()),
@@ -1114,13 +1020,6 @@ mod tests {
     }
 
     #[test]
-    fn test_instance_with_assocs() {
-        let f = parse_file("foo = Foo<a, b> {x Int}");
-        let inst = f.instances().next().unwrap();
-        assert_eq!(inst.assocs.len(), 2);
-    }
-
-    #[test]
     fn test_import() {
         let f = parse_file("import \"./base.ilk\"");
         assert_eq!(f.imports().count(), 1);
@@ -1148,12 +1047,11 @@ mod tests {
         let src = r#"
 type Tag = {_ String}
 
-@assoc [Tag]
 type Event = {...} & {timestamp Int}
 
 tag1 = Tag {x String}
 
-ev = Event<tag1> {
+ev = Event {
     id String
 }
 
@@ -1170,21 +1068,14 @@ board = Board {
     #[test]
     fn test_value_refinement() {
         let v = parse_value("foo & {x \"hello\"}");
-        assert!(matches!(v.node, Value::Refinement(name, assocs, fields)
-            if name == "foo" && assocs.is_empty() && fields.len() == 1));
-    }
-
-    #[test]
-    fn test_value_refinement_with_assocs() {
-        let v = parse_value("foo <a, b> & {x Int}");
-        assert!(matches!(v.node, Value::Refinement(name, assocs, _)
-            if name == "foo" && assocs.len() == 2));
+        assert!(matches!(v.node, Value::Refinement(name, fields)
+            if name == "foo" && fields.len() == 1));
     }
 
     #[test]
     fn test_value_refinement_nested_struct() {
         let v = parse_value("foo & {params {userId Uuid}}");
-        if let Value::Refinement(_, _, fields) = v.node {
+        if let Value::Refinement(_, fields) = v.node {
             assert_eq!(fields.len(), 1);
             if let Value::Struct(nested) = &fields[0].node.value.node {
                 assert_eq!(nested.len(), 1);

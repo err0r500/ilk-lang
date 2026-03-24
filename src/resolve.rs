@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::error::Diagnostic;
-use crate::span::{S, Span};
+use crate::span::{Span, S};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -35,7 +35,9 @@ impl TypeEnv {
     }
 
     pub fn main(&self) -> Option<&S<Instance>> {
-        self.main_instance.as_ref().and_then(|n| self.instances.get(n))
+        self.main_instance
+            .as_ref()
+            .and_then(|n| self.instances.get(n))
     }
 }
 
@@ -68,7 +70,8 @@ pub fn resolve_with_imports(
                     path,
                 ));
             } else {
-                env.types.insert(name.clone(), S::new(decl.clone(), item.span.clone()));
+                env.types
+                    .insert(name.clone(), S::new(decl.clone(), item.span.clone()));
             }
         }
     }
@@ -85,7 +88,10 @@ pub fn resolve_with_imports(
             let decl = TypeDecl {
                 name: S::new(name.clone(), span.clone()),
                 annotations: Vec::new(),
-                body: S::new(TypeExpr::Struct(StructKind::Closed(Vec::new())), span.clone()),
+                body: S::new(
+                    TypeExpr::Struct(StructKind::Closed(Vec::new())),
+                    span.clone(),
+                ),
             };
             env.types.insert(name, S::new(decl, span));
         }
@@ -102,7 +108,8 @@ pub fn resolve_with_imports(
                     path,
                 ));
             } else {
-                env.instances.insert(name.clone(), S::new(inst.clone(), item.span.clone()));
+                env.instances
+                    .insert(name.clone(), S::new(inst.clone(), item.span.clone()));
                 env.instance_files.insert(name.clone(), path.to_path_buf());
             }
 
@@ -140,17 +147,6 @@ pub fn resolve_with_imports(
                     format!("Unknown type: {}", type_name),
                     path,
                 ));
-            }
-
-            // Check associations reference known instances
-            for assoc in &inst.assocs {
-                if !env.instances.contains_key(&assoc.node) {
-                    errors.push(Diagnostic::error(
-                        assoc.span.clone(),
-                        format!("Unknown instance in association: {}", assoc.node),
-                        path,
-                    ));
-                }
             }
         }
     }
@@ -398,7 +394,10 @@ mod tests {
 
     #[test]
     fn test_implicit_union_marker_types() {
-        let env = resolve_str("type Status = Pending | Active | Archived\ntype Process = { status! Status }").unwrap();
+        let env = resolve_str(
+            "type Status = Pending | Active | Archived\ntype Process = { status! Status }",
+        )
+        .unwrap();
         assert!(env.types.contains_key("Status"));
         assert!(env.types.contains_key("Pending"));
         assert!(env.types.contains_key("Active"));

@@ -1,17 +1,18 @@
 type TableSchema = {...}
 
-@assoc [TableSchema]
 type DbQuery = {
     name! Concrete<String>
     params {...}
 
+    table &TableSchema
+
     @source [params]
-    insert []TableSchema
+    insert []&TableSchema
 
-    @source [params, assoc]
-    update []TableSchema
+    @source [params, table]
+    update []&TableSchema
 
-    @source [assoc]
+    @source [table]
     @out
     return {...}
 }
@@ -36,19 +37,23 @@ userTable = TableSchema {
     name String
 }
 
-getUserById = DbQuery<userTable> {
+getUserById = DbQuery {
     name "getUserById"
 
     params {userId Uuid}
 
+    table userTable
+
     return {
-        id? Uuid = $assoc.userTable.id
-        name String = $assoc.userTable.name
+        id? Uuid = table.id
+        name String = table.name
     }
 }
 
-insertUser = DbQuery<userTable> {
+insertUser = DbQuery {
     name "insertUser"
+
+    table userTable
 
     params {
         name String
@@ -62,7 +67,7 @@ insertUser = DbQuery<userTable> {
 
     update [
         userTable & {
-            id? Uuid = $assoc.userTable.id
+            id? Uuid = table.id
             name String = params.name
         }
     ]

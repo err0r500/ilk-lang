@@ -42,7 +42,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 - `TypeExpr` - recursive: Base, Named, Ref(&T), List, Struct, Union, Intersection, Concrete<T>
 - `Field` - name, optional?, type, annotations
 - `StructKind` - Closed, Open{...}, Anonymous{_}
-- `Annotation` - @main, @assoc, @source, @out, @constraint, @doc
+- `Annotation` - @main, @source, @out, @constraint, @doc
 - `ConstraintExpr` - boolean exprs, field access, collection ops
 
 **Instance-Level** (runtime):
@@ -52,7 +52,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 
 **Top-Level**:
 - `TypeDecl` - type X = TypeExpr
-- `Instance` - x = Type<assocs> Value
+- `Instance` - x = Type Value
 - `Import` - import "path" [as alias]
 - `File` - collection with helper iterators
 
@@ -104,7 +104,7 @@ Constraint ops:
 - Boolean: true, false, &&, ||, !
 - Comparison: ==, !=, <, <=, >, >=, in
 - Collections: all, exists, unique, count
-- Access: x.y.z, e.assoc(type)
+- Access: x.y.z
 - String: templateVars(str), keys(struct)
 
 ## Key Patterns

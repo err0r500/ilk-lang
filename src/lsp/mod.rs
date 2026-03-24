@@ -198,10 +198,7 @@ impl LanguageServer for Backend {
         }))
     }
 
-    async fn formatting(
-        &self,
-        params: DocumentFormattingParams,
-    ) -> Result<Option<Vec<TextEdit>>> {
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let uri = &params.text_document.uri;
 
         let docs = self.documents.read().await;
@@ -233,7 +230,8 @@ impl LanguageServer for Backend {
 }
 
 fn uri_to_path(uri: &Url) -> PathBuf {
-    uri.to_file_path().unwrap_or_else(|_| PathBuf::from(uri.path()))
+    uri.to_file_path()
+        .unwrap_or_else(|_| PathBuf::from(uri.path()))
 }
 
 pub async fn run() {

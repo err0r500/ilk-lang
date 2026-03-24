@@ -104,11 +104,7 @@ fn main() {
         Commands::Check { file } => {
             run_check(&file, cli.json);
         }
-        Commands::Watch {
-            file,
-            emit,
-            pretty,
-        } => {
+        Commands::Watch { file, emit, pretty } => {
             run_watch(&file, cli.json, emit, pretty);
         }
         Commands::Parse { file } => {

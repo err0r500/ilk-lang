@@ -104,7 +104,10 @@ impl Compiler {
             self.load_file_recursive(&import_path, loading)?;
             let (_, imported_env) = self.cache.get(&import_path).unwrap();
             for (name, ty) in &imported_env.types {
-                merged.types.entry(name.clone()).or_insert_with(|| ty.clone());
+                merged
+                    .types
+                    .entry(name.clone())
+                    .or_insert_with(|| ty.clone());
             }
             for (name, inst) in &imported_env.instances {
                 merged

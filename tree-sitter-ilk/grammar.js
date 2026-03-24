@@ -9,7 +9,6 @@ const PREC = {
     COMPARISON: 5,
     NOT: 6,
     FIELD_ACCESS: 7,
-    ASSOC_CALL: 8,
 };
 
 // Helper: comma-or-newline separated list (1+)
@@ -144,7 +143,6 @@ module.exports = grammar({
                 choice(
                     "main",
                     "out",
-                    seq("assoc", "[", $.annotation_args, "]"),
                     seq("source", "[", $.source_args, "]"),
                     seq("constraint", $._constraint_expr),
                     seq("doc", $.string),
@@ -225,18 +223,6 @@ module.exports = grammar({
                 seq("templateVars", "(", $._constraint_expr, ")"),
                 // keys(struct)
                 seq("keys", "(", $._constraint_expr, ")"),
-                // e.assoc(t)
-                prec.left(
-                    PREC.ASSOC_CALL,
-                    seq(
-                        $._constraint_expr,
-                        ".",
-                        "assoc",
-                        "(",
-                        $._constraint_expr,
-                        ")",
-                    ),
-                ),
             ),
 
         constraint_field_access: ($) =>
@@ -263,7 +249,7 @@ module.exports = grammar({
                 field("body", $._type_expr),
             ),
 
-        // [@main] [@doc "..."] name = TypeName<assocs?> value
+        // [@main] [@doc "..."] name = TypeName value
         instance: ($) =>
             seq(
                 optional($.main_annotation),
@@ -271,15 +257,12 @@ module.exports = grammar({
                 field("name", $.identifier),
                 "=",
                 field("type", $.identifier),
-                optional($.assoc_list),
                 field("value", $._value),
             ),
 
         main_annotation: ($) => "@main",
 
         doc_annotation: ($) => seq("@doc", $.string),
-
-        assoc_list: ($) => seq("<", commaSep1($.identifier), ">"),
 
         // import "path" [as alias]
         import_stmt: ($) =>
@@ -296,15 +279,12 @@ module.exports = grammar({
         _value: ($) =>
             choice(
                 $.struct_value,
-                $.assoc_struct_value,
                 $.list_value,
                 $.type_ref,
                 $.literal_value,
                 $.binding_ref,
                 $.variant_value,
             ),
-
-        assoc_struct_value: ($) => prec(1, seq($.assoc_list, $.struct_value)),
 
         type_ref: ($) => $.base_type,
 
@@ -335,7 +315,6 @@ module.exports = grammar({
         origin_path: ($) =>
             choice(
                 seq($.identifier, repeat(seq(".", $.identifier))),
-                seq("$assoc", repeat1(seq(".", $.identifier))),
             ),
 
         origin_paths: ($) => commaSep1($.origin_path),

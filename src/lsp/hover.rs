@@ -61,8 +61,7 @@ fn hover_in_type_expr(ty: &S<TypeExpr>, env: &TypeEnv, offset: usize) -> Option<
             None
         }
         TypeExpr::Intersection(left, right) => {
-            hover_in_type_expr(left, env, offset)
-                .or_else(|| hover_in_type_expr(right, env, offset))
+            hover_in_type_expr(left, env, offset).or_else(|| hover_in_type_expr(right, env, offset))
         }
         TypeExpr::Struct(kind) => {
             let fields = match kind {
@@ -102,7 +101,9 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
 
     match &val.node {
         Value::TypeRef(name) => env.get_type(name).map(|t| format_type_hover(&t.node)),
-        Value::BindingRef(name) => env.get_instance(name).map(|i| format_instance_hover(&i.node)),
+        Value::BindingRef(name) => env
+            .get_instance(name)
+            .map(|i| format_instance_hover(&i.node)),
         Value::Struct(fields) => {
             for field in fields {
                 // Field name hover
@@ -132,9 +133,11 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
                         }
                     }
                     ListElement::BindingRef(name) => {
-                        return env.get_instance(name).map(|i| format_instance_hover(&i.node));
+                        return env
+                            .get_instance(name)
+                            .map(|i| format_instance_hover(&i.node));
                     }
-                    ListElement::Refinement(name, _assocs, fields) => {
+                    ListElement::Refinement(name, fields) => {
                         if let Some(inst) = env.get_instance(name) {
                             // Check if hovering on the name part (rough heuristic)
                             let name_end_approx = elem.span.start + name.len();
@@ -159,7 +162,10 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
 
 fn format_type_hover(decl: &TypeDecl) -> String {
     let mut result = format!("**type {}**\n\n", decl.name.node);
-    result.push_str(&format!("```ilk\n{}\n```", type_expr_to_string(&decl.body.node)));
+    result.push_str(&format!(
+        "```ilk\n{}\n```",
+        type_expr_to_string(&decl.body.node)
+    ));
 
     // Add @doc if present
     for ann in &decl.annotations {
@@ -257,7 +263,11 @@ fn type_expr_to_string(ty: &TypeExpr) -> String {
             StructKind::Anonymous(types) => {
                 let type_strs: Vec<String> = types
                     .iter()
-                    .map(|t| t.as_ref().map(|t| type_expr_to_string(&t.node)).unwrap_or_else(|| "_".to_string()))
+                    .map(|t| {
+                        t.as_ref()
+                            .map(|t| type_expr_to_string(&t.node))
+                            .unwrap_or_else(|| "_".to_string())
+                    })
                     .collect();
                 format!("{{{}}}", type_strs.join(", "))
             }
@@ -275,7 +285,7 @@ fn value_to_type_string(val: &Value) -> String {
         Value::Struct(_) => "{...}".to_string(),
         Value::List(_) => "[...]".to_string(),
         Value::Variant(name, _) => name.clone(),
-        Value::Refinement(name, _, _) => format!("{} & {{...}}", name),
+        Value::Refinement(name, _) => format!("{} & {{...}}", name),
     }
 }
 

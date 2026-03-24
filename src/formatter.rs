@@ -159,16 +159,6 @@ impl<'a> Formatter<'a> {
                 self.write(s);
                 self.write("\"");
             }
-            Annotation::Assoc(names) => {
-                self.write("@assoc [");
-                for (i, n) in names.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.write(&n.node);
-                }
-                self.write("]");
-            }
             Annotation::Source(paths) => {
                 self.write("@source [");
                 for (i, p) in paths.iter().enumerate() {
@@ -240,12 +230,6 @@ impl<'a> Formatter<'a> {
             ConstraintExpr::Count(col) => {
                 self.write("count(");
                 self.format_constraint_expr(col);
-                self.write(")");
-            }
-            ConstraintExpr::Assoc(e, arg) => {
-                self.format_constraint_expr(e);
-                self.write(".assoc(");
-                self.format_constraint_expr(arg);
                 self.write(")");
             }
             ConstraintExpr::TemplateVars(e) => {
@@ -516,17 +500,6 @@ impl<'a> Formatter<'a> {
         self.write(" = ");
         self.write(&inst.type_name.node);
 
-        if !inst.assocs.is_empty() {
-            self.write("<");
-            for (i, a) in inst.assocs.iter().enumerate() {
-                if i > 0 {
-                    self.write(", ");
-                }
-                self.write(&a.node);
-            }
-            self.write(">");
-        }
-
         self.write(" ");
         self.format_value(&inst.body);
         self.writeln();
@@ -550,18 +523,8 @@ impl<'a> Formatter<'a> {
                 self.write(" ");
                 self.format_value(body);
             }
-            Value::Refinement(name, assocs, fields) => {
+            Value::Refinement(name, fields) => {
                 self.write(name);
-                if !assocs.is_empty() {
-                    self.write(" <");
-                    for (i, a) in assocs.iter().enumerate() {
-                        if i > 0 {
-                            self.write(", ");
-                        }
-                        self.write(&a.node);
-                    }
-                    self.write(">");
-                }
                 self.write(" & ");
                 self.format_refinement_fields(fields);
             }
@@ -606,16 +569,6 @@ impl<'a> Formatter<'a> {
             self.write(&field.node.name.node);
             if field.node.optional {
                 self.write("?");
-            }
-            if !field.node.assocs.is_empty() {
-                self.write(" <");
-                for (i, a) in field.node.assocs.iter().enumerate() {
-                    if i > 0 {
-                        self.write(", ");
-                    }
-                    self.write(&a.node);
-                }
-                self.write(">");
             }
             self.write(" ");
             self.format_value(&field.node.value);
@@ -692,18 +645,8 @@ impl<'a> Formatter<'a> {
                     self.format_value(&tmp);
                 }
                 ListElement::BindingRef(s) => self.write(s),
-                ListElement::Refinement(name, assocs, fields) => {
+                ListElement::Refinement(name, fields) => {
                     self.write(name);
-                    if !assocs.is_empty() {
-                        self.write(" <");
-                        for (i, a) in assocs.iter().enumerate() {
-                            if i > 0 {
-                                self.write(", ");
-                            }
-                            self.write(&a.node);
-                        }
-                        self.write(">");
-                    }
                     self.write(" & ");
                     self.format_refinement_fields(fields);
                 }
@@ -734,16 +677,6 @@ impl<'a> Formatter<'a> {
             self.write(&field.node.name.node);
             if field.node.optional {
                 self.write("?");
-            }
-            if !field.node.assocs.is_empty() {
-                self.write(" <");
-                for (j, a) in field.node.assocs.iter().enumerate() {
-                    if j > 0 {
-                        self.write(", ");
-                    }
-                    self.write(&a.node);
-                }
-                self.write(">");
             }
             self.write(" ");
             self.format_value(&field.node.value);
@@ -805,13 +738,6 @@ mod tests {
         let src = "type A = Int\n// trailing comment\n";
         let out = roundtrip(src);
         assert!(out.contains("// trailing comment"));
-    }
-
-    #[test]
-    fn test_instance_with_assocs() {
-        let src = "foo = Bar<a, b> {x Int}\n";
-        let out = roundtrip(src);
-        assert!(out.contains("Bar<a, b>"));
     }
 
     #[test]

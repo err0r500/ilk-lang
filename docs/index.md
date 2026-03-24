@@ -184,6 +184,6 @@ type Tag = {_ String} | Concrete<String>   // mixed
 | `@main` | Entry point — compiler validates from here |
 | `@source [fields]` | Data provenance: values must trace back to *fields* |
 | `@out` | Output field — exempt from `@source`, can be referenced by callers |
-| `@assoc [T]` | Instances carry typed associations (used with `@constraint`) |
+
 | `@constraint expr` | Boolean predicate validated at compile time |
 | `@doc "…"` | Implementation hint, preserved in AST |

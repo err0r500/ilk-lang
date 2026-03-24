@@ -111,21 +111,6 @@ type Version = Concrete<Int>
   (type_decl (identifier) (concrete_type (base_type))))
 
 ================================================================================
-Annotations - assoc
-================================================================================
-
-@assoc [Tag]
-type Event = {...}
-
---------------------------------------------------------------------------------
-
-(source_file
-  (type_decl
-    (annotation (annotation_args (identifier)))
-    (identifier)
-    (struct_type)))
-
-================================================================================
 Annotations - source
 ================================================================================
 
@@ -141,24 +126,6 @@ type Command = {
   (type_decl (identifier) (struct_type (field_list
     (field (identifier) (struct_type))
     (field (annotation (source_args (source_path (identifier)))) (identifier) (list_type (named_type (identifier))))))))
-
-================================================================================
-Annotations - constraint
-================================================================================
-
-type QueryItem = {
-    @constraint all(tags, t => e.assoc(t))
-    tags []Tag
-}
-
---------------------------------------------------------------------------------
-
-(source_file
-  (type_decl (identifier) (struct_type (field_list
-    (field
-      (annotation (constraint_call (constraint_var (identifier)) (identifier) (constraint_call (constraint_var (identifier)) (constraint_var (identifier)))))
-      (identifier)
-      (list_type (named_type (identifier))))))))
 
 ================================================================================
 Comments

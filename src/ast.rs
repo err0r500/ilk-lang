@@ -81,7 +81,6 @@ impl SourcePath {
 #[serde(rename_all = "snake_case")]
 pub enum Annotation {
     Main,
-    Assoc(Vec<S<String>>),
     Source(Vec<S<SourcePath>>),
     Out,
     Constraint(S<ConstraintExpr>),
@@ -98,7 +97,7 @@ pub enum ConstraintExpr {
     Exists(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
     Unique(Box<S<ConstraintExpr>>, String, Box<S<ConstraintExpr>>),
     Count(Box<S<ConstraintExpr>>),
-    Assoc(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
+
     TemplateVars(Box<S<ConstraintExpr>>),
     Keys(Box<S<ConstraintExpr>>),
     And(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
@@ -113,7 +112,7 @@ pub enum ConstraintExpr {
     Ge(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>),
     Int(i64),
     IsType(Box<S<ConstraintExpr>>, String), // isType(expr, TypeName)
-    IsPresent(String),                       // isPresent(fieldName)
+    IsPresent(String),                      // isPresent(fieldName)
 }
 
 // ============= Instance-Level AST (formerly kli/ast.rs) =============
@@ -131,7 +130,6 @@ pub enum FieldOrigin {
 pub struct InstanceField {
     pub name: S<String>,
     pub optional: bool,
-    pub assocs: Vec<S<String>>, // inline assocs: fieldName <inst1, inst2> {...}
     pub value: S<Value>,
     pub origin: FieldOrigin,
     pub doc: Option<String>,
@@ -140,15 +138,15 @@ pub struct InstanceField {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Value {
-    TypeRef(String),                                           // String, Int, etc.
-    LitString(String),                                         // "hello"
-    LitInt(i64),                                               // 42
-    LitBool(bool),                                             // true/false
-    BindingRef(String),                                        // someBinding
-    Struct(Vec<S<InstanceField>>),                             // {x Int, y String}
-    List(Vec<S<ListElement>>),                                 // [a, b, c]
-    Variant(String, Box<S<Value>>),                            // VariantName body
-    Refinement(String, Vec<S<String>>, Vec<S<InstanceField>>), // binding <assocs> & {fields}
+    TypeRef(String),                           // String, Int, etc.
+    LitString(String),                         // "hello"
+    LitInt(i64),                               // 42
+    LitBool(bool),                             // true/false
+    BindingRef(String),                        // someBinding
+    Struct(Vec<S<InstanceField>>),             // {x Int, y String}
+    List(Vec<S<ListElement>>),                 // [a, b, c]
+    Variant(String, Box<S<Value>>),            // VariantName body
+    Refinement(String, Vec<S<InstanceField>>), // binding & {fields}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -156,7 +154,7 @@ pub enum Value {
 pub enum ListElement {
     Value(Value),
     BindingRef(String),
-    Refinement(String, Vec<S<String>>, Vec<S<InstanceField>>), // binding <assocs> & {field origins}
+    Refinement(String, Vec<S<InstanceField>>), // binding & {field origins}
 }
 
 // ============= Unified Top-Level Items =============
@@ -172,7 +170,6 @@ pub struct TypeDecl {
 pub struct Instance {
     pub name: S<String>,
     pub type_name: S<String>,
-    pub assocs: Vec<S<String>>,
     pub body: S<Value>,
     pub annotations: Vec<S<Annotation>>, // can have @main
     pub doc: Option<String>,

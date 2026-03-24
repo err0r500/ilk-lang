@@ -15,7 +15,11 @@ fn format_type(ty: &TypeExpr) -> String {
         TypeExpr::LitInt(i) => format!("{}", i),
         TypeExpr::LitBool(b) => format!("{}", b),
         TypeExpr::Struct(_) => "{...}".to_string(),
-        TypeExpr::Union(variants) => variants.iter().map(|v| format_type(&v.node)).collect::<Vec<_>>().join(" | "),
+        TypeExpr::Union(variants) => variants
+            .iter()
+            .map(|v| format_type(&v.node))
+            .collect::<Vec<_>>()
+            .join(" | "),
         _ => "?".to_string(),
     }
 }
@@ -40,7 +44,7 @@ fn value_kind(value: &Value) -> &'static str {
         Value::Struct(_) => "struct",
         Value::List(_) => "list",
         Value::Variant(_, _) => "variant",
-        Value::Refinement(_, _, _) => "refinement",
+        Value::Refinement(_, _) => "refinement",
     }
 }
 
@@ -73,128 +77,15 @@ impl<'a> ValidationContext<'a> {
     }
 }
 
-pub fn validate_structural(
-    ctx: &ValidationContext,
-    inst: &Instance,
-) -> Vec<Diagnostic> {
+pub fn validate_structural(ctx: &ValidationContext, inst: &Instance) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
     let type_name = &inst.type_name.node;
 
     if let Some(type_decl) = ctx.env.get_type(type_name) {
         validate_value_against_type(ctx, &inst.body, &type_decl.node.body, &mut errors);
-
-        // Validate associations
-        validate_associations(ctx, inst, &type_decl.node, &mut errors);
     }
     // Unknown type errors are already caught in resolve
     errors
-}
-
-fn validate_associations(
-    ctx: &ValidationContext,
-    inst: &Instance,
-    type_decl: &TypeDecl,
-    errors: &mut Vec<Diagnostic>,
-) {
-    // Find @assoc annotation
-    let assoc_types: Vec<&String> = type_decl
-        .annotations
-        .iter()
-        .filter_map(|a| match &a.node {
-            Annotation::Assoc(types) => Some(types.iter().map(|t| &t.node).collect::<Vec<_>>()),
-            _ => None,
-        })
-        .flatten()
-        .collect();
-
-    for assoc in &inst.assocs {
-        // Check that the referenced instance exists
-        if let Some(assoc_inst) = ctx.get_instance(&assoc.node) {
-            // Check that the instance's type is in the @assoc list
-            let assoc_type = &assoc_inst.type_name.node;
-            if !assoc_types.iter().any(|t| type_matches_assoc(*t, assoc_type, ctx.env)) {
-                errors.push(Diagnostic::error(
-                    assoc.span.clone(),
-                    format!(
-                        "Association {} (type {}) not allowed - expected one of {:?}",
-                        assoc.node, assoc_type, assoc_types
-                    ),
-                    ctx.path,
-                ));
-            }
-        } else {
-            errors.push(Diagnostic::error(
-                assoc.span.clone(),
-                format!("Unknown instance in association: {}", assoc.node),
-                ctx.path,
-            ));
-        }
-    }
-}
-
-fn type_matches_assoc(assoc_type: &str, instance_type: &str, env: &TypeEnv) -> bool {
-    type_matches_ref(instance_type, assoc_type, env)
-}
-
-/// Validate inline assocs on an instance field against the field's type declaration
-fn validate_inline_assocs(
-    ctx: &ValidationContext,
-    field: &S<InstanceField>,
-    field_type: &S<TypeExpr>,
-    errors: &mut Vec<Diagnostic>,
-) {
-    // If no inline assocs, nothing to validate
-    if field.node.assocs.is_empty() {
-        return;
-    }
-
-    // Get the @assoc annotation from the field's type (resolve Named types)
-    let assoc_types = get_assoc_types_from_type(&field_type.node, ctx.env);
-
-    for assoc in &field.node.assocs {
-        // Check that the referenced instance exists
-        if let Some(assoc_inst) = ctx.get_instance(&assoc.node) {
-            let assoc_type = &assoc_inst.type_name.node;
-            // If we found @assoc types, check the instance matches
-            if !assoc_types.is_empty() && !assoc_types.iter().any(|t| type_matches_assoc(t, assoc_type, ctx.env)) {
-                errors.push(Diagnostic::error(
-                    assoc.span.clone(),
-                    format!(
-                        "Inline association {} (type {}) not allowed - expected one of {:?}",
-                        assoc.node, assoc_type, assoc_types
-                    ),
-                    ctx.path,
-                ));
-            }
-        } else {
-            errors.push(Diagnostic::error(
-                assoc.span.clone(),
-                format!("Unknown instance in inline association: {}", assoc.node),
-                ctx.path,
-            ));
-        }
-    }
-}
-
-/// Get @assoc type names from a type expression
-fn get_assoc_types_from_type(ty: &TypeExpr, env: &TypeEnv) -> Vec<String> {
-    match ty {
-        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
-            if let Some(type_decl) = env.get_type(name) {
-                type_decl.node.annotations
-                    .iter()
-                    .filter_map(|a| match &a.node {
-                        Annotation::Assoc(types) => Some(types.iter().map(|t| t.node.clone()).collect::<Vec<_>>()),
-                        _ => None,
-                    })
-                    .flatten()
-                    .collect()
-            } else {
-                vec![]
-            }
-        }
-        _ => vec![],
-    }
 }
 
 fn validate_value_against_type(
@@ -238,7 +129,10 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::String)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    format!("String literal doesn't match expected type {}", format_type(&ty.node)),
+                    format!(
+                        "String literal doesn't match expected type {}",
+                        format_type(&ty.node)
+                    ),
                     ctx.path,
                 ));
             }
@@ -247,7 +141,10 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Int)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    format!("Int literal doesn't match expected type {}", format_type(&ty.node)),
+                    format!(
+                        "Int literal doesn't match expected type {}",
+                        format_type(&ty.node)
+                    ),
                     ctx.path,
                 ));
             }
@@ -256,7 +153,10 @@ fn validate_value_against_type(
             if !matches!(&inner.node, TypeExpr::Base(BaseType::Bool)) {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
-                    format!("Bool literal doesn't match expected type {}", format_type(&ty.node)),
+                    format!(
+                        "Bool literal doesn't match expected type {}",
+                        format_type(&ty.node)
+                    ),
                     ctx.path,
                 ));
             }
@@ -376,7 +276,8 @@ fn validate_value_against_type(
             if matches!(left_resolved, Some(TypeExpr::Struct(StructKind::Open(_)))) {
                 // Open struct on left - extra fields allowed, validate only right's required fields
                 if let Value::Struct(val_fields) = &value.node {
-                    if let Some(TypeExpr::Struct(StructKind::Closed(type_fields))) = right_resolved {
+                    if let Some(TypeExpr::Struct(StructKind::Closed(type_fields))) = right_resolved
+                    {
                         // Validate field types
                         for type_field in type_fields {
                             let name = &type_field.node.name.node;
@@ -412,10 +313,19 @@ fn validate_value_against_type(
                 validate_value_against_type(ctx, value, right, errors);
             } else if let Value::Struct(val_fields) = &value.node {
                 // Both closed structs - merge with right-wins semantics
-                if let (Some(TypeExpr::Struct(StructKind::Closed(left_fields))), Some(TypeExpr::Struct(StructKind::Closed(right_fields)))) =
-                    (left_resolved, right_resolved)
+                if let (
+                    Some(TypeExpr::Struct(StructKind::Closed(left_fields))),
+                    Some(TypeExpr::Struct(StructKind::Closed(right_fields))),
+                ) = (left_resolved, right_resolved)
                 {
-                    validate_intersection_struct(ctx, val_fields, left_fields, right_fields, &value.span, errors);
+                    validate_intersection_struct(
+                        ctx,
+                        val_fields,
+                        left_fields,
+                        right_fields,
+                        &value.span,
+                        errors,
+                    );
                 } else {
                     validate_value_against_type(ctx, value, left, errors);
                     validate_value_against_type(ctx, value, right, errors);
@@ -427,7 +337,10 @@ fn validate_value_against_type(
         }
 
         // BindingRef against Named/RefinableRef
-        (Value::BindingRef(name), TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type)) => {
+        (
+            Value::BindingRef(name),
+            TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type),
+        ) => {
             if let Some(inst) = ctx.get_instance(name) {
                 let inst_type = &inst.type_name.node;
                 if !type_matches_ref(inst_type, expected_type, ctx.env) {
@@ -451,7 +364,10 @@ fn validate_value_against_type(
         }
 
         // Refinement value against type (bindingRef & {fields})
-        (Value::Refinement(name, _assocs, fields), TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type)) => {
+        (
+            Value::Refinement(name, fields),
+            TypeExpr::Named(expected_type) | TypeExpr::RefinableRef(expected_type),
+        ) => {
             if let Some(inst) = ctx.get_instance(name) {
                 let inst_type = &inst.type_name.node;
                 if !type_matches_ref(inst_type, expected_type, ctx.env) {
@@ -466,7 +382,14 @@ fn validate_value_against_type(
                 }
                 // Validate refinement fields against the instance
                 let is_refinable = matches!(ty.node, TypeExpr::RefinableRef(_));
-                validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, value.span.clone(), errors);
+                validate_refinement_fields_against_instance(
+                    ctx,
+                    fields,
+                    inst,
+                    is_refinable,
+                    value.span.clone(),
+                    errors,
+                );
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -507,10 +430,17 @@ fn validate_value_against_type(
         (_, TypeExpr::Base(BaseType::Wildcard)) => {}
 
         // Refinement against struct type (e.g., userTable & {...} : TableSchema)
-        (Value::Refinement(name, _assocs, fields), TypeExpr::Struct(_kind)) => {
+        (Value::Refinement(name, fields), TypeExpr::Struct(_kind)) => {
             if let Some(inst) = ctx.get_instance(name) {
                 // Validate refinement fields against the instance
-                validate_refinement_fields_against_instance(ctx, fields, inst, false, value.span.clone(), errors);
+                validate_refinement_fields_against_instance(
+                    ctx,
+                    fields,
+                    inst,
+                    false,
+                    value.span.clone(),
+                    errors,
+                );
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -524,7 +454,11 @@ fn validate_value_against_type(
         (Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_), TypeExpr::Struct(_)) => {
             errors.push(Diagnostic::error(
                 value.span.clone(),
-                format!("Type mismatch: {} cannot satisfy {}", value_kind(&value.node), format_type(&ty.node)),
+                format!(
+                    "Type mismatch: {} cannot satisfy {}",
+                    value_kind(&value.node),
+                    format_type(&ty.node)
+                ),
                 ctx.path,
             ));
         }
@@ -567,8 +501,6 @@ fn validate_struct(
                         &type_field.node.ty,
                         errors,
                     );
-                    // Validate inline assocs
-                    validate_inline_assocs(ctx, val_field, &type_field.node.ty, errors);
                 } else {
                     errors.push(Diagnostic::error(
                         val_field.node.name.span.clone(),
@@ -657,7 +589,8 @@ fn validate_intersection_struct(
     }
 
     // Build merged field map: right wins on conflict
-    let mut merged_fields: std::collections::HashMap<&str, &S<Field>> = std::collections::HashMap::new();
+    let mut merged_fields: std::collections::HashMap<&str, &S<Field>> =
+        std::collections::HashMap::new();
     for field in left_fields {
         merged_fields.insert(&field.node.name.node, field);
     }
@@ -669,12 +602,7 @@ fn validate_intersection_struct(
     for val_field in val_fields {
         let name = &val_field.node.name.node;
         if let Some(type_field) = merged_fields.get(name.as_str()) {
-            validate_value_against_type(
-                ctx,
-                &val_field.node.value,
-                &type_field.node.ty,
-                errors,
-            );
+            validate_value_against_type(ctx, &val_field.node.value, &type_field.node.ty, errors);
         } else {
             errors.push(Diagnostic::error(
                 val_field.node.name.span.clone(),
@@ -720,7 +648,10 @@ fn validate_list(
     if !valid_card {
         errors.push(Diagnostic::error(
             span.clone(),
-            format!("List cardinality mismatch: got {} elements, expected {:?}", len, card),
+            format!(
+                "List cardinality mismatch: got {} elements, expected {:?}",
+                len, card
+            ),
             ctx.path,
         ));
     }
@@ -761,7 +692,7 @@ fn validate_list(
                     ));
                 }
             }
-            ListElement::Refinement(name, _assocs, fields) => {
+            ListElement::Refinement(name, fields) => {
                 if let Some(inst) = ctx.get_instance(name) {
                     let inst_type = &inst.type_name.node;
 
@@ -792,8 +723,18 @@ fn validate_list(
                     }
 
                     // Validate refinement fields against the instance's actual fields
-                    let is_refinable = matches!(&elem_ty.node, TypeExpr::RefinableRef(_) | TypeExpr::Reference(_));
-                    validate_refinement_fields_against_instance(ctx, fields, inst, is_refinable, elem.span.clone(), errors);
+                    let is_refinable = matches!(
+                        &elem_ty.node,
+                        TypeExpr::RefinableRef(_) | TypeExpr::Reference(_)
+                    );
+                    validate_refinement_fields_against_instance(
+                        ctx,
+                        fields,
+                        inst,
+                        is_refinable,
+                        elem.span.clone(),
+                        errors,
+                    );
                 } else {
                     errors.push(Diagnostic::error(
                         elem.span.clone(),
@@ -813,17 +754,14 @@ pub(crate) fn get_field_type_from_type_expr<'a>(
     field_name: &str,
 ) -> Option<&'a S<TypeExpr>> {
     match ty {
-        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
-            fields
-                .iter()
-                .find(|f| f.node.name.node == field_name)
-                .map(|f| &f.node.ty)
-        }
-        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
-            ctx.env
-                .get_type(name)
-                .and_then(|decl| get_field_type_from_type_expr(ctx, &decl.node.body.node, field_name))
-        }
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => fields
+            .iter()
+            .find(|f| f.node.name.node == field_name)
+            .map(|f| &f.node.ty),
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
+            .env
+            .get_type(name)
+            .and_then(|decl| get_field_type_from_type_expr(ctx, &decl.node.body.node, field_name)),
         TypeExpr::Intersection(left, right) => {
             // Right side wins for conflicts (later in intersection takes precedence)
             get_field_type_from_type_expr(ctx, &right.node, field_name)
@@ -836,19 +774,16 @@ pub(crate) fn get_field_type_from_type_expr<'a>(
 /// Check if a field is required in the type declaration
 fn is_field_required_in_type(ctx: &ValidationContext, ty: &TypeExpr, field_name: &str) -> bool {
     match ty {
-        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
-            fields
-                .iter()
-                .find(|f| f.node.name.node == field_name)
-                .map(|f| !f.node.optional)
-                .unwrap_or(false)
-        }
-        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
-            ctx.env
-                .get_type(name)
-                .map(|decl| is_field_required_in_type(ctx, &decl.node.body.node, field_name))
-                .unwrap_or(false)
-        }
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => fields
+            .iter()
+            .find(|f| f.node.name.node == field_name)
+            .map(|f| !f.node.optional)
+            .unwrap_or(false),
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
+            .env
+            .get_type(name)
+            .map(|decl| is_field_required_in_type(ctx, &decl.node.body.node, field_name))
+            .unwrap_or(false),
         TypeExpr::Intersection(left, right) => {
             is_field_required_in_type(ctx, &right.node, field_name)
                 || is_field_required_in_type(ctx, &left.node, field_name)
@@ -908,9 +843,9 @@ fn refinement_value_matches_type(
             }
         }
         // Union - any variant must match
-        (_, TypeExpr::Union(variants)) => {
-            variants.iter().any(|v| refinement_value_matches_type(ctx, value, &v.node))
-        }
+        (_, TypeExpr::Union(variants)) => variants
+            .iter()
+            .any(|v| refinement_value_matches_type(ctx, value, &v.node)),
         // Struct value against open struct type - always compatible
         (Value::Struct(_), TypeExpr::Struct(StructKind::Open(_))) => true,
         // Struct value against closed struct - compatible (detailed check happens elsewhere)
@@ -918,10 +853,25 @@ fn refinement_value_matches_type(
         // Struct value against intersection - compatible (detailed check happens elsewhere)
         (Value::Struct(_), TypeExpr::Intersection(_, _)) => true,
         // String literals are valid for Uuid, Date, Timestamp (they're string-based types)
-        (Value::LitString(_), TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp)) => true,
+        (
+            Value::LitString(_),
+            TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp),
+        ) => true,
         // Int literal doesn't match Uuid, Date, etc.
-        (Value::LitInt(_), TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp | BaseType::Float | BaseType::Money)) => false,
-        (Value::LitString(_), TypeExpr::Base(BaseType::Int | BaseType::Float | BaseType::Bool | BaseType::Money)) => false,
+        (
+            Value::LitInt(_),
+            TypeExpr::Base(
+                BaseType::Uuid
+                | BaseType::Date
+                | BaseType::Timestamp
+                | BaseType::Float
+                | BaseType::Money,
+            ),
+        ) => false,
+        (
+            Value::LitString(_),
+            TypeExpr::Base(BaseType::Int | BaseType::Float | BaseType::Bool | BaseType::Money),
+        ) => false,
         _ => false,
     }
 }
@@ -1006,15 +956,21 @@ fn validate_refinement_fields_against_instance(
             {
                 for nested_field in ref_nested {
                     let nested_name = &nested_field.node.name.node;
-                    if let Some(inst_nested_field) = inst_nested.iter().find(|f| &f.node.name.node == nested_name) {
+                    if let Some(inst_nested_field) = inst_nested
+                        .iter()
+                        .find(|f| &f.node.name.node == nested_name)
+                    {
                         // Resolve declared type: first from type declaration, then from instance field value
                         let nested_type_from_decl = type_decl
-                            .and_then(|td| get_field_type_from_type_expr(ctx, &td.node.body.node, field_name))
-                            .and_then(|field_ty| get_field_type_from_type_expr(ctx, &field_ty.node, nested_name));
+                            .and_then(|td| {
+                                get_field_type_from_type_expr(ctx, &td.node.body.node, field_name)
+                            })
+                            .and_then(|field_ty| {
+                                get_field_type_from_type_expr(ctx, &field_ty.node, nested_name)
+                            });
 
-                        let declared_type: Option<TypeExpr> = nested_type_from_decl
-                            .map(|t| t.node.clone())
-                            .or_else(|| {
+                        let declared_type: Option<TypeExpr> =
+                            nested_type_from_decl.map(|t| t.node.clone()).or_else(|| {
                                 // Infer type from instance's nested field value (for open structs)
                                 match &inst_nested_field.node.value.node {
                                     Value::TypeRef(name) => Some(TypeExpr::Named(name.clone())),
@@ -1023,7 +979,11 @@ fn validate_refinement_fields_against_instance(
                             });
 
                         if let Some(ref field_type) = declared_type {
-                            if !refinement_value_matches_type(ctx, &nested_field.node.value.node, field_type) {
+                            if !refinement_value_matches_type(
+                                ctx,
+                                &nested_field.node.value.node,
+                                field_type,
+                            ) {
                                 errors.push(Diagnostic::error(
                                     nested_field.node.value.span.clone(),
                                     format!(
@@ -1090,7 +1050,10 @@ fn validate_refinement_fields_against_instance(
                 if !fields.iter().any(|f| &f.node.name.node == fname) {
                     errors.push(Diagnostic::error(
                         refinement_span.clone(),
-                        format!("Missing required field '{}' in refinement of {}", fname, inst.name.node),
+                        format!(
+                            "Missing required field '{}' in refinement of {}",
+                            fname, inst.name.node
+                        ),
                         ctx.path,
                     ));
                 }
@@ -1116,9 +1079,10 @@ fn type_ref_matches_base(type_ref: &str, base: &BaseType) -> bool {
 /// Resolve Named/RefinableRef to underlying type expression
 fn resolve_type_expr<'a>(ctx: &'a ValidationContext, ty: &'a TypeExpr) -> Option<&'a TypeExpr> {
     match ty {
-        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
-            ctx.env.get_type(name).and_then(|decl| resolve_type_expr(ctx, &decl.node.body.node))
-        }
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
+            .env
+            .get_type(name)
+            .and_then(|decl| resolve_type_expr(ctx, &decl.node.body.node)),
         other => Some(other),
     }
 }
@@ -1164,89 +1128,71 @@ mod tests {
 
     #[test]
     fn test_type_match() {
-        let errors = validate_src(
-            "type Foo = {x String}\nfoo = Foo {x String}",
-        );
+        let errors = validate_src("type Foo = {x String}\nfoo = Foo {x String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_type_mismatch() {
-        let errors = validate_src(
-            "type Foo = {x Int}\nfoo = Foo {x String}",
-        );
+        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x String}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_concrete_type() {
-        let errors = validate_src(
-            "type Foo = {x Concrete<String>}\nfoo = Foo {x \"hello\"}",
-        );
+        let errors = validate_src("type Foo = {x Concrete<String>}\nfoo = Foo {x \"hello\"}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_vs_open() {
-        let errors = validate_src(
-            "type Foo = {x String}\nfoo = Foo {x \"hello\"}",
-        );
+        let errors = validate_src("type Foo = {x String}\nfoo = Foo {x \"hello\"}");
         assert!(!errors.is_empty()); // literal can't satisfy open type
     }
 
     #[test]
     fn test_schema_fixed_literal() {
-        let errors = validate_src(
-            "type Foo = {x \"hello\"}\nfoo = Foo {x \"hello\"}",
-        );
+        let errors = validate_src("type Foo = {x \"hello\"}\nfoo = Foo {x \"hello\"}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_mismatch() {
-        let errors = validate_src(
-            "type Foo = {x \"hello\"}\nfoo = Foo {x \"world\"}",
-        );
+        let errors = validate_src("type Foo = {x \"hello\"}\nfoo = Foo {x \"world\"}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_extra_field() {
-        let errors = validate_src(
-            "type Foo = {x Int}\nfoo = Foo {x Int, y Int}",
-        );
+        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x Int, y Int}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_duplicate_field() {
-        let errors = validate_src(
-            "type Foo = {x Int}\nfoo = Foo {x Int, x Int}",
+        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x Int, x Int}");
+        assert!(
+            errors.iter().any(|e| e.message.contains("Duplicate field")),
+            "{:?}",
+            errors
         );
-        assert!(errors.iter().any(|e| e.message.contains("Duplicate field")), "{:?}", errors);
     }
 
     #[test]
     fn test_open_struct() {
-        let errors = validate_src(
-            "type Foo = {...}\nfoo = Foo {x Int, y String}",
-        );
+        let errors = validate_src("type Foo = {...}\nfoo = Foo {x Int, y String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct() {
-        let errors = validate_src(
-            "type Foo = {_}\nfoo = Foo {a String}",
-        );
+        let errors = validate_src("type Foo = {_}\nfoo = Foo {a String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct_wrong_count() {
-        let errors = validate_src(
-            "type Foo = {_}\nfoo = Foo {a Int, b Int}",
-        );
+        let errors = validate_src("type Foo = {_}\nfoo = Foo {a Int, b Int}");
         assert!(!errors.is_empty());
     }
 
@@ -1268,7 +1214,8 @@ mod tests {
 
     #[test]
     fn test_refinable_ref_allows_concrete() {
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...} & {timestamp Int}
 type Command = {
     emits []-Event
@@ -1277,13 +1224,15 @@ ev = Event {id String}
 cmd = Command {
     emits [ev & {id "123"}]
 }
-"#);
+"#,
+        );
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_non_refinable_rejects_concrete() {
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...} & {timestamp Int}
 type Command = {
     emits []Event
@@ -1292,14 +1241,16 @@ ev = Event {id String}
 cmd = Command {
     emits [ev & {id "123"}]
 }
-"#);
+"#,
+        );
         assert!(!errors.is_empty()); // should error: concrete value on non-refinable
     }
 
     #[test]
     fn test_refinement_field_type_mismatch() {
         // id is Uuid, but refinement uses Int literal 123
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...} & {id Uuid}
 type Scenario = {
     given []-Event
@@ -1308,15 +1259,21 @@ userRegistered = Event {id Uuid}
 scenario = Scenario {
     given [userRegistered & {id 123}]
 }
-"#);
+"#,
+        );
         assert!(!errors.is_empty(), "Should error: id is Uuid but got Int");
-        assert!(errors.iter().any(|e| e.message.contains("Type mismatch")), "Expected type mismatch error: {:?}", errors);
+        assert!(
+            errors.iter().any(|e| e.message.contains("Type mismatch")),
+            "Expected type mismatch error: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_refinement_field_type_matches() {
         // id is Concrete<String>, refinement uses String literal - should match
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...} & {id Concrete<String>}
 type Scenario = {
     given []-Event
@@ -1325,74 +1282,20 @@ userRegistered = Event {id "placeholder"}
 scenario = Scenario {
     given [userRegistered & {id "user-123"}]
 }
-"#);
-        assert!(errors.is_empty(), "Should accept: id is Concrete<String> and refinement is String: {:?}", errors);
-    }
-
-    #[test]
-    fn test_inline_assocs_valid() {
-        // Inline assocs on a field whose type (DbQuery) has @assoc [TableSchema]
-        let errors = validate_src(r#"
-type TableSchema = {...}
-@assoc [TableSchema]
-type DbQuery = {
-    funcName Concrete<String>
-}
-type Endpoint = {
-    query DbQuery
-}
-userTable = TableSchema {name String}
-endpoint = Endpoint {
-    query <userTable> {funcName "test"}
-}
-"#);
-        assert!(errors.is_empty(), "Should accept valid inline assoc: {:?}", errors);
-    }
-
-    #[test]
-    fn test_inline_assocs_unknown_instance() {
-        let errors = validate_src(r#"
-type TableSchema = {...}
-@assoc [TableSchema]
-type DbQuery = {
-    funcName Concrete<String>
-}
-type Endpoint = {
-    query DbQuery
-}
-endpoint = Endpoint {
-    query <unknownTable> {funcName "test"}
-}
-"#);
-        assert!(!errors.is_empty(), "Should reject unknown instance in inline assoc");
-        assert!(errors.iter().any(|e| e.message.contains("Unknown instance")), "{:?}", errors);
-    }
-
-    #[test]
-    fn test_inline_assocs_wrong_type() {
-        let errors = validate_src(r#"
-type TableSchema = {...}
-type OtherType = {...}
-@assoc [TableSchema]
-type DbQuery = {
-    funcName Concrete<String>
-}
-type Endpoint = {
-    query DbQuery
-}
-wrongType = OtherType {name String}
-endpoint = Endpoint {
-    query <wrongType> {funcName "test"}
-}
-"#);
-        assert!(!errors.is_empty(), "Should reject wrong type in inline assoc");
-        assert!(errors.iter().any(|e| e.message.contains("not allowed")), "{:?}", errors);
+"#,
+        );
+        assert!(
+            errors.is_empty(),
+            "Should accept: id is Concrete<String> and refinement is String: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_field_value_refinement() {
         // Field value with refinement syntax: fieldName refInstance & {field value}
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...} & {id String}
 type Cmd = {
     event -Event
@@ -1401,13 +1304,19 @@ ev = Event {id String}
 cmd = Cmd {
     event ev & {id "user-123"}
 }
-"#);
-        assert!(errors.is_empty(), "Should accept field value refinement: {:?}", errors);
+"#,
+        );
+        assert!(
+            errors.is_empty(),
+            "Should accept field value refinement: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_field_value_refinement_type_mismatch() {
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Event = {...}
 type Other = {...}
 type Cmd = {
@@ -1417,58 +1326,88 @@ other = Other {x Int}
 cmd = Cmd {
     event other & {x 123}
 }
-"#);
-        assert!(!errors.is_empty(), "Should reject mismatched refinement type");
+"#,
+        );
+        assert!(
+            !errors.is_empty(),
+            "Should reject mismatched refinement type"
+        );
         assert!(errors.iter().any(|e| e.message.contains("type mismatch") || e.message.contains("Type mismatch")), "{:?}", errors);
     }
 
     #[test]
     fn test_open_struct_intersection_with_named_type() {
         // Open struct & Named type - extra fields allowed
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Id = {id! Uuid}
 type Entity = {...} & Id
 
 e1 = Entity {id Uuid, name String}
-"#);
-        assert!(errors.is_empty(), "Should accept extra fields with open struct intersection: {:?}", errors);
+"#,
+        );
+        assert!(
+            errors.is_empty(),
+            "Should accept extra fields with open struct intersection: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_open_struct_intersection_missing_required() {
         // Missing required field from Named type
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Id = {id! Uuid}
 type Entity = {...} & Id
 
 e = Entity {name String}
-"#);
+"#,
+        );
         assert!(!errors.is_empty(), "Should reject missing required field");
-        assert!(errors.iter().any(|e| e.message.contains("Missing required field")), "{:?}", errors);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("Missing required field")),
+            "{:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_intersection_right_wins_conflict() {
         // Right side should win in conflicts
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Left = {timestamp String}
 type Right = {timestamp Int}
 type Conflict = Left & Right
 
 c = Conflict {timestamp Int}
-"#);
-        assert!(errors.is_empty(), "Right side should win in intersection conflicts: {:?}", errors);
+"#,
+        );
+        assert!(
+            errors.is_empty(),
+            "Right side should win in intersection conflicts: {:?}",
+            errors
+        );
     }
 
     #[test]
     fn test_union_variant_not_matched() {
-        let errors = validate_src(r#"
+        let errors = validate_src(
+            r#"
 type Status = Pending | Active | Archived
 type Process = {status! Status}
 
 p = Process {status "ongoing"}
-"#);
+"#,
+        );
         assert!(!errors.is_empty(), "Should reject value not in union");
-        assert!(errors.iter().any(|e| e.message.contains("union")), "{:?}", errors);
+        assert!(
+            errors.iter().any(|e| e.message.contains("union")),
+            "{:?}",
+            errors
+        );
     }
 }

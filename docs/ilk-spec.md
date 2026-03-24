@@ -109,12 +109,12 @@ c = NameIsRequired {
      name String
 }
     `},
-    {label: "missing mandatory field", expect: "fail", code: `
+    {label: "missing required field", expect: "fail", code: `
 a = NameIsRequired {
       age Int
 }
     `},
-    {label: "No extra fields allowed", expect: "fail", code: `
+    {label: "field not in schema", expect: "fail", code: `
 a = AllOptional {
       other Bool
 }
@@ -331,38 +331,6 @@ t = Theme {
     primary serif
     all     [serif]
 }` },
-  ]
-}
-
-const exAssoc = {
-  type: `type Tag = Concrete<String>
-
-@assoc [Tag]
-type Event = {...}
-
-type Log = {
-    events! []&Event
-}`,
-  instances: [
-    { label: 'Events with tags', expect: 'pass', code: `urgentTag = Tag "urgent"
-userTag   = Tag "user"
-
-login  = Event<urgentTag, userTag> { action String }
-logout = Event<userTag>            { action String }
-
-log = Log { events [login, logout] }` },
-    { label: 'Event without tags', expect: 'pass', code: `ping = Event { action String }
-log  = Log { events [ping] }` },
-    { label: 'Mixed: tagged and untagged', expect: 'pass', code: `urgentTag = Tag "urgent"
-alert = Event<urgentTag> { action String }
-info  = Event            { action String }
-
-log = Log { events [alert, info] }` },
-    { label: 'Wrong type for associated value', expect: 'fail', code: `type Category = Concrete<String>
-work = Category "work"
-
-click = Event<work> { action String }
-log   = Log { events [click] }` },
   ]
 }
 
@@ -862,7 +830,6 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | type body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field | Implementation hint preserved in AST; not stripped during parsing |
-| `@assoc [T]` | type declaration | (deprecated, in favor of ref) Instances may carry associated values of type `T` |
 | `@out` | field | (maybe deprecate also, in favor of ref) Field is an output — exempt from `@source` checks, can be referenced by other `@source` |
 
 ### `@main`
@@ -876,18 +843,6 @@ board = Board {
     commands [registerUser]
 }
 ```
-
-### `@assoc [T]`
-
-Declares that instances of this type may carry associated values — named bindings of type
-`T` — listed in angle brackets at the binding site. See [Associated values](#associated-values).
-
-```ilk
-@assoc [Tag]
-type Event = {...} & {timestamp Int}
-```
-
-<TypeExample :example="exAssoc" />
 
 ### `@source`
 
@@ -1027,15 +982,6 @@ The annotation disambiguates intentional output fields from accidental omissions
 An inline boolean predicate that every instance of the enclosing type must satisfy.
 Uses the constraint expression language (see [Constraint expression language](#constraint-expression-language)).
 
-```ilk
-type QueryItem = {
-    @constraint all(tags, t => all(eventTypes, e => e.assoc(t)))
-
-    eventTypes []Event
-    tags       []Tag
-}
-```
-
 <TypeExample :example="exConstraint" />
 
 ### `@doc`
@@ -1135,32 +1081,6 @@ eventTypes [cartCreated, itemAdded]
 
 The binding must exist in the file and be of type `T`. References are not strings —
 `"cartCreated"` (quoted) would not satisfy `&Event`. No data flows through references.
-
-
-
-## Associated values
-
-When a type is declared with `@assoc [T]`, instances of that type may carry associated
-values — named bindings of type `T` — listed in angle brackets immediately after the type
-name. When there are no associated values, the angle brackets are omitted entirely
-(`Event<>` is **not** valid):
-
-```ilk
-// with associations
-userRegistered = Event<userIdTag, userNameTag, commonTag> {
-    id   String
-    name String
-}
-
-// no associations — angle brackets absent
-other = Event {
-    hello String
-}
-```
-
-The angle-bracket list is **not** a generic type parameter. It is a set of references to
-named bindings. The `.assoc(t)` predicate in `@constraint` expressions tests membership
-in this set.
 
 
 
@@ -1268,7 +1188,6 @@ A minimal expression language for `@constraint` predicates.
 | `exists(col, x => body)` | True if `body` holds for at least one element `x` in collection `col` |
 | `unique(col, x => expr)` | True if `expr` yields distinct values for all elements in `col` |
 | `count(col)` | Number of elements in collection `col` |
-| `e.assoc(t)` | True if instance `e` has `t` as one of its associated values. Available only when `e`'s type carries `@assoc [T]` and `t` is of type `T`. |
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
@@ -1287,7 +1206,6 @@ A minimal expression language for `@constraint` predicates.
 Examples:
 
 ```ilk
-@constraint exists(eventTypes, e => e.assoc(urgentTag))
 @constraint unique(eventTypes, e => e.name)
 @constraint count(eventTypes) >= 1
 @constraint count(tags) <= 5

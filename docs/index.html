@@ -457,7 +457,6 @@
         <tr><td><code>@main</code></td><td>instance</td><td>Entry point — the root binding the compiler validates from</td></tr>
         <tr><td><code>@source [fields]</code></td><td>field in type</td><td>Data provenance: this field's values must trace back to <em>fields</em></td></tr>
         <tr><td><code>@out</code></td><td>field in type</td><td>Output field — exempt from <code>@source</code> checks; can be referenced by callers</td></tr>
-        <tr><td><code>@assoc [T]</code></td><td>type</td><td>Instances carry typed associations (used with <code>@constraint</code>)</td></tr>
         <tr><td><code>@constraint expr</code></td><td>field in type</td><td>Boolean predicate evaluated at validation time</td></tr>
         <tr><td><code>@doc "…"</code></td><td>field</td><td>Implementation hint, preserved in AST for downstream tooling</td></tr>
       </tbody>
@@ -559,7 +558,6 @@
   <section class="section">
     <h2><span class="num">7</span> Full example — event sourcing with tag constraints</h2>
     <p class="lead">
-      <code>@assoc</code> attaches typed metadata to instances.
       <code>@constraint</code> validates relationships at compile time —
       here, every event in a query must carry every tag the query declares.
     </p>
@@ -572,14 +570,11 @@
 <span class="kw">type</span> <span class="ty">Tag</span> = {<span class="id">_</span> <span class="ty">String</span>} | <span class="ty">Concrete&lt;String&gt;</span>
 
 <span class="c">// Event carries open fields + a timestamp</span>
-<span class="c">// Instances can declare Tag associations</span>
-<span class="ann">@assoc</span> [<span class="ty">Tag</span>]
 <span class="kw">type</span> <span class="ty">Event</span> = {<span class="id">...</span>} &amp; {<span class="id">timestamp</span> <span class="ty">Int</span>}
 
 <span class="c">// Every event must carry every listed tag</span>
 <span class="kw">type</span> <span class="ty">QueryItem</span> = {
     <span class="ann">@constraint</span> <span class="id">all</span>(<span class="id">tags</span>, <span class="id">t</span> =&gt;
-        <span class="id">all</span>(<span class="id">eventTypes</span>, <span class="id">e</span> =&gt; <span class="id">e</span>.<span class="id">assoc</span>(<span class="id">t</span>)))
     <span class="id">eventTypes</span> []&amp;<span class="ty">Event</span>
     <span class="id">tags</span>       []<span class="ty">Tag</span>
 }

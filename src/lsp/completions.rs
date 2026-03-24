@@ -7,7 +7,14 @@ use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, InsertTextFormat,
 use super::diagnostics::position_to_offset;
 
 const BASE_TYPES: &[&str] = &[
-    "String", "Int", "Float", "Bool", "Uuid", "Date", "Timestamp", "Money",
+    "String",
+    "Int",
+    "Float",
+    "Bool",
+    "Uuid",
+    "Date",
+    "Timestamp",
+    "Money",
 ];
 
 #[derive(Debug)]
@@ -20,12 +27,7 @@ enum Context {
     Unknown,
 }
 
-pub fn complete(
-    compiler: &Compiler,
-    path: &Path,
-    src: &str,
-    pos: Position,
-) -> Vec<CompletionItem> {
+pub fn complete(compiler: &Compiler, path: &Path, src: &str, pos: Position) -> Vec<CompletionItem> {
     let offset = position_to_offset(pos, src);
     let ctx = detect_context(src, offset);
 
@@ -111,7 +113,12 @@ fn detect_context(src: &str, offset: usize) -> Context {
                 if parts.len() == 2 {
                     let after_eq = parts[1].trim();
                     if let Some(type_name) = after_eq.split_whitespace().next() {
-                        if type_name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                        if type_name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_uppercase())
+                            .unwrap_or(false)
+                        {
                             return Context::AfterTypeName(type_name.to_string());
                         }
                     }
@@ -283,7 +290,12 @@ fn generate_struct_snippet(fields: &[S<Field>]) -> String {
     let mut parts = Vec::new();
     for (i, field) in fields.iter().enumerate() {
         let type_str = type_expr_to_string(&field.node.ty.node);
-        parts.push(format!("{} ${{{}:{}}}", field.node.name.node, i + 1, type_str));
+        parts.push(format!(
+            "{} ${{{}:{}}}",
+            field.node.name.node,
+            i + 1,
+            type_str
+        ));
     }
     format!("{{{}}}", parts.join(", "))
 }

@@ -117,7 +117,11 @@ fn emit_struct_type(kind: &StructKind) -> JsonValue {
         StructKind::Anonymous(types) => {
             let ts: Vec<JsonValue> = types
                 .iter()
-                .map(|t| t.as_ref().map(|t| emit_type_def(&t.node)).unwrap_or(json!(null)))
+                .map(|t| {
+                    t.as_ref()
+                        .map(|t| emit_type_def(&t.node))
+                        .unwrap_or(json!(null))
+                })
                 .collect();
             json!({
                 "kind": "struct",
@@ -143,7 +147,11 @@ fn emit_instances(file: &File, env: &TypeEnv) -> JsonValue {
 
     for inst in file.instances() {
         // Only emit @main instances
-        if !inst.annotations.iter().any(|a| matches!(a.node, Annotation::Main)) {
+        if !inst
+            .annotations
+            .iter()
+            .any(|a| matches!(a.node, Annotation::Main))
+        {
             continue;
         }
 
@@ -205,7 +213,7 @@ fn emit_value(value: &Value, env: &TypeEnv) -> JsonValue {
                 }
             }
         }
-        Value::Refinement(base, _assocs, fields) => {
+        Value::Refinement(base, fields) => {
             // Resolve base and merge fields
             let mut base_val = if let Some(inst) = env.get_instance(base) {
                 emit_value(&inst.node.body.node, env)
@@ -235,7 +243,7 @@ fn emit_list_element(elem: &ListElement, env: &TypeEnv) -> JsonValue {
                 json!({ "$ref": name })
             }
         }
-        ListElement::Refinement(base, _assocs, fields) => {
+        ListElement::Refinement(base, fields) => {
             let mut base_val = if let Some(inst) = env.get_instance(base) {
                 emit_value(&inst.node.body.node, env)
             } else {
