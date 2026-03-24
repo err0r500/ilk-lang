@@ -5,7 +5,7 @@ import "./actors.ilk"
 
 
 addItem = ChangeSlice {
-    name "registerUser"
+    name "AddItem"
 
     actor userActor
 

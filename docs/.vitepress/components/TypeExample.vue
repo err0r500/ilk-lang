@@ -87,14 +87,17 @@ watch(activeTab, () => {
       </div>
     </div>
     <div class="output-pane">
-      <div v-if="!wasmReady" class="status loading">Loading compiler…</div>
-      <div v-else-if="output === null" class="status loading">Running…</div>
-      <div v-else-if="output.ok" class="status valid">✓ valid</div>
-      <div v-else class="errors">
-        <div v-for="(err, i) in output.errors" :key="i" class="error-item">
-          <span class="badge" :class="err.severity">{{ err.severity }}</span>
-          <span class="error-msg">{{ err.message }}</span>
-        </div>
+        <div style="padding-right: 10px">live compiler ></div>
+        <div>
+            <div v-if="!wasmReady" class="status loading">Loading compiler…</div>
+            <div v-else-if="output === null" class="status loading">Running…</div>
+            <div v-else-if="output.ok" class="status valid">✓ valid</div>
+            <div v-else class="errors">
+              <div v-for="(err, i) in output.errors" :key="i" class="error-item">
+                <span class="badge" :class="err.severity">{{ err.severity }}</span>
+                <span class="error-msg">{{ err.message }}</span>
+              </div>
+            </div>
       </div>
     </div>
   </div>
@@ -208,6 +211,8 @@ watch(activeTab, () => {
   border-top: 1px solid var(--vp-c-divider);
   font-family: var(--vp-font-family-mono);
   font-size: 13px;
+  display: flex;
+  flex-direction: row;
 }
 
 .status.loading {
