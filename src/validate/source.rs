@@ -270,15 +270,28 @@ fn validate_field_source(
 /// Get field names that should be skipped from parent @source validation
 fn get_fields_to_skip(ty: &TypeExpr, ctx: &ValidationContext) -> std::collections::HashSet<String> {
     let mut result = std::collections::HashSet::new();
-    let body = if let TypeExpr::Named(name) = ty {
-        ctx.env.get_type(name).map(|t| &t.node.body.node)
-    } else {
-        Some(ty)
-    };
-    if let Some(body) = body {
-        collect_fields_to_skip(body, &mut result);
-    }
+    collect_fields_to_skip_resolved(ty, ctx, &mut result);
     result
+}
+
+fn collect_fields_to_skip_resolved(
+    ty: &TypeExpr,
+    ctx: &ValidationContext,
+    result: &mut std::collections::HashSet<String>,
+) {
+    match ty {
+        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
+            if let Some(decl) = ctx.env.get_type(name) {
+                collect_fields_to_skip(&decl.node.body.node, result);
+            }
+        }
+        TypeExpr::Union(variants) => {
+            for variant in variants {
+                collect_fields_to_skip_resolved(&variant.node, ctx, result);
+            }
+        }
+        other => collect_fields_to_skip(other, result),
+    }
 }
 
 fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<String>) {
@@ -496,6 +509,22 @@ fn validate_refinement_field(
                     }
                 }
                 return;
+            }
+
+            // Exempt &T / -T reference fields from parent @source validation
+            if let Value::BindingRef(_) = &field.node.value.node {
+                let is_ref_type = parent_type
+                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
+                    .map(|t| {
+                        matches!(
+                            t.node,
+                            TypeExpr::Reference(_) | TypeExpr::RefinableRef(_)
+                        )
+                    })
+                    .unwrap_or(false);
+                if is_ref_type {
+                    return;
+                }
             }
 
             let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
@@ -1243,5 +1272,159 @@ slice = Slice {
             "Expected error about 'shopperId', got: {:?}",
             errors.iter().map(|e| &e.message).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_union_field_type_skips_own_source() {
+        // When a field is typed as a union of named types, fields with their own
+        // @source/@out in those types should be skipped from parent @source validation.
+        let errors = validate_source_src(
+            r#"
+type Schema = {...}
+type QueryA = {
+    name! Concrete<String>
+    params {...}
+    @source [params]
+    @out
+    result {...}
+}
+type QueryB = {
+    name! Concrete<String>
+    params {...}
+    @source [params]
+    @out
+    result {...}
+}
+type Wrapper = {
+    auth {...}
+    @source [auth]
+    query QueryA | QueryB
+}
+qa = QueryA {
+    name "qa"
+    params {userId Uuid}
+    result {id Uuid = params.userId}
+}
+w = Wrapper {
+    auth {userId Uuid}
+    query qa
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_union_field_type_still_validates_non_sourced_fields() {
+        // Fields without their own @source in union variants, and not referenced
+        // as source roots, should still be validated against parent @source.
+        let errors = validate_source_src(
+            r#"
+type QueryA = {
+    name! Concrete<String>
+    extra {...}
+    params {...}
+    @source [params]
+    @out
+    result {...}
+}
+type Wrapper = {
+    auth {...}
+    @source [auth]
+    query QueryA
+}
+qa = QueryA {
+    name "qa"
+    extra {x Int}
+    params {y Uuid}
+    result {y Uuid = params.y}
+}
+w = Wrapper {
+    auth {z String}
+    query qa
+}
+"#,
+        );
+        assert!(
+            !errors.is_empty(),
+            "Expected error: extra.x has no match in auth"
+        );
+        assert!(
+            errors.iter().any(|e| e.message.contains("No source found")),
+            "Expected 'No source found' error, got: {:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ref_field_exempt_from_parent_source() {
+        // &T binding ref fields should be exempt from parent @source validation
+        // since they are references/configuration, not data flow.
+        let errors = validate_source_src(
+            r#"
+type Schema = {...}
+type Query = {
+    table &Schema
+    params {...}
+    @source [table]
+    @out
+    return {...}
+}
+type Wrapper = {
+    auth {...}
+    @source [auth]
+    query Query
+}
+tbl = Schema {id Uuid, name String}
+q = Query {
+    table tbl
+    params {userId Uuid}
+    return {id Uuid = table.id}
+}
+w = Wrapper {
+    auth {userId Uuid}
+    query q
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_refinable_ref_field_exempt_from_parent_source() {
+        // -T refinable ref fields should also be exempt from parent @source validation.
+        let errors = validate_source_src(
+            r#"
+type Schema = {...}
+type Command = {
+    params {...}
+    table &Schema
+    @source [params]
+    insert -Schema
+    @out
+    return {...}
+}
+type Wrapper = {
+    auth {...}
+    @source [auth]
+    command Command
+}
+tbl = Schema {id Uuid, name String}
+cmd = Command {
+    params {name String}
+    table tbl
+    insert tbl & {
+        id Uuid*
+        name String = params.name
+    }
+    return {id Uuid*}
+}
+w = Wrapper {
+    auth {name String}
+    command cmd
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 }

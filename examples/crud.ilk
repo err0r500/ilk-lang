@@ -1,16 +1,33 @@
 type TableSchema = {...}
 
-type DbQuery = {
+type InsertQuery = {
     name! Concrete<String>
+    table &TableSchema
     params {...}
 
-    table &TableSchema
-
     @source [params]
-    insert []&TableSchema
+    insert -TableSchema
+
+    @out
+    return {...}
+}
+
+type UpdateQuery = {
+    name! Concrete<String>
+    table &TableSchema
+    params {...}
 
     @source [params, table]
-    update []&TableSchema
+    update -TableSchema
+
+    @out
+    return {...}
+}
+
+type ReadQuery = {
+    name! Concrete<String>
+    table &TableSchema
+    params {...}
 
     @source [table]
     @out
@@ -23,7 +40,7 @@ type Endpoint = {
     auth {...}
 
     @source [auth]
-    query DbQuery
+    query InsertQuery | UpdateQuery | ReadQuery
 
     @source [auth, query.return]
     responses []{
@@ -33,58 +50,52 @@ type Endpoint = {
 }
 
 userTable = TableSchema {
-    id? Uuid
+    id Uuid
     name String
 }
 
-getUserById = DbQuery {
+getUserById = ReadQuery {
     name "getUserById"
-
+    table userTable
     params {userId Uuid}
 
-    table userTable
-
     return {
-        id? Uuid = table.id
+        id Uuid = table.id
         name String = table.name
     }
 }
 
-insertUser = DbQuery {
+insertUser = InsertQuery {
     name "insertUser"
-
     table userTable
-
-    params {
-        name String
+    params {name String}
+    insert userTable & {
+        id Uuid*
+        name String = params.name
     }
+    return {
+        id Uuid = insert.id
+    }
+}
 
-    insert [
-        userTable & {
-            name String = params.name
-        }
-    ]
-
-    update [
-        userTable & {
-            id? Uuid = table.id
-            name String = params.name
-        }
-    ]
-
+updateUser = UpdateQuery {
+    name "updateUser"
+    table userTable
+    params {name String}
+    update userTable & {
+        id? Uuid = table.id
+        name String = params.name
+    }
     return {
         id Uuid*
     }
 }
 
-
 getMe = Endpoint {
     method "GET"
     path "/me"
     auth {userId Uuid}
-
     query getUserById
-
     responses [
         {status 401}
         {
