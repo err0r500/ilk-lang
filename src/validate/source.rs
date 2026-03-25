@@ -328,12 +328,7 @@ fn collect_fields_to_skip(ty: &TypeExpr, result: &mut std::collections::HashSet<
                     .annotations
                     .iter()
                     .any(|a| matches!(a.node, Annotation::Source(_)));
-                let has_out = field
-                    .node
-                    .annotations
-                    .iter()
-                    .any(|a| matches!(a.node, Annotation::Out));
-                if has_source || has_out {
+                if has_source {
                     result.insert(field.node.name.node.clone());
                 }
             }
@@ -1552,7 +1547,7 @@ slice = Slice {
     #[test]
     fn test_union_field_type_skips_own_source() {
         // When a field is typed as a union of named types, fields with their own
-        // @source/@out in those types should be skipped from parent @source validation.
+        // @source in those types should be skipped from parent @source validation.
         let errors = validate_source_src(
             r#"
 type Schema = {...}
@@ -1560,14 +1555,12 @@ type QueryA = {
     name! Concrete<String>
     params {...}
     @source [params]
-    @out
     result {...}
 }
 type QueryB = {
     name! Concrete<String>
     params {...}
     @source [params]
-    @out
     result {...}
 }
 type Wrapper = {
@@ -1591,7 +1584,7 @@ w = Wrapper {
 
     #[test]
     fn test_union_field_type_still_validates_non_sourced_fields() {
-        // Fields without their own @source in union variants, and not referenced
+            // Fields without their own @source in union variants, and not referenced
         // as source roots, should still be validated against parent @source.
         let errors = validate_source_src(
             r#"
@@ -1600,7 +1593,6 @@ type QueryA = {
     extra {...}
     params {...}
     @source [params]
-    @out
     result {...}
 }
 type Wrapper = {
@@ -1642,7 +1634,6 @@ type Query = {
     table &Schema
     params {...}
     @source [table]
-    @out
     return {...}
 }
 type Wrapper = {
@@ -1676,7 +1667,6 @@ type Command = {
     table &Schema
     @source [params]
     insert -Schema
-    @out
     return {...}
 }
 type Wrapper = {

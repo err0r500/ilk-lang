@@ -42,7 +42,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 - `TypeExpr` - recursive: Base, Named, Ref(&T), List, Struct, Union, Intersection, Concrete<T>
 - `Field` - name, optional?, type, annotations
 - `StructKind` - Closed, Open{...}, Anonymous{_}
-- `Annotation` - @main, @source, @out, @constraint, @doc
+- `Annotation` - @main, @source, @constraint, @doc
 - `ConstraintExpr` - boolean exprs, field access, collection ops
 
 **Instance-Level** (runtime):

@@ -320,9 +320,6 @@ pub(super) fn annotation<'a>(
             .then_ignore(just(']'))
             .map(Annotation::Source)
             .map_with(|a, e| Spanned::from_simple(a, e.span())),
-        just("@out")
-            .to(Annotation::Out)
-            .map_with(|a, e| Spanned::from_simple(a, e.span())),
         just("@constraint")
             .ignore_then(ws())
             .ignore_then(constraint_expr())
@@ -759,17 +756,6 @@ mod tests {
     }
 
     #[test]
-    fn test_field_with_annotation() {
-        let TypeExpr::Struct(StructKind::Closed(fields)) =
-            parse_type("{@out\nx Int}").node
-        else {
-            panic!("Expected closed struct");
-        };
-        assert_eq!(fields[0].node.annotations.len(), 1);
-        assert_eq!(fields[0].node.annotations[0].node, Annotation::Out);
-    }
-
-    #[test]
     fn test_field_with_source_annotation() {
         let TypeExpr::Struct(StructKind::Closed(fields)) =
             parse_type("{@source [foo]\nx Int}").node
@@ -786,7 +772,7 @@ mod tests {
     #[test]
     fn test_field_with_multiple_annotations() {
         let TypeExpr::Struct(StructKind::Closed(fields)) =
-            parse_type("{@out\n@doc \"help\"\nx Int}").node
+            parse_type("{@source [foo]\n@doc \"help\"\nx Int}").node
         else {
             panic!("Expected closed struct");
         };
@@ -868,11 +854,6 @@ mod tests {
     #[test]
     fn test_annotation_main() {
         assert_eq!(parse_ann("@main").node, Annotation::Main);
-    }
-
-    #[test]
-    fn test_annotation_out() {
-        assert_eq!(parse_ann("@out").node, Annotation::Out);
     }
 
     #[test]

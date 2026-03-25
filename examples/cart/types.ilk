@@ -3,14 +3,10 @@
 type Tag = {_ String} | Concrete<String>
 
 
-type Event = {...} & {
-    timestamp Timestamp
-    tags []&Tag
-}
-
-
 type TaggedEvent = {
-    fields {...} & {timestamp Timestamp}
+    type! Concrete<String>
+
+    fields {...}
 
     @source [fields]
     tags []&Tag

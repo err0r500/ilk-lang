@@ -366,7 +366,6 @@ const exOut = {
     name Concrete<String>
     args {...}
 
-    @out
     returns {...}
 }
 
@@ -830,7 +829,6 @@ Annotations appear on the line immediately before the declaration they annotate.
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | type body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field | Implementation hint preserved in AST; not stripped during parsing |
-| `@out` | field | (maybe deprecate also, in favor of ref) Field is an output — exempt from `@source` checks, can be referenced by other `@source` |
 
 ### `@main`
 
@@ -947,35 +945,6 @@ type Command = {
 ```
 
 <TypeExample :example="exSource" />
-
-### `@out`
-
-`@out` marks a field as **output** — data flows OUT from this field rather than into it.
-Fields marked `@out` are exempt from `@source` checks and can be referenced in `@source`
-lists of other fields.
-
-```ilk
-type DbMethod = {
-    name    Concrete<String>
-    args    {...}
-
-    @out
-    returns {...}  // data provided by DB, not consumed
-}
-
-type Endpoint = {
-    @source [params, body]
-    db DbMethod
-
-    @source [db.returns]   // can reference @out field
-    response {...}
-}
-```
-
-Without `@out`, a field like `returns` would appear to be missing a `@source` constraint.
-The annotation disambiguates intentional output fields from accidental omissions.
-
-<TypeExample :example="exOut" />
 
 ### `@constraint`
 

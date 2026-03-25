@@ -6,9 +6,8 @@ type InsertQuery = {
     params {...}
 
     @source [params]
-    insert -TableSchema
+    insert TableSchema
 
-    @out
     return {...}
 }
 
@@ -18,19 +17,18 @@ type UpdateQuery = {
     params {...}
 
     @source [params, table]
-    update -TableSchema
+    update TableSchema
 
-    @out
     return {...}
 }
 
 type ReadQuery = {
     name! Concrete<String>
     table &TableSchema
+
     params {...}
 
     @source [table]
-    @out
     return {...}
 }
 
@@ -68,11 +66,15 @@ getUserById = ReadQuery {
 insertUser = InsertQuery {
     name "insertUser"
     table userTable
+
     params {name String}
+
+    // TODO, why removing id + userTable & passes validation ???
     insert userTable & {
         id Uuid*
         name String = params.name
     }
+
     return {
         id Uuid = insert.id
     }
@@ -86,6 +88,7 @@ updateUser = UpdateQuery {
         id? Uuid = table.id
         name String = params.name
     }
+
     return {
         id Uuid*
     }

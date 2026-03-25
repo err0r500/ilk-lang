@@ -82,7 +82,6 @@ impl SourcePath {
 pub enum Annotation {
     Main,
     Source(Vec<S<SourcePath>>),
-    Out,
     Constraint(S<ConstraintExpr>),
     Doc(String),
 }

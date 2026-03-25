@@ -3,6 +3,8 @@ import "./tags.ilk"
 
 
 cartCreated = TaggedEvent {
+    type "CartCreated"
+
     fields {
         cartId Uuid
         shopperId Uuid
@@ -17,6 +19,8 @@ cartCreated = TaggedEvent {
 
 
 itemAdded = TaggedEvent {
+    type "itemAdded"
+
     fields {
         cartId Uuid
         itemId Uuid
@@ -30,6 +34,8 @@ itemAdded = TaggedEvent {
 
 
 itemRemoved = TaggedEvent {
+    type "ItemRemoved"
+
     fields {
         cartId Uuid
         itemId Uuid
@@ -40,6 +46,9 @@ itemRemoved = TaggedEvent {
 
 
 cartCleared = TaggedEvent {
+    type "CartCleared"
+
     fields {cartId Uuid}
+
     tags [cartIdTag]
 }
