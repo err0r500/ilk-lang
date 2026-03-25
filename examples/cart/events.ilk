@@ -54,6 +54,21 @@ cartCleared = TaggedEvent {
 }
 
 
+cartSubmitted = TaggedEvent {
+    type "CartSubmitted"
+
+    fields {
+        cartId Uuid
+        shopperId Uuid
+    }
+
+    tags [
+        cartIdTag
+        shopperIdTag
+    ]
+}
+
+
 inventoryChanged = TaggedEvent {
     type "InventoryChanged"
 
@@ -63,4 +78,17 @@ inventoryChanged = TaggedEvent {
     }
 
     tags [productIdTag]
+}
+
+
+priceChanged = TaggedEvent {
+    type "PriceChanged"
+
+    fields {
+        productId Uuid
+        oldPrice Int
+        newPrice Int
+    }
+
+    tags [productIdTag & {sku Uuid = fields.productId}]
 }

@@ -1,0 +1,71 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+removeItem = ChangeSlice {
+    name "RemoveItem"
+
+    actor userActor
+
+    endpoint {
+        method DELETE
+        path "/carts/{cartId}/items/{itemId}"
+        params {
+            cartId Uuid
+            itemId Uuid
+        }
+        auth {userId Uuid}
+
+        responses []
+    }
+
+    command {
+        fields {
+            shopperId Uuid = endpoint.auth.userId
+            cartId Uuid
+            itemId Uuid
+        }
+
+        query [
+            {
+                eventTypes [cartCreated, itemAdded, itemRemoved]
+                tags [cartIdTag]
+            }
+        ]
+
+        emits [itemRemoved]
+    }
+
+    scenarios [
+        {
+            name "OK: happy case"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {cartId "abc", itemId "item1"}}
+            ]
+            when {cartId "abc", itemId "item1"}
+            then [itemRemoved]
+        }
+        {
+            name "OK: already removed"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {cartId "abc", itemId "item1"}}
+                itemRemoved & {fields {cartId "abc", itemId "item1"}}
+            ]
+            when {cartId "abc", itemId "item1"}
+            then []
+        }
+        {
+            name "Err: wrong cart"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {cartId "def", itemId "item1"}}
+            ]
+            when {cartId "abc", itemId "item1"}
+            then {error "the item doesn't belong to this cart"}
+        }
+    ]
+}

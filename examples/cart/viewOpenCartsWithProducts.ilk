@@ -1,0 +1,91 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+openCartsWithProducts = ViewSlice {
+    name "OpenCartsWithProducts"
+
+    actor userActor
+
+    query [
+        {
+            eventTypes [
+                cartCreated
+                cartSubmitted
+                itemAdded
+                cartCleared
+                itemRemoved
+            ]
+        }
+    ]
+
+    readModel {
+        productId Uuid
+        cartId Uuid
+        itemId Uuid
+    }
+
+    scenarios [
+        {
+            name "one item"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {itemId "item1" productId "product-1"}}
+            ]
+            expect [{
+                cartId "abc"
+                itemId "item-1"
+                productId "prod-1"
+            }]
+        }
+        {
+            name "two item, same product id"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {itemId "item1" productId "product-1"}}
+                itemAdded & {fields {itemId "item2" productId "product-1"}}
+            ]
+            expect [
+                {
+                    cartId "abc"
+                    itemId "item-1"
+                    productId "prod-1"
+                }
+                {
+                    cartId "abc"
+                    itemId "item-2"
+                    productId "prod-1"
+                }
+            ]
+        }
+        {
+            name "item added then removed"
+            given [
+                cartCreated
+                itemAdded
+                itemRemoved
+            ]
+            expect []
+        }
+        {
+            name "cart cleared"
+            given [
+                cartCreated
+                itemAdded
+                cartCleared
+            ]
+            expect []
+        }
+        {
+            name "cart submitted"
+            given [
+                cartCreated
+                itemAdded
+                cartSubmitted
+            ]
+            expect []
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+viewProductsInventories = ViewSlice {
+    name "ViewProductsInventories"
+
+    actor userActor
+
+    image "./mockups/view_inventories.png"
+
+    endpoint {
+        method GET
+        path "/inventories/products/{productId}"
+        params {productId Uuid}
+        responses []
+    }
+
+    query [
+        {
+            eventTypes [inventoryChanged]
+            tags [productIdTag]
+        }
+    ]
+
+    readModel {
+        products [{
+            productId Uuid
+            quantity Int
+        }]
+    }
+
+    scenarios []
+}

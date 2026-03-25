@@ -1,0 +1,35 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+changedPrices = ViewSlice {
+    name "ChangedPrices"
+
+    actor userActor
+
+    endpoint {
+        method GET
+        path "/prices/products/{productId}"
+        params {productId Uuid}
+        responses []
+    }
+
+    query [
+        {
+            eventTypes [priceChanged]
+            tags [productIdTag]
+        }
+    ]
+
+    readModel {
+        products [{
+            productId Uuid
+            oldPrice Int
+            newPrice Int
+        }]
+    }
+
+    scenarios []
+}
