@@ -125,6 +125,45 @@ fn is_reference_list(ty: &TypeExpr) -> bool {
     }
 }
 
+fn resolve_nested_type<'a>(
+    ctx: &'a ValidationContext,
+    parent_type: Option<&'a TypeExpr>,
+    name: &str,
+) -> Option<&'a TypeExpr> {
+    parent_type
+        .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
+        .map(|t| &t.node)
+}
+
+fn validate_ref_instance_fields(
+    ctx: &ValidationContext,
+    ref_name: &str,
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    skip: &std::collections::HashSet<&str>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    if let Some(ref_inst) = ctx.get_instance(ref_name) {
+        let ref_ctx = ctx.for_instance(ref_name);
+        if let Value::Struct(ref_fields) = &ref_inst.body.node {
+            for ref_field in ref_fields {
+                if !skip.is_empty() && skip.contains(ref_field.node.name.node.as_str()) {
+                    continue;
+                }
+                validate_refinement_field(
+                    &ref_ctx,
+                    ref_field,
+                    sources,
+                    parent_fields,
+                    parent_type,
+                    errors,
+                );
+            }
+        }
+    }
+}
+
 fn validate_field_source(
     ctx: &ValidationContext,
     inst_field: &S<InstanceField>,
@@ -133,82 +172,14 @@ fn validate_field_source(
     field_type: &TypeExpr,
     errors: &mut Vec<Diagnostic>,
 ) {
-    // Only validate lists (refinements and inline elements)
-    // Nested struct values are handled by recursive validate_struct_sources
     if let Value::List(elements) = &inst_field.node.value.node {
         let elem_type = match field_type {
             TypeExpr::List(_, inner) => Some(&inner.node),
             _ => None,
         };
-
-        for elem in elements {
-            match &elem.node {
-                ListElement::Refinement(_name, ref_fields) => {
-                    for ref_field in ref_fields {
-                        validate_refinement_field(
-                            ctx,
-                            ref_field,
-                            sources,
-                            parent_fields,
-                            elem_type,
-                            errors,
-                        );
-                    }
-                }
-                ListElement::BindingRef(name) => {
-                    if let Some(ref_inst) = ctx.get_instance(name) {
-                        let ref_ctx = ctx.for_instance(name);
-                        if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                            for ref_field in ref_fields {
-                                validate_refinement_field(
-                                    &ref_ctx,
-                                    ref_field,
-                                    sources,
-                                    parent_fields,
-                                    elem_type,
-                                    errors,
-                                );
-                            }
-                        }
-                    }
-                }
-                ListElement::Value(v) => match v {
-                    Value::Struct(fields) => {
-                        for field in fields {
-                            validate_refinement_field(
-                                ctx,
-                                field,
-                                sources,
-                                parent_fields,
-                                elem_type,
-                                errors,
-                            );
-                        }
-                    }
-                    Value::BindingRef(name) => {
-                        if let Some(ref_inst) = ctx.get_instance(name) {
-                            let ref_ctx = ctx.for_instance(name);
-                            if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                                for ref_field in ref_fields {
-                                    validate_refinement_field(
-                                        &ref_ctx,
-                                        ref_field,
-                                        sources,
-                                        parent_fields,
-                                        elem_type,
-                                        errors,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                },
-            }
-        }
+        validate_list_elements(ctx, elements, sources, parent_fields, elem_type, errors);
     } else if let Value::Struct(nested_fields) = &inst_field.node.value.node {
         let fields_to_skip = get_fields_to_skip(field_type, ctx);
-
         for nested in nested_fields {
             if fields_to_skip.contains(&nested.node.name.node) {
                 if let Value::Struct(inner_fields) = &nested.node.value.node {
@@ -230,41 +201,85 @@ fn validate_field_source(
     } else if let Value::BindingRef(ref_name) | Value::Refinement(ref_name, _) =
         &inst_field.node.value.node
     {
-        let ref_fields: &[S<InstanceField>] = match &inst_field.node.value.node {
-            Value::Refinement(_, f) => f,
-            _ => &[],
-        };
+        validate_binding_ref_or_refinement(
+            ctx, inst_field, ref_name, sources, parent_fields, field_type, errors,
+        );
+    }
+}
 
-        // Validate explicit refinement fields first
-        for field in ref_fields {
-            validate_refinement_field(ctx, field, sources, parent_fields, Some(field_type), errors);
-        }
-
-        // Validate non-refined fields from referenced instance
-        if let Some(ref_inst) = ctx.get_instance(ref_name) {
-            let ref_ctx = ctx.for_instance(ref_name);
-            if let Value::Struct(inst_fields) = &ref_inst.body.node {
-                let fields_to_skip = get_fields_to_skip(field_type, ctx);
-                let refined_names: std::collections::HashSet<_> =
-                    ref_fields.iter().map(|f| &f.node.name.node).collect();
-                for nested in inst_fields {
-                    if refined_names.contains(&nested.node.name.node)
-                        || fields_to_skip.contains(&nested.node.name.node)
-                    {
-                        continue;
-                    }
+fn validate_list_elements(
+    ctx: &ValidationContext,
+    elements: &[S<ListElement>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    elem_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let no_skip = std::collections::HashSet::new();
+    for elem in elements {
+        match &elem.node {
+            ListElement::Refinement(_name, ref_fields) => {
+                for ref_field in ref_fields {
                     validate_refinement_field(
-                        &ref_ctx,
-                        nested,
-                        sources,
-                        parent_fields,
-                        Some(field_type),
-                        errors,
+                        ctx, ref_field, sources, parent_fields, elem_type, errors,
                     );
                 }
             }
+            ListElement::BindingRef(name) => {
+                validate_ref_instance_fields(
+                    ctx, name, sources, parent_fields, elem_type, &no_skip, errors,
+                );
+            }
+            ListElement::Value(v) => match v {
+                Value::Struct(fields) => {
+                    for field in fields {
+                        validate_refinement_field(
+                            ctx, field, sources, parent_fields, elem_type, errors,
+                        );
+                    }
+                }
+                Value::BindingRef(name) => {
+                    validate_ref_instance_fields(
+                        ctx, name, sources, parent_fields, elem_type, &no_skip, errors,
+                    );
+                }
+                _ => {}
+            },
         }
     }
+}
+
+fn validate_binding_ref_or_refinement(
+    ctx: &ValidationContext,
+    inst_field: &S<InstanceField>,
+    ref_name: &str,
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    field_type: &TypeExpr,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let ref_fields: &[S<InstanceField>] = match &inst_field.node.value.node {
+        Value::Refinement(_, f) => f,
+        _ => &[],
+    };
+
+    for field in ref_fields {
+        validate_refinement_field(ctx, field, sources, parent_fields, Some(field_type), errors);
+    }
+
+    let fields_to_skip = get_fields_to_skip(field_type, ctx);
+    let refined_names: std::collections::HashSet<&str> = ref_fields
+        .iter()
+        .map(|f| f.node.name.node.as_str())
+        .collect();
+    let skip: std::collections::HashSet<&str> = refined_names
+        .iter()
+        .copied()
+        .chain(fields_to_skip.iter().map(|s| s.as_str()))
+        .collect();
+    validate_ref_instance_fields(
+        ctx, ref_name, sources, parent_fields, Some(field_type), &skip, errors,
+    );
 }
 
 /// Get field names that should be skipped from parent @source validation
@@ -368,159 +383,29 @@ fn validate_refinement_field(
             }
         }
         FieldOrigin::None => {
-            // If this is a struct, validate children recursively
             if let Value::Struct(nested_fields) = &field.node.value.node {
-                let nested_type = parent_type
-                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
-                    .map(|t| &t.node);
-                for nested in nested_fields {
-                    validate_refinement_field(
-                        ctx,
-                        nested,
-                        sources,
-                        parent_fields,
-                        nested_type,
-                        errors,
-                    );
-                }
+                validate_none_origin_struct(
+                    ctx, name, nested_fields, sources, parent_fields, parent_type, errors,
+                );
                 return;
             }
-
-            // If this is a refinement, validate its fields
             if let Value::Refinement(ref_name, ref_fields) = &field.node.value.node {
-                let nested_type = parent_type
-                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
-                    .map(|t| &t.node);
-                for ref_field in ref_fields {
-                    validate_refinement_field(
-                        ctx,
-                        ref_field,
-                        sources,
-                        parent_fields,
-                        nested_type,
-                        errors,
-                    );
-                }
-                // Also validate non-refined fields from referenced instance
-                if let Some(ref_inst) = ctx.get_instance(ref_name) {
-                    let ref_ctx = ctx.for_instance(ref_name);
-                    if let Value::Struct(inst_fields) = &ref_inst.body.node {
-                        let refined_names: std::collections::HashSet<_> =
-                            ref_fields.iter().map(|f| &f.node.name.node).collect();
-                        for nested in inst_fields {
-                            if refined_names.contains(&nested.node.name.node) {
-                                continue;
-                            }
-                            validate_refinement_field(
-                                &ref_ctx,
-                                nested,
-                                sources,
-                                parent_fields,
-                                nested_type,
-                                errors,
-                            );
-                        }
-                    }
-                }
+                validate_none_origin_refinement(
+                    ctx, name, ref_name, ref_fields, sources, parent_fields, parent_type, errors,
+                );
                 return;
             }
-
-            // If this is a list, validate its elements recursively
             if let Value::List(elements) = &field.node.value.node {
-                let field_type_expr = parent_type
-                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
-                    .map(|t| &t.node);
-                let is_ref_list = field_type_expr
-                    .map(|t| is_reference_list(t))
-                    .unwrap_or(true);
-
-                let elem_type = field_type_expr.and_then(|t| match t {
-                    TypeExpr::List(_, inner) => Some(&inner.node),
-                    _ => None,
-                });
-
-                for elem in elements {
-                    match &elem.node {
-                        ListElement::BindingRef(ref_name) => {
-                            if is_ref_list {
-                                continue;
-                            }
-                            if let Some(ref_inst) = ctx.get_instance(ref_name) {
-                                let ref_ctx = ctx.for_instance(ref_name);
-                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                                    for ref_field in ref_fields {
-                                        validate_refinement_field(
-                                            &ref_ctx,
-                                            ref_field,
-                                            sources,
-                                            parent_fields,
-                                            elem_type,
-                                            errors,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        ListElement::Refinement(_, ref_fields) => {
-                            for ref_field in ref_fields {
-                                validate_refinement_field(
-                                    ctx,
-                                    ref_field,
-                                    sources,
-                                    parent_fields,
-                                    elem_type,
-                                    errors,
-                                );
-                            }
-                        }
-                        ListElement::Value(Value::Struct(fields)) => {
-                            for f in fields {
-                                validate_refinement_field(
-                                    ctx,
-                                    f,
-                                    sources,
-                                    parent_fields,
-                                    elem_type,
-                                    errors,
-                                );
-                            }
-                        }
-                        ListElement::Value(Value::BindingRef(ref_name)) => {
-                            if is_ref_list {
-                                continue;
-                            }
-                            if let Some(ref_inst) = ctx.get_instance(ref_name) {
-                                let ref_ctx = ctx.for_instance(ref_name);
-                                if let Value::Struct(ref_fields) = &ref_inst.body.node {
-                                    for ref_field in ref_fields {
-                                        validate_refinement_field(
-                                            &ref_ctx,
-                                            ref_field,
-                                            sources,
-                                            parent_fields,
-                                            elem_type,
-                                            errors,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+                validate_none_origin_list(
+                    ctx, name, elements, sources, parent_fields, parent_type, errors,
+                );
                 return;
             }
 
             // Exempt &T / -T reference fields from parent @source validation
             if let Value::BindingRef(_) = &field.node.value.node {
-                let is_ref_type = parent_type
-                    .and_then(|pt| get_field_type_from_type_expr(ctx, pt, name))
-                    .map(|t| {
-                        matches!(
-                            t.node,
-                            TypeExpr::Reference(_) | TypeExpr::RefinableRef(_)
-                        )
-                    })
+                let is_ref_type = resolve_nested_type(ctx, parent_type, name)
+                    .map(|t| matches!(t, TypeExpr::Reference(_) | TypeExpr::RefinableRef(_)))
                     .unwrap_or(false);
                 if is_ref_type {
                     return;
@@ -528,15 +413,106 @@ fn validate_refinement_field(
             }
 
             let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
-            if !found {
-                if !is_concrete_value(&field.node.value) {
-                    errors.push(Diagnostic::error(
-                        field.span.clone(),
-                        format!("No source found for field '{}'", name),
-                        ctx.path,
-                    ));
+            if !found && !is_concrete_value(&field.node.value) {
+                errors.push(Diagnostic::error(
+                    field.span.clone(),
+                    format!("No source found for field '{}'", name),
+                    ctx.path,
+                ));
+            }
+        }
+    }
+}
+
+fn validate_none_origin_struct(
+    ctx: &ValidationContext,
+    name: &str,
+    nested_fields: &[S<InstanceField>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let nested_type = resolve_nested_type(ctx, parent_type, name);
+    for nested in nested_fields {
+        validate_refinement_field(ctx, nested, sources, parent_fields, nested_type, errors);
+    }
+}
+
+fn validate_none_origin_refinement(
+    ctx: &ValidationContext,
+    name: &str,
+    ref_name: &str,
+    ref_fields: &[S<InstanceField>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let nested_type = resolve_nested_type(ctx, parent_type, name);
+    for ref_field in ref_fields {
+        validate_refinement_field(ctx, ref_field, sources, parent_fields, nested_type, errors);
+    }
+    let refined_names: std::collections::HashSet<&str> = ref_fields
+        .iter()
+        .map(|f| f.node.name.node.as_str())
+        .collect();
+    validate_ref_instance_fields(
+        ctx, ref_name, sources, parent_fields, nested_type, &refined_names, errors,
+    );
+}
+
+fn validate_none_origin_list(
+    ctx: &ValidationContext,
+    name: &str,
+    elements: &[S<ListElement>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    let field_type_expr = resolve_nested_type(ctx, parent_type, name);
+    let is_ref_list = field_type_expr
+        .map(|t| is_reference_list(t))
+        .unwrap_or(true);
+
+    let elem_type = field_type_expr.and_then(|t| match t {
+        TypeExpr::List(_, inner) => Some(&inner.node),
+        _ => None,
+    });
+
+    let no_skip = std::collections::HashSet::new();
+    for elem in elements {
+        match &elem.node {
+            ListElement::BindingRef(ref_name) => {
+                if is_ref_list {
+                    continue;
+                }
+                validate_ref_instance_fields(
+                    ctx, ref_name, sources, parent_fields, elem_type, &no_skip, errors,
+                );
+            }
+            ListElement::Refinement(_, ref_fields) => {
+                for ref_field in ref_fields {
+                    validate_refinement_field(
+                        ctx, ref_field, sources, parent_fields, elem_type, errors,
+                    );
                 }
             }
+            ListElement::Value(Value::Struct(fields)) => {
+                for f in fields {
+                    validate_refinement_field(ctx, f, sources, parent_fields, elem_type, errors);
+                }
+            }
+            ListElement::Value(Value::BindingRef(ref_name)) => {
+                if is_ref_list {
+                    continue;
+                }
+                validate_ref_instance_fields(
+                    ctx, ref_name, sources, parent_fields, elem_type, &no_skip, errors,
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -766,6 +742,26 @@ type Event = {timestamp Int}
 type Cmd = {
   fields {...}
   @source [fields]
+  emits Event
+}
+
+cmd = Cmd {
+  fields {x Int}
+  emits {timestamp Int*}
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_list_generated_exempt() {
+        let errors = validate_source_src(
+            r#"
+type Event = {timestamp Int}
+type Cmd = {
+  fields {...}
+  @source [fields]
   emits []Event
 }
 e = Event {timestamp Int}
@@ -780,6 +776,25 @@ cmd = Cmd {
 
     #[test]
     fn test_mapped_valid() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+cmd = Cmd {
+  fields {userId String}
+  emits {id String = fields.userId}
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_mapped_valid_list() {
         let errors = validate_source_src(
             r#"
 type Event = {id String}
@@ -819,6 +834,25 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_source_not_found_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+cmd = Cmd {
+  fields {x Int}
+  emits {id String = other.id}
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
     fn test_concrete_exempt() {
         let errors = validate_source_src(
             r#"
@@ -832,6 +866,25 @@ e = Event {status 200}
 cmd = Cmd {
   fields {x Int}
   emits [e & {status 200}]
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_concrete_exempt_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {status Concrete<Int>}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+cmd = Cmd {
+  fields {x Int}
+  emits {status 200}
 }
 "#,
         );
@@ -862,6 +915,29 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_binding_ref_missing_source_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {bla String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+other = Event {bla String}
+cmd = Cmd {
+  fields {x Int}
+  emits other
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0]
+            .message
+            .contains("No source found for field 'bla'"));
+    }
+
+    #[test]
     fn test_binding_ref_valid_source() {
         let errors = validate_source_src(
             r#"
@@ -882,6 +958,26 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_binding_ref_valid_source_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {bla String}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+other = Event {bla String}
+cmd = Cmd {
+  fields {bla String}
+  emits other
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
     fn test_mapped_type_mismatch() {
         let errors = validate_source_src(
             r#"
@@ -895,6 +991,28 @@ e = Event {id Int}
 cmd = Cmd {
   fields {userId Uuid}
   emits [e & {id Int = fields.userId}]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
+        assert!(errors[0].message.contains("Uuid"));
+        assert!(errors[0].message.contains("Int"));
+    }
+
+    #[test]
+    fn test_mapped_type_mismatch_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id Int}
+type Cmd = {
+  fields {...}
+  @source [fields]
+  emits Event
+}
+cmd = Cmd {
+  fields {userId Uuid}
+  emits {id Int = fields.userId}
 }
 "#,
         );
@@ -992,6 +1110,29 @@ endpoint = Endpoint {
     }
 
     #[test]
+    fn test_source_path_prefix_validation_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+    @source [params, body]
+    response Event
+}
+endpoint = Endpoint {
+    method String
+    params {id String}
+    body {}
+    response {id String = params.id}
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
     fn test_source_path_rejects_outside_subtree() {
         let errors = validate_source_src(
             r#"
@@ -1009,6 +1150,30 @@ endpoint = Endpoint {
     params {x Int}
     body {}
     responses [ev & {method String = method}]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("not allowed by @source"));
+    }
+
+    #[test]
+    fn test_source_path_rejects_outside_subtree_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {method String}
+type Endpoint = {
+    method String
+    params {...}
+    body {...}
+    @source [params, body]
+    response Event
+}
+endpoint = Endpoint {
+    method String
+    params {x Int}
+    body {}
+    response {method String = method}
 }
 "#,
         );
@@ -1040,6 +1205,28 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_mandatory_from_optional_source_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! Event
+}
+cmd = Cmd {
+  fields {opt? String}
+  emits {id String = fields.opt}
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0]
+            .message
+            .contains("Mandatory field cannot depend on optional source"));
+    }
+
+    #[test]
     fn test_optional_from_optional_source() {
         let errors = validate_source_src(
             r#"
@@ -1060,6 +1247,25 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_optional_from_optional_source_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id String}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! Event
+}
+cmd = Cmd {
+  fields {opt? String}
+  emits {id? String = fields.opt}
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
     fn test_optional_from_optional_type_mismatch() {
         let errors = validate_source_src(
             r#"
@@ -1073,6 +1279,26 @@ e = Event {id Int}
 cmd = Cmd {
   fields {opt? String}
   emits [e & {id? Int = fields.opt}]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_optional_from_optional_type_mismatch_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {id Int}
+type Cmd = {
+  fields! {...}
+  @source [fields]
+  emits! Event
+}
+cmd = Cmd {
+  fields {opt? String}
+  emits {id? Int = fields.opt}
 }
 "#,
         );
@@ -1105,6 +1331,30 @@ cmd = Cmd {
     }
 
     #[test]
+    fn test_implicit_type_mismatch_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId Uuid}
+type Cmd = {
+  fields {...}
+  auth {...}
+  @source [fields, auth]
+  emits Event
+}
+other = Event {userId Uuid}
+cmd = Cmd {
+  fields {x Int}
+  auth {userId String}
+  emits other
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Type mismatch"));
+        assert!(errors[0].message.contains("auth.userId"));
+    }
+
+    #[test]
     fn test_ambiguous_source() {
         let errors = validate_source_src(
             r#"
@@ -1120,6 +1370,31 @@ cmd = Cmd {
   fields {userId String}
   auth {userId String}
   emits [e]
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(errors[0].message.contains("Ambiguous source"));
+        assert!(errors[0].message.contains("fields"));
+        assert!(errors[0].message.contains("auth"));
+    }
+
+    #[test]
+    fn test_ambiguous_source_single() {
+        let errors = validate_source_src(
+            r#"
+type Event = {userId String}
+type Cmd = {
+  fields {...}
+  auth {...}
+  @source [fields, auth]
+  emits Event
+}
+other = Event {userId String}
+cmd = Cmd {
+  fields {userId String}
+  auth {userId String}
+  emits other
 }
 "#,
         );
