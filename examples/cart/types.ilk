@@ -8,6 +8,7 @@ type TaggedEvent = {
 
     fields {...}
 
+    // we expect tags to be derived from event fields
     @source [fields]
     tags []&Tag
 }
@@ -137,4 +138,3 @@ type Board = {
     name Concrete<String>
     contexts []Context
 }
-//changes! [1..]ChangeSlice

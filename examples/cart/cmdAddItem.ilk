@@ -13,14 +13,16 @@ addItem = ChangeSlice {
         method POST
         path "/carts/{cartId}/items"
         params {cartId Uuid}
+
         auth {userId Uuid}
+
         body {
-            productId Uuid
-            description String
-            imageURL String
-            sku String
+            sku Uuid
             price Int
             quantity Int
+
+            description String
+            imageURL String
         }
 
         responses []
@@ -31,11 +33,12 @@ addItem = ChangeSlice {
             itemId Uuid*
             shopperId Uuid = endpoint.auth.userId
             cartId Uuid
+            sku Uuid
+
+            price Int
             quantity Int
             description String
-            image String = endpoint.body.imageURL
-            productId String = endpoint.body.sku
-            price Int
+            imageURL String
         }
 
         query [
@@ -50,6 +53,10 @@ addItem = ChangeSlice {
                 eventTypes [itemAdded]
                 tags [cartIdTag]
             }
+            {
+                eventTypes [inventoryChanged]
+                tags [productIdTag]
+            }
         ]
 
         emits [
@@ -61,7 +68,7 @@ addItem = ChangeSlice {
     scenarios [
         {
             name "OK: Add item automatically opens the cart"
-            given [cartCreated & {fields {cartId "hello"}}]
+            given [cartCreated & {fields {cartId "abc"}}]
             when {}
             then [
                 cartCreated
@@ -69,10 +76,48 @@ addItem = ChangeSlice {
             ]
         }
         {
+            name "OK: Add item"
+            given [
+                cartCreated & {fields {cartId "abc"}}
+                itemAdded & {fields {cartId "abc"}}
+            ]
+            when {}
+            then [itemAdded]
+        }
+        {
             name "Err: duplicate cart creation"
             given [cartCreated & {fields {cartId "abc"}}]
-            when {}
+            when {cartId "abc"}
             then {error "already created"}
+        }
+        {
+            name "Err: 2 carts can't have the same Id"
+            given [cartCreated & {fields {cartId "abc"}}]
+            when {cartId "abc"}
+            then {error "conflict"}
+        }
+        {
+            name "Err: max 3 items per cart"
+            given [
+                cartCreated
+                itemAdded
+                itemAdded
+                itemAdded
+            ]
+            when {}
+            then {error "can't add more than 3 items"}
+        }
+        {
+            name "Err: can't add item if empty inventory"
+            given [
+                cartCreated
+                inventoryChanged & {fields {
+                    sku "abc"
+                    inventory 0
+                }}
+            ]
+            when {}
+            then {error "woops"}
         }
     ]
 }

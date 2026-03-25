@@ -13,4 +13,4 @@ cartTag = Tag {cart Uuid}
 userNameTag = Tag {name String}
 
 
-otherTag = Tag "other"
+productIdTag = Tag {sku Uuid}

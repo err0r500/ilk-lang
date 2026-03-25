@@ -24,7 +24,7 @@ itemAdded = TaggedEvent {
     fields {
         cartId Uuid
         itemId Uuid
-        productId String
+        sku Uuid
         price Int
         quantity Int
     }
@@ -51,4 +51,16 @@ cartCleared = TaggedEvent {
     fields {cartId Uuid}
 
     tags [cartIdTag]
+}
+
+
+inventoryChanged = TaggedEvent {
+    type "InventoryChanged"
+
+    fields {
+        sku Uuid
+        inventory Int
+    }
+
+    tags [productIdTag]
 }
