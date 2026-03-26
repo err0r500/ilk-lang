@@ -36,9 +36,15 @@ impl Backend {
         let diags = match compiler.load(&path, text) {
             Ok(_) => match compiler.validate(&path) {
                 Ok(()) => vec![],
-                Err(errs) => diagnostics::convert(&errs, text),
+                Err(errs) => {
+                    let local: Vec<_> = errs.into_iter().filter(|e| e.file == path).collect();
+                    diagnostics::convert(&local, text)
+                }
             },
-            Err(errs) => diagnostics::convert(&errs, text),
+            Err(errs) => {
+                let local: Vec<_> = errs.into_iter().filter(|e| e.file == path).collect();
+                diagnostics::convert(&local, text)
+            }
         };
 
         self.client

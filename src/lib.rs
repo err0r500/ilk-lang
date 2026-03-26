@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub struct Compiler {
-    cache: HashMap<PathBuf, (File, TypeEnv)>,
+    cache: HashMap<PathBuf, (File, TypeEnv, Vec<Diagnostic>)>,
 }
 
 impl Compiler {
@@ -33,8 +33,9 @@ impl Compiler {
     pub fn load(&mut self, path: &Path, src: &str) -> Result<&TypeEnv, Vec<Diagnostic>> {
         let file = parser::parse(src, path)?;
         let imported_env = self.load_imports_from_file(&file, path, &mut HashSet::new())?;
-        let env = resolve::resolve_with_imports(&file, path, imported_env)?;
-        self.cache.insert(path.to_path_buf(), (file, env));
+        let (env, resolve_errors) = resolve::resolve_with_imports(&file, path, imported_env);
+        self.cache
+            .insert(path.to_path_buf(), (file, env, resolve_errors));
         Ok(&self.cache.get(path).unwrap().1)
     }
 
@@ -78,8 +79,9 @@ impl Compiler {
         })?;
         let file = parser::parse(&src, path)?;
         let imported_env = self.load_imports_from_file(&file, path, loading)?;
-        let env = resolve::resolve_with_imports(&file, path, imported_env)?;
-        self.cache.insert(path.to_path_buf(), (file, env));
+        let (env, resolve_errors) = resolve::resolve_with_imports(&file, path, imported_env);
+        self.cache
+            .insert(path.to_path_buf(), (file, env, resolve_errors));
         loading.remove(path);
         Ok(&self.cache.get(path).unwrap().1)
     }
@@ -102,7 +104,7 @@ impl Compiler {
                 )]
             })?;
             self.load_file_recursive(&import_path, loading)?;
-            let (_, imported_env) = self.cache.get(&import_path).unwrap();
+            let (_, imported_env, _) = self.cache.get(&import_path).unwrap();
             for (name, ty) in &imported_env.types {
                 merged
                     .types
@@ -136,7 +138,8 @@ impl Compiler {
         }
 
         let mut errors = Vec::new();
-        for (file_path, (file, env)) in &self.cache {
+        for (file_path, (file, env, resolve_errors)) in &self.cache {
+            errors.extend(resolve_errors.iter().cloned());
             let ctx = validate::ValidationContext::new(env, file_path);
             for inst in file.instances() {
                 errors.extend(validate::validate_structural(&ctx, inst));
@@ -157,11 +160,11 @@ impl Compiler {
     }
 
     pub fn get_file(&self, path: &Path) -> Option<&File> {
-        self.cache.get(path).map(|(f, _)| f)
+        self.cache.get(path).map(|(f, _, _)| f)
     }
 
     pub fn get_env(&self, path: &Path) -> Option<&TypeEnv> {
-        self.cache.get(path).map(|(_, e)| e)
+        self.cache.get(path).map(|(_, e, _)| e)
     }
 }
 
@@ -179,9 +182,8 @@ pub fn parse(src: &str, path: &Path) -> Result<File, Vec<Diagnostic>> {
 /// Compile source code (parse + resolve + validate)
 pub fn compile(src: &str, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
     let file = parser::parse(src, path)?;
-    let env = resolve::resolve(&file, path)?;
+    let (env, mut errors) = resolve::resolve(&file, path);
     let ctx = validate::ValidationContext::new(&env, path);
-    let mut errors = Vec::new();
     for inst in file.instances() {
         errors.extend(validate::validate_structural(&ctx, inst));
         errors.extend(validate::validate_source(&ctx, inst));

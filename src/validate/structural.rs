@@ -1117,7 +1117,7 @@ mod tests {
 
     fn validate_src(src: &str) -> Vec<Diagnostic> {
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {

@@ -47,7 +47,7 @@ impl Default for TypeEnv {
     }
 }
 
-pub fn resolve(file: &File, path: &Path) -> Result<TypeEnv, Vec<Diagnostic>> {
+pub fn resolve(file: &File, path: &Path) -> (TypeEnv, Vec<Diagnostic>) {
     resolve_with_imports(file, path, TypeEnv::new())
 }
 
@@ -55,7 +55,7 @@ pub fn resolve_with_imports(
     file: &File,
     path: &Path,
     imported_env: TypeEnv,
-) -> Result<TypeEnv, Vec<Diagnostic>> {
+) -> (TypeEnv, Vec<Diagnostic>) {
     let mut env = imported_env;
     let mut errors = Vec::new();
 
@@ -154,11 +154,7 @@ pub fn resolve_with_imports(
     // Check for cycles in type definitions
     check_cycles(&env, path, &mut errors);
 
-    if errors.is_empty() {
-        Ok(env)
-    } else {
-        Err(errors)
-    }
+    (env, errors)
 }
 
 fn is_base_type(name: &str) -> bool {
@@ -331,73 +327,69 @@ mod tests {
     use super::*;
     use crate::parser::parse;
 
-    fn resolve_str(s: &str) -> Result<TypeEnv, Vec<Diagnostic>> {
+    fn resolve_str(s: &str) -> (TypeEnv, Vec<Diagnostic>) {
         let file = parse(s, Path::new("test.ilk")).unwrap();
         resolve(&file, Path::new("test.ilk"))
     }
 
     #[test]
     fn test_type_collection() {
-        let env = resolve_str("type Foo = {x Int}").unwrap();
+        let (env, errors) = resolve_str("type Foo = {x Int}");
+        assert!(errors.is_empty());
         assert!(env.types.contains_key("Foo"));
     }
 
     #[test]
     fn test_instance_collection() {
-        let env = resolve_str("type Foo = {x Int}\nfoo = Foo {x Int}").unwrap();
+        let (env, errors) = resolve_str("type Foo = {x Int}\nfoo = Foo {x Int}");
+        assert!(errors.is_empty());
         assert!(env.instances.contains_key("foo"));
     }
 
     #[test]
     fn test_main_instance() {
-        let env = resolve_str("type Foo = {...}\n@main\nfoo = Foo {x Int}").unwrap();
+        let (env, errors) = resolve_str("type Foo = {...}\n@main\nfoo = Foo {x Int}");
+        assert!(errors.is_empty());
         assert_eq!(env.main_instance, Some("foo".to_string()));
     }
 
     #[test]
     fn test_forward_refs() {
-        let env = resolve_str("type A = B\ntype B = {x Int}");
-        assert!(env.is_ok());
+        let (_env, errors) = resolve_str("type A = B\ntype B = {x Int}");
+        assert!(errors.is_empty());
     }
 
     #[test]
     fn test_cycles() {
-        let result = resolve_str("type A = B\ntype B = A");
-        assert!(result.is_err());
-        let errs = result.unwrap_err();
+        let (_env, errs) = resolve_str("type A = B\ntype B = A");
         assert!(errs.iter().any(|e| e.message.contains("Cyclic")));
     }
 
     #[test]
     fn test_multiple_main() {
-        let result = resolve_str("type A = {}\ntype B = {}\n@main\na = A {}\n@main\nb = B {}");
-        assert!(result.is_err());
-        let errs = result.unwrap_err();
+        let (_env, errs) =
+            resolve_str("type A = {}\ntype B = {}\n@main\na = A {}\n@main\nb = B {}");
         assert!(errs.iter().any(|e| e.message.contains("Multiple @main")));
     }
 
     #[test]
     fn test_unknown_type() {
-        let result = resolve_str("type A = Unknown");
-        assert!(result.is_err());
-        let errs = result.unwrap_err();
+        let (_env, errs) = resolve_str("type A = Unknown");
         assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
     }
 
     #[test]
     fn test_unknown_instance_type() {
-        let result = resolve_str("foo = Unknown {x Int}");
-        assert!(result.is_err());
-        let errs = result.unwrap_err();
+        let (_env, errs) = resolve_str("foo = Unknown {x Int}");
         assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
     }
 
     #[test]
     fn test_implicit_union_marker_types() {
-        let env = resolve_str(
+        let (env, errors) = resolve_str(
             "type Status = Pending | Active | Archived\ntype Process = { status! Status }",
-        )
-        .unwrap();
+        );
+        assert!(errors.is_empty());
         assert!(env.types.contains_key("Status"));
         assert!(env.types.contains_key("Pending"));
         assert!(env.types.contains_key("Active"));

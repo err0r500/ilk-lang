@@ -298,7 +298,7 @@ mod tests {
 
     fn test_hover(src: &str, offset: usize) -> Option<String> {
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let (env, _) = resolve(&file, Path::new("test.ilk"));
         hover_info(&file, &env, offset)
     }
 

@@ -820,7 +820,7 @@ mod tests {
 
     fn validate_constraints_src(src: &str) -> Vec<Diagnostic> {
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {
@@ -971,7 +971,7 @@ outer = Outer {
         // "foo" instance name starts at byte 45 (after "}\n")
         // Type definition ends at byte 44 ("}")
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {
@@ -994,7 +994,7 @@ outer = Outer {
         //         ^0          ^12            ^30      ^43  ^48
         // @constraint starts at byte 16
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {
@@ -1016,7 +1016,7 @@ outer = Outer {
         let src = "type Foo = {\n    @constraint x > 10\n    x Int\n}\nfoo = Foo { x 5 }";
         //         ^0          ^12             ^31      ^44 ^46
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {

@@ -138,6 +138,7 @@ fn resolve_nested_type<'a>(
 fn validate_ref_instance_fields(
     ctx: &ValidationContext,
     ref_name: &str,
+    caller_span: crate::span::Span,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
     parent_type: Option<&TypeExpr>,
@@ -151,14 +152,22 @@ fn validate_ref_instance_fields(
                 if !skip.is_empty() && skip.contains(ref_field.node.name.node.as_str()) {
                     continue;
                 }
+                // Collect errors separately so we can re-attribute them to the
+                // caller's file/span rather than the referenced instance's.
+                let mut ref_errors = Vec::new();
                 validate_refinement_field(
                     &ref_ctx,
                     ref_field,
                     sources,
                     parent_fields,
                     parent_type,
-                    errors,
+                    &mut ref_errors,
                 );
+                for mut err in ref_errors {
+                    err.file = ctx.path.to_path_buf();
+                    err.span = caller_span.clone();
+                    errors.push(err);
+                }
             }
         }
     }
@@ -227,7 +236,7 @@ fn validate_list_elements(
             }
             ListElement::BindingRef(name) => {
                 validate_ref_instance_fields(
-                    ctx, name, sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx, name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
                 );
             }
             ListElement::Value(v) => match v {
@@ -240,7 +249,7 @@ fn validate_list_elements(
                 }
                 Value::BindingRef(name) => {
                     validate_ref_instance_fields(
-                        ctx, name, sources, parent_fields, elem_type, &no_skip, errors,
+                        ctx, name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
                     );
                 }
                 _ => {}
@@ -278,7 +287,7 @@ fn validate_binding_ref_or_refinement(
         .chain(fields_to_skip.iter().map(|s| s.as_str()))
         .collect();
     validate_ref_instance_fields(
-        ctx, ref_name, sources, parent_fields, Some(field_type), &skip, errors,
+        ctx, ref_name, inst_field.span.clone(), sources, parent_fields, Some(field_type), &skip, errors,
     );
 }
 
@@ -386,7 +395,7 @@ fn validate_refinement_field(
             }
             if let Value::Refinement(ref_name, ref_fields) = &field.node.value.node {
                 validate_none_origin_refinement(
-                    ctx, name, ref_name, ref_fields, sources, parent_fields, parent_type, errors,
+                    ctx, name, ref_name, ref_fields, field.span.clone(), sources, parent_fields, parent_type, errors,
                 );
                 return;
             }
@@ -439,6 +448,7 @@ fn validate_none_origin_refinement(
     name: &str,
     ref_name: &str,
     ref_fields: &[S<InstanceField>],
+    caller_span: crate::span::Span,
     sources: &[S<SourcePath>],
     parent_fields: &[S<InstanceField>],
     parent_type: Option<&TypeExpr>,
@@ -453,7 +463,7 @@ fn validate_none_origin_refinement(
         .map(|f| f.node.name.node.as_str())
         .collect();
     validate_ref_instance_fields(
-        ctx, ref_name, sources, parent_fields, nested_type, &refined_names, errors,
+        ctx, ref_name, caller_span, sources, parent_fields, nested_type, &refined_names, errors,
     );
 }
 
@@ -484,7 +494,7 @@ fn validate_none_origin_list(
                     continue;
                 }
                 validate_ref_instance_fields(
-                    ctx, ref_name, sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx, ref_name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
                 );
             }
             ListElement::Refinement(_, ref_fields) => {
@@ -504,7 +514,7 @@ fn validate_none_origin_list(
                     continue;
                 }
                 validate_ref_instance_fields(
-                    ctx, ref_name, sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx, ref_name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
                 );
             }
             _ => {}
@@ -719,7 +729,7 @@ mod tests {
 
     fn validate_source_src(src: &str) -> Vec<Diagnostic> {
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let env = resolve(&file, Path::new("test.ilk")).0;
         let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
         let mut errors = Vec::new();
         for inst in file.instances() {

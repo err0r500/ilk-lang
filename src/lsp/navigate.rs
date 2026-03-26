@@ -138,7 +138,7 @@ mod tests {
 
     fn test_definition(src: &str, offset: usize) -> Option<Span> {
         let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).unwrap();
+        let (env, _) = resolve(&file, Path::new("test.ilk"));
         find_definition(&file, &env, offset)
     }
 
