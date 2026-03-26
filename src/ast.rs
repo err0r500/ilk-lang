@@ -159,7 +159,7 @@ pub enum ListElement {
 // ============= Unified Top-Level Items =============
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TypeDecl {
+pub struct MetaDecl {
     pub name: S<String>,
     pub annotations: Vec<S<Annotation>>,
     pub body: S<TypeExpr>,
@@ -183,7 +183,7 @@ pub struct Import {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Item {
-    TypeDecl(TypeDecl),
+    MetaDecl(MetaDecl),
     Instance(Instance),
     Import(Import),
 }
@@ -203,9 +203,9 @@ pub struct File {
 }
 
 impl File {
-    pub fn type_decls(&self) -> impl Iterator<Item = &TypeDecl> {
+    pub fn meta_decls(&self) -> impl Iterator<Item = &MetaDecl> {
         self.items.iter().filter_map(|item| match &item.node {
-            Item::TypeDecl(t) => Some(t),
+            Item::MetaDecl(t) => Some(t),
             _ => None,
         })
     }

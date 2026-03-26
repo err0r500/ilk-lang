@@ -47,8 +47,8 @@ enum ConstraintError {
 pub fn validate_constraints(ctx: &ValidationContext, inst: &Instance) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
     let type_name = &inst.type_name.node;
-    if let Some(type_decl) = ctx.env.get_type(type_name) {
-        validate_instance_constraints(ctx, inst, &type_decl.node, &mut errors);
+    if let Some(meta_decl) = ctx.env.get_meta(type_name) {
+        validate_instance_constraints(ctx, inst, &meta_decl.node, &mut errors);
     }
     errors
 }
@@ -56,11 +56,11 @@ pub fn validate_constraints(ctx: &ValidationContext, inst: &Instance) -> Vec<Dia
 fn validate_instance_constraints(
     ctx: &ValidationContext,
     inst: &Instance,
-    type_decl: &TypeDecl,
+    meta_decl: &MetaDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
-    let constraints: Vec<_> = find_constraints_in_type(&type_decl.body);
-    let type_fields = type_field_names(&type_decl.body);
+    let constraints: Vec<_> = find_constraints_in_type(&meta_decl.body);
+    let type_fields = type_field_names(&meta_decl.body);
 
     for constraint in constraints {
         let env = build_eval_env(ctx, inst);
@@ -77,7 +77,7 @@ fn validate_instance_constraints(
     }
 
     // Recursively validate constraints on nested structures
-    validate_nested_constraints(&inst.body, &type_decl.body, &inst.name.node, ctx, errors);
+    validate_nested_constraints(&inst.body, &meta_decl.body, &inst.name.node, ctx, errors);
 }
 
 fn validate_nested_constraints(
@@ -89,14 +89,14 @@ fn validate_nested_constraints(
 ) {
     match (&value.node, &ty.node) {
         (Value::List(elements), TypeExpr::List(_, elem_ty)) => {
-            let type_decl = match &elem_ty.node {
-                TypeExpr::Named(name) => ctx.env.get_type(name),
+            let meta_decl = match &elem_ty.node {
+                TypeExpr::Named(name) => ctx.env.get_meta(name),
                 _ => None,
             };
 
-            if let Some(type_decl) = type_decl {
-                let constraints = find_constraints_in_type(&type_decl.node.body);
-                let type_fields = type_field_names(&type_decl.node.body);
+            if let Some(meta_decl) = meta_decl {
+                let constraints = find_constraints_in_type(&meta_decl.node.body);
+                let type_fields = type_field_names(&meta_decl.node.body);
                 if !constraints.is_empty() {
                     for (i, elem) in elements.iter().enumerate() {
                         if let ListElement::Value(Value::Struct(fields)) = &elem.node {
@@ -105,7 +105,7 @@ fn validate_nested_constraints(
                             for constraint in &constraints {
                                 let fail_msg = format!(
                                     "Constraint failed for inline {} at {}[{}]",
-                                    type_decl.node.name.node, parent_path, i
+                                    meta_decl.node.name.node, parent_path, i
                                 );
                                 report_constraint_result(
                                     eval_constraint(&constraint.node, &env, ctx),
@@ -122,7 +122,7 @@ fn validate_nested_constraints(
                                 S::new(Value::Struct(fields.clone()), elem.span.clone());
                             validate_nested_constraints(
                                 &inline_value,
-                                &type_decl.node.body,
+                                &meta_decl.node.body,
                                 &format!("{}[{}]", parent_path, i),
                                 ctx,
                                 errors,
@@ -155,10 +155,10 @@ fn validate_nested_constraints(
 
         // Handle inline struct values with named types (e.g., endpoint HttpEndpoint with inline value)
         (Value::Struct(val_fields), TypeExpr::Named(type_name)) => {
-            if let Some(type_decl) = ctx.env.get_type(type_name) {
+            if let Some(meta_decl) = ctx.env.get_meta(type_name) {
                 // Check constraints on this inline struct
-                let constraints = find_constraints_in_type(&type_decl.node.body);
-                let type_fields = type_field_names(&type_decl.node.body);
+                let constraints = find_constraints_in_type(&meta_decl.node.body);
+                let type_fields = type_field_names(&meta_decl.node.body);
                 if !constraints.is_empty() {
                     let env = build_env_from_fields(val_fields, ctx);
 
@@ -180,7 +180,7 @@ fn validate_nested_constraints(
                 }
 
                 // Recurse into nested fields
-                validate_nested_constraints(value, &type_decl.node.body, parent_path, ctx, errors);
+                validate_nested_constraints(value, &meta_decl.node.body, parent_path, ctx, errors);
             }
         }
 
@@ -737,7 +737,7 @@ fn eval_int_cmp(
 }
 
 fn type_kind(type_name: &str, ctx: &ValidationContext) -> &'static str {
-    match ctx.env.get_type(type_name) {
+    match ctx.env.get_meta(type_name) {
         Some(decl) => match &decl.node.body.node {
             TypeExpr::List(_, _) => "list",
             TypeExpr::Struct(_) | TypeExpr::Intersection(_, _) => "struct",
@@ -833,8 +833,8 @@ mod tests {
     fn test_all_true() {
         let errors = validate_constraints_src(
             r#"
-type Bar = {x Int}
-type Foo = {
+meta Bar = {x Int}
+meta Foo = {
   @constraint all(items, i => true)
   items []Bar
 }
@@ -850,8 +850,8 @@ foo = Foo {items [b1, b2]}
     fn test_all_empty() {
         let errors = validate_constraints_src(
             r#"
-type Bar = {x Int}
-type Foo = {
+meta Bar = {x Int}
+meta Foo = {
   @constraint all(items, i => true)
   items []Bar
 }
@@ -865,8 +865,8 @@ foo = Foo {items []}
     fn test_count() {
         let errors = validate_constraints_src(
             r#"
-type Bar = {x Int}
-type Foo = {
+meta Bar = {x Int}
+meta Foo = {
   @constraint count(items) >= 1
   items []Bar
 }
@@ -881,8 +881,8 @@ foo = Foo {items [b1]}
     fn test_count_fail() {
         let errors = validate_constraints_src(
             r#"
-type Bar = {x Int}
-type Foo = {
+meta Bar = {x Int}
+meta Foo = {
   @constraint count(items) >= 1
   items []Bar
 }
@@ -911,12 +911,12 @@ foo = Foo {items []}
     fn test_nested_constraint_deep() {
         let errors = validate_constraints_src(
             r#"
-type Inner = {
+meta Inner = {
     @constraint x > 0
     x Int
 }
 
-type Outer = {
+meta Outer = {
     nested {
         items []Inner
     }
@@ -939,12 +939,12 @@ outer = Outer {
     fn test_nested_constraint_deep_fail() {
         let errors = validate_constraints_src(
             r#"
-type Inner = {
+meta Inner = {
     @constraint x > 0
     x Int
 }
 
-type Outer = {
+meta Outer = {
     nested {
         items []Inner
     }
@@ -966,7 +966,7 @@ outer = Outer {
     #[test]
     fn test_constraint_error_missing_instance_field() {
         // Field in type, missing in instance → error at instance
-        let src = "type Foo = {\n    @constraint x > 0\n    x Int\n}\nfoo = Foo {}";
+        let src = "meta Foo = {\n    @constraint x > 0\n    x Int\n}\nfoo = Foo {}";
         //         ^0          ^12            ^30      ^43 ^45^47
         // "foo" instance name starts at byte 45 (after "}\n")
         // Type definition ends at byte 44 ("}")
@@ -979,7 +979,7 @@ outer = Outer {
         }
 
         assert_eq!(errors.len(), 1);
-        // Error should point to instance name (after type def ends at 44)
+        // Error should point to instance name (after meta def ends at 44)
         assert!(
             errors[0].span.start >= 45,
             "Expected instance error span, got {:?}",
@@ -989,8 +989,8 @@ outer = Outer {
 
     #[test]
     fn test_constraint_error_undeclared_type_field() {
-        // Field not in type → error at constraint
-        let src = "type Foo = {\n    @constraint y > 0\n    x Int\n}\nfoo = Foo { x 1 }";
+        // Field not in meta → error at constraint
+        let src = "meta Foo = {\n    @constraint y > 0\n    x Int\n}\nfoo = Foo { x 1 }";
         //         ^0          ^12            ^30      ^43  ^48
         // @constraint starts at byte 16
         let file = parse(src, Path::new("test.ilk")).unwrap();
@@ -1002,7 +1002,7 @@ outer = Outer {
         }
 
         assert_eq!(errors.len(), 1);
-        // Error should point to constraint (within type def, before byte 48)
+        // Error should point to constraint (within meta def, before byte 48)
         assert!(
             errors[0].span.start < 48,
             "Expected constraint error span, got {:?}",
@@ -1013,7 +1013,7 @@ outer = Outer {
     #[test]
     fn test_constraint_failure_points_to_instance() {
         // Constraint evaluates to false → error at instance
-        let src = "type Foo = {\n    @constraint x > 10\n    x Int\n}\nfoo = Foo { x 5 }";
+        let src = "meta Foo = {\n    @constraint x > 10\n    x Int\n}\nfoo = Foo { x 5 }";
         //         ^0          ^12             ^31      ^44 ^46
         let file = parse(src, Path::new("test.ilk")).unwrap();
         let env = resolve(&file, Path::new("test.ilk")).0;
@@ -1024,7 +1024,7 @@ outer = Outer {
         }
 
         assert_eq!(errors.len(), 1);
-        // Error should point to instance (after type def)
+        // Error should point to instance (after meta def)
         assert!(
             errors[0].span.start >= 46,
             "Expected instance error span, got {:?}",
@@ -1036,8 +1036,8 @@ outer = Outer {
     fn test_is_type_struct() {
         let errors = validate_constraints_src(
             r#"
-type Inner = {x Int}
-type Foo = {
+meta Inner = {x Int}
+meta Foo = {
     @constraint isType(val, Inner)
     val Inner
 }
@@ -1052,9 +1052,9 @@ foo = Foo {val inner}
     fn test_is_type_list() {
         let errors = validate_constraints_src(
             r#"
-type Item = {x Int}
-type Items = []Item
-type Foo = {
+meta Item = {x Int}
+meta Items = []Item
+meta Foo = {
     @constraint isType(val, Items)
     val []Item
 }
@@ -1069,8 +1069,8 @@ foo = Foo {val [i1]}
     fn test_is_type_mismatch() {
         let errors = validate_constraints_src(
             r#"
-type Resp = {status Int}
-type Foo = {
+meta Resp = {status Int}
+meta Foo = {
     @constraint isType(val, Resp)
     val []Resp
 }
@@ -1085,9 +1085,9 @@ foo = Foo {val []}
         // when then is a struct (error), the events constraint is vacuously skipped
         let errors = validate_constraints_src(
             r#"
-type Event = {...}
-type Resp = {status Int}
-type Emitter = {
+meta Event = {...}
+meta Resp = {status Int}
+meta Emitter = {
     @constraint isType(then, Resp) || all(then, e => e in emits)
     emits []Event
     then []Event | Resp
@@ -1107,9 +1107,9 @@ ok = Emitter {
         // when then is a list, the events constraint is enforced
         let errors = validate_constraints_src(
             r#"
-type Event = {...}
-type Resp = {status Int}
-type Emitter = {
+meta Event = {...}
+meta Resp = {status Int}
+meta Emitter = {
     @constraint isType(then, Resp) || all(then, e => e in emits)
     emits []Event
     then []Event | Resp
@@ -1129,7 +1129,7 @@ bad = Emitter {
     fn test_is_present_true() {
         let errors = validate_constraints_src(
             r#"
-type Foo = {
+meta Foo = {
     @constraint isPresent(name)
     name String
 }
@@ -1143,7 +1143,7 @@ foo = Foo {name String}
     fn test_is_present_false_for_absent_optional() {
         let errors = validate_constraints_src(
             r#"
-type Foo = {
+meta Foo = {
     @constraint isPresent(name)
     name String
 }
@@ -1158,8 +1158,8 @@ foo = Foo {}
         // !isPresent(opt) || ... should pass when opt is absent
         let errors = validate_constraints_src(
             r#"
-type Event = {...}
-type Foo = {
+meta Event = {...}
+meta Foo = {
     @constraint !isPresent(items) || all(items, i => i in allowed)
     allowed []Event
     items []Event

@@ -113,7 +113,7 @@ fn named_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra
                     | "templateVars"
                     | "keys"
                     | "in"
-                    | "type"
+                    | "meta"
                     | "import"
             )
         })

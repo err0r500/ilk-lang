@@ -81,8 +81,8 @@ pub fn validate_structural(ctx: &ValidationContext, inst: &Instance) -> Vec<Diag
     let mut errors = Vec::new();
     let type_name = &inst.type_name.node;
 
-    if let Some(type_decl) = ctx.env.get_type(type_name) {
-        validate_value_against_type(ctx, &inst.body, &type_decl.node.body, &mut errors);
+    if let Some(meta_decl) = ctx.env.get_meta(type_name) {
+        validate_value_against_type(ctx, &inst.body, &meta_decl.node.body, &mut errors);
     }
     // Unknown type errors are already caught in resolve
     errors
@@ -401,22 +401,22 @@ fn validate_value_against_type(
 
         // Named types - resolve and validate
         (_, TypeExpr::Named(name)) => {
-            if let Some(type_decl) = ctx.env.get_type(name) {
-                validate_value_against_type(ctx, value, &type_decl.node.body, errors);
+            if let Some(meta_decl) = ctx.env.get_meta(name) {
+                validate_value_against_type(ctx, value, &meta_decl.node.body, errors);
             }
         }
 
         // RefinableRef - same as Named but allows concrete refinements
         (_, TypeExpr::RefinableRef(name)) => {
-            if let Some(type_decl) = ctx.env.get_type(name) {
-                validate_value_against_type(ctx, value, &type_decl.node.body, errors);
+            if let Some(meta_decl) = ctx.env.get_meta(name) {
+                validate_value_against_type(ctx, value, &meta_decl.node.body, errors);
             }
         }
 
         // Variant value against type
         (Value::Variant(variant_name, body), _) => {
-            if let Some(type_decl) = ctx.env.get_type(variant_name) {
-                validate_value_against_type(ctx, body, &type_decl.node.body, errors);
+            if let Some(meta_decl) = ctx.env.get_meta(variant_name) {
+                validate_value_against_type(ctx, body, &meta_decl.node.body, errors);
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -760,7 +760,7 @@ pub(crate) fn get_field_type_from_type_expr<'a>(
             .map(|f| &f.node.ty),
         TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
             .env
-            .get_type(name)
+            .get_meta(name)
             .and_then(|decl| get_field_type_from_type_expr(ctx, &decl.node.body.node, field_name)),
         TypeExpr::Intersection(left, right) => {
             // Right side wins for conflicts (later in intersection takes precedence)
@@ -781,7 +781,7 @@ fn is_field_required_in_type(ctx: &ValidationContext, ty: &TypeExpr, field_name:
             .unwrap_or(false),
         TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
             .env
-            .get_type(name)
+            .get_meta(name)
             .map(|decl| is_field_required_in_type(ctx, &decl.node.body.node, field_name))
             .unwrap_or(false),
         TypeExpr::Intersection(left, right) => {
@@ -836,7 +836,7 @@ fn refinement_value_matches_type(
             };
             if let Some(base) = base {
                 refinement_value_matches_type(ctx, value, &TypeExpr::Base(base))
-            } else if let Some(decl) = ctx.env.get_type(name) {
+            } else if let Some(decl) = ctx.env.get_meta(name) {
                 refinement_value_matches_type(ctx, value, &decl.node.body.node)
             } else {
                 false
@@ -891,7 +891,7 @@ fn validate_refinement_fields_against_instance(
     };
 
     // Get the type declaration for the instance
-    let type_decl = ctx.env.get_type(&inst.type_name.node);
+    let meta_decl = ctx.env.get_meta(&inst.type_name.node);
 
     for field in fields {
         let field_name = &field.node.name.node;
@@ -918,7 +918,7 @@ fn validate_refinement_fields_against_instance(
 
             // Validate refinement value type against declared field type
             // First try type declaration, then fall back to instance field's value type (for open structs)
-            let declared_type: Option<TypeExpr> = type_decl
+            let declared_type: Option<TypeExpr> = meta_decl
                 .and_then(|td| get_field_type_from_type_expr(ctx, &td.node.body.node, field_name))
                 .map(|t| t.node.clone())
                 .or_else(|| {
@@ -961,7 +961,7 @@ fn validate_refinement_fields_against_instance(
                         .find(|f| &f.node.name.node == nested_name)
                     {
                         // Resolve declared type: first from type declaration, then from instance field value
-                        let nested_type_from_decl = type_decl
+                        let nested_type_from_decl = meta_decl
                             .and_then(|td| {
                                 get_field_type_from_type_expr(ctx, &td.node.body.node, field_name)
                             })
@@ -1040,10 +1040,10 @@ fn validate_refinement_fields_against_instance(
     // Only for non-refinable types (refinable refs are just documentation)
     // Use type-level optionality (!) rather than instance-level
     if !is_refinable {
-        let type_decl = ctx.env.get_type(&inst.type_name.node);
+        let meta_decl = ctx.env.get_meta(&inst.type_name.node);
         for inst_field in inst_fields {
             let fname = &inst_field.node.name.node;
-            let required_in_type = type_decl
+            let required_in_type = meta_decl
                 .map(|td| is_field_required_in_type(ctx, &td.node.body.node, fname))
                 .unwrap_or(!inst_field.node.optional);
             if required_in_type {
@@ -1081,7 +1081,7 @@ fn resolve_type_expr<'a>(ctx: &'a ValidationContext, ty: &'a TypeExpr) -> Option
     match ty {
         TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
             .env
-            .get_type(name)
+            .get_meta(name)
             .and_then(|decl| resolve_type_expr(ctx, &decl.node.body.node)),
         other => Some(other),
     }
@@ -1093,8 +1093,8 @@ fn type_matches_ref(inst_type: &str, expected_type: &str, env: &TypeEnv) -> bool
     }
 
     // Check if inst_type is a variant of expected_type (union)
-    if let Some(type_decl) = env.get_type(expected_type) {
-        if let TypeExpr::Union(variants) = &type_decl.node.body.node {
+    if let Some(meta_decl) = env.get_meta(expected_type) {
+        if let TypeExpr::Union(variants) = &meta_decl.node.body.node {
             for variant in variants {
                 if let TypeExpr::Named(name) = &variant.node {
                     if name == inst_type {
@@ -1128,49 +1128,49 @@ mod tests {
 
     #[test]
     fn test_type_match() {
-        let errors = validate_src("type Foo = {x String}\nfoo = Foo {x String}");
+        let errors = validate_src("meta Foo = {x String}\nfoo = Foo {x String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_type_mismatch() {
-        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x String}");
+        let errors = validate_src("meta Foo = {x Int}\nfoo = Foo {x String}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_concrete_type() {
-        let errors = validate_src("type Foo = {x Concrete<String>}\nfoo = Foo {x \"hello\"}");
+        let errors = validate_src("meta Foo = {x Concrete<String>}\nfoo = Foo {x \"hello\"}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_vs_open() {
-        let errors = validate_src("type Foo = {x String}\nfoo = Foo {x \"hello\"}");
+        let errors = validate_src("meta Foo = {x String}\nfoo = Foo {x \"hello\"}");
         assert!(!errors.is_empty()); // literal can't satisfy open type
     }
 
     #[test]
     fn test_schema_fixed_literal() {
-        let errors = validate_src("type Foo = {x \"hello\"}\nfoo = Foo {x \"hello\"}");
+        let errors = validate_src("meta Foo = {x \"hello\"}\nfoo = Foo {x \"hello\"}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_literal_mismatch() {
-        let errors = validate_src("type Foo = {x \"hello\"}\nfoo = Foo {x \"world\"}");
+        let errors = validate_src("meta Foo = {x \"hello\"}\nfoo = Foo {x \"world\"}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_extra_field() {
-        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x Int, y Int}");
+        let errors = validate_src("meta Foo = {x Int}\nfoo = Foo {x Int, y Int}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_duplicate_field() {
-        let errors = validate_src("type Foo = {x Int}\nfoo = Foo {x Int, x Int}");
+        let errors = validate_src("meta Foo = {x Int}\nfoo = Foo {x Int, x Int}");
         assert!(
             errors.iter().any(|e| e.message.contains("Duplicate field")),
             "{:?}",
@@ -1180,26 +1180,26 @@ mod tests {
 
     #[test]
     fn test_open_struct() {
-        let errors = validate_src("type Foo = {...}\nfoo = Foo {x Int, y String}");
+        let errors = validate_src("meta Foo = {...}\nfoo = Foo {x Int, y String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct() {
-        let errors = validate_src("type Foo = {_}\nfoo = Foo {a String}");
+        let errors = validate_src("meta Foo = {_}\nfoo = Foo {a String}");
         assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
     fn test_anonymous_struct_wrong_count() {
-        let errors = validate_src("type Foo = {_}\nfoo = Foo {a Int, b Int}");
+        let errors = validate_src("meta Foo = {_}\nfoo = Foo {a Int, b Int}");
         assert!(!errors.is_empty());
     }
 
     #[test]
     fn test_list_any() {
         let errors = validate_src(
-            "type Item = {x Int}\ntype Foo = {items []Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
+            "meta Item = {x Int}\nmeta Foo = {items []Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
         );
         assert!(errors.is_empty(), "{:?}", errors);
     }
@@ -1207,7 +1207,7 @@ mod tests {
     #[test]
     fn test_list_cardinality() {
         let errors = validate_src(
-            "type Item = {x Int}\ntype Foo = {items [3]Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
+            "meta Item = {x Int}\nmeta Foo = {items [3]Item}\ni1 = Item {x Int}\ni2 = Item {x Int}\nfoo = Foo {items [i1, i2]}",
         );
         assert!(!errors.is_empty()); // expected 3, got 2
     }
@@ -1216,8 +1216,8 @@ mod tests {
     fn test_refinable_ref_allows_concrete() {
         let errors = validate_src(
             r#"
-type Event = {...} & {timestamp Int}
-type Command = {
+meta Event = {...} & {timestamp Int}
+meta Command = {
     emits []-Event
 }
 ev = Event {id String}
@@ -1233,8 +1233,8 @@ cmd = Command {
     fn test_non_refinable_rejects_concrete() {
         let errors = validate_src(
             r#"
-type Event = {...} & {timestamp Int}
-type Command = {
+meta Event = {...} & {timestamp Int}
+meta Command = {
     emits []Event
 }
 ev = Event {id String}
@@ -1251,8 +1251,8 @@ cmd = Command {
         // id is Uuid, but refinement uses Int literal 123
         let errors = validate_src(
             r#"
-type Event = {...} & {id Uuid}
-type Scenario = {
+meta Event = {...} & {id Uuid}
+meta Scenario = {
     given []-Event
 }
 userRegistered = Event {id Uuid}
@@ -1264,7 +1264,7 @@ scenario = Scenario {
         assert!(!errors.is_empty(), "Should error: id is Uuid but got Int");
         assert!(
             errors.iter().any(|e| e.message.contains("Type mismatch")),
-            "Expected type mismatch error: {:?}",
+            "Expected meta mismatch error: {:?}",
             errors
         );
     }
@@ -1274,8 +1274,8 @@ scenario = Scenario {
         // id is Concrete<String>, refinement uses String literal - should match
         let errors = validate_src(
             r#"
-type Event = {...} & {id Concrete<String>}
-type Scenario = {
+meta Event = {...} & {id Concrete<String>}
+meta Scenario = {
     given []-Event
 }
 userRegistered = Event {id "placeholder"}
@@ -1296,8 +1296,8 @@ scenario = Scenario {
         // Field value with refinement syntax: fieldName refInstance & {field value}
         let errors = validate_src(
             r#"
-type Event = {...} & {id String}
-type Cmd = {
+meta Event = {...} & {id String}
+meta Cmd = {
     event -Event
 }
 ev = Event {id String}
@@ -1317,9 +1317,9 @@ cmd = Cmd {
     fn test_field_value_refinement_type_mismatch() {
         let errors = validate_src(
             r#"
-type Event = {...}
-type Other = {...}
-type Cmd = {
+meta Event = {...}
+meta Other = {...}
+meta Cmd = {
     event Event
 }
 other = Other {x Int}
@@ -1337,11 +1337,11 @@ cmd = Cmd {
 
     #[test]
     fn test_open_struct_intersection_with_named_type() {
-        // Open struct & Named type - extra fields allowed
+        // Open struct & Named meta - extra fields allowed
         let errors = validate_src(
             r#"
-type Id = {id! Uuid}
-type Entity = {...} & Id
+meta Id = {id! Uuid}
+meta Entity = {...} & Id
 
 e1 = Entity {id Uuid, name String}
 "#,
@@ -1358,8 +1358,8 @@ e1 = Entity {id Uuid, name String}
         // Missing required field from Named type
         let errors = validate_src(
             r#"
-type Id = {id! Uuid}
-type Entity = {...} & Id
+meta Id = {id! Uuid}
+meta Entity = {...} & Id
 
 e = Entity {name String}
 "#,
@@ -1379,9 +1379,9 @@ e = Entity {name String}
         // Right side should win in conflicts
         let errors = validate_src(
             r#"
-type Left = {timestamp String}
-type Right = {timestamp Int}
-type Conflict = Left & Right
+meta Left = {timestamp String}
+meta Right = {timestamp Int}
+meta Conflict = Left & Right
 
 c = Conflict {timestamp Int}
 "#,
@@ -1397,8 +1397,8 @@ c = Conflict {timestamp Int}
     fn test_union_variant_not_matched() {
         let errors = validate_src(
             r#"
-type Status = Pending | Active | Archived
-type Process = {status! Status}
+meta Status = Pending | Active | Archived
+meta Process = {status! Status}
 
 p = Process {status "ongoing"}
 "#,

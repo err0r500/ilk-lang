@@ -232,7 +232,7 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
                     | "Money"
                     | "true"
                     | "false"
-                    | "type"
+                    | "meta"
                     | "import"
             )
         })
@@ -267,7 +267,7 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
                     | "Money"
                     | "true"
                     | "false"
-                    | "type"
+                    | "meta"
                     | "import"
             )
         })
@@ -309,7 +309,10 @@ mod tests {
 
     #[test]
     fn test_lit_string() {
-        assert_eq!(parse_value("\"hello\"").node, Value::LitString("hello".into()));
+        assert_eq!(
+            parse_value("\"hello\"").node,
+            Value::LitString("hello".into())
+        );
     }
 
     #[test]
@@ -346,7 +349,16 @@ mod tests {
 
     #[test]
     fn test_all_type_refs() {
-        let cases = ["String", "Int", "Float", "Bool", "Uuid", "Date", "Timestamp", "Money"];
+        let cases = [
+            "String",
+            "Int",
+            "Float",
+            "Bool",
+            "Uuid",
+            "Date",
+            "Timestamp",
+            "Money",
+        ];
         for input in cases {
             assert_eq!(parse_value(input).node, Value::TypeRef(input.into()));
         }
@@ -356,12 +368,15 @@ mod tests {
 
     #[test]
     fn test_binding_ref() {
-        assert_eq!(parse_value("myBinding").node, Value::BindingRef("myBinding".into()));
+        assert_eq!(
+            parse_value("myBinding").node,
+            Value::BindingRef("myBinding".into())
+        );
     }
 
     #[test]
     fn test_binding_ref_not_type_ref() {
-        // Known type names should parse as TypeRef, not BindingRef
+        // Known meta names should parse as TypeRef, not BindingRef
         assert!(matches!(parse_value("String").node, Value::TypeRef(_)));
     }
 
@@ -453,7 +468,10 @@ mod tests {
         let Value::Struct(fields) = parse_value("{x Int = foo.bar}").node else {
             panic!("Expected struct");
         };
-        assert_eq!(fields[0].node.origin, FieldOrigin::Mapped(vec!["foo".into(), "bar".into()]));
+        assert_eq!(
+            fields[0].node.origin,
+            FieldOrigin::Mapped(vec!["foo".into(), "bar".into()])
+        );
     }
 
     #[test]
@@ -461,7 +479,10 @@ mod tests {
         let Value::Struct(fields) = parse_value("{x Int = name}").node else {
             panic!("Expected struct");
         };
-        assert_eq!(fields[0].node.origin, FieldOrigin::Mapped(vec!["name".into()]));
+        assert_eq!(
+            fields[0].node.origin,
+            FieldOrigin::Mapped(vec!["name".into()])
+        );
     }
 
     #[test]
@@ -494,9 +515,18 @@ mod tests {
         };
         assert_eq!(elems.len(), 3);
         // Inside a list with full value parser, bare idents become Value(BindingRef)
-        assert_eq!(elems[0].node, ListElement::Value(Value::BindingRef("a".into())));
-        assert_eq!(elems[1].node, ListElement::Value(Value::BindingRef("b".into())));
-        assert_eq!(elems[2].node, ListElement::Value(Value::BindingRef("c".into())));
+        assert_eq!(
+            elems[0].node,
+            ListElement::Value(Value::BindingRef("a".into()))
+        );
+        assert_eq!(
+            elems[1].node,
+            ListElement::Value(Value::BindingRef("b".into()))
+        );
+        assert_eq!(
+            elems[2].node,
+            ListElement::Value(Value::BindingRef("c".into()))
+        );
     }
 
     #[test]
@@ -505,7 +535,10 @@ mod tests {
             panic!("Expected list");
         };
         assert_eq!(elems.len(), 3);
-        assert_eq!(elems[0].node, ListElement::Value(Value::LitString("a".into())));
+        assert_eq!(
+            elems[0].node,
+            ListElement::Value(Value::LitString("a".into()))
+        );
         assert_eq!(elems[1].node, ListElement::Value(Value::LitInt(42)));
         assert_eq!(elems[2].node, ListElement::Value(Value::LitBool(true)));
     }
@@ -545,7 +578,10 @@ mod tests {
             panic!("Expected list");
         };
         assert_eq!(elems.len(), 2);
-        assert!(matches!(elems[0].node, ListElement::Value(Value::BindingRef(_))));
+        assert!(matches!(
+            elems[0].node,
+            ListElement::Value(Value::BindingRef(_))
+        ));
         assert!(matches!(elems[1].node, ListElement::Refinement(_, _)));
     }
 
@@ -587,7 +623,7 @@ mod tests {
         let Value::Refinement(_, fields) = parse_value("foo & {x String}").node else {
             panic!("Expected refinement");
         };
-        // inside refinement, String is a type ref value
+        // inside refinement, String is a meta ref value
         assert_eq!(fields[0].node.value.node, Value::TypeRef("String".into()));
     }
 

@@ -7,12 +7,12 @@ use super::common::*;
 use super::types::{annotation, type_expr};
 use super::values::value;
 
-fn type_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
+fn meta_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
     annotation()
         .then_ignore(ws_nl())
         .repeated()
         .collect::<Vec<_>>()
-        .then_ignore(just("type"))
+        .then_ignore(just("meta"))
         .then_ignore(ws())
         .then(ident())
         .then_ignore(ws())
@@ -20,7 +20,7 @@ fn type_decl<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>>
         .then_ignore(ws())
         .then(type_expr())
         .map(|((annotations, name), body)| {
-            Item::TypeDecl(TypeDecl {
+            Item::MetaDecl(MetaDecl {
                 name,
                 annotations,
                 body,
@@ -87,7 +87,7 @@ fn import<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + 
 }
 
 fn item<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + Clone {
-    choice((import(), type_decl(), instance()))
+    choice((import(), meta_decl(), instance()))
 }
 
 pub(super) fn file<'a>() -> impl Parser<'a, ParserInput<'a>, File, ParserExtra<'a>> {
@@ -117,71 +117,74 @@ mod tests {
         assert!(file().parse(s).into_result().is_err());
     }
 
-    // === Type declarations ===
+    // === Meta declarations ===
 
     #[test]
-    fn test_type_decl_simple() {
-        let f = parse_file("type Foo = {x Int}");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_simple() {
+        let f = parse_file("meta Foo = {x Int}");
+        let td = f.meta_decls().next().unwrap();
         assert_eq!(td.name.node, "Foo");
-        assert!(matches!(td.body.node, TypeExpr::Struct(StructKind::Closed(_))));
+        assert!(matches!(
+            td.body.node,
+            TypeExpr::Struct(StructKind::Closed(_))
+        ));
     }
 
     #[test]
-    fn test_type_decl_base() {
-        let f = parse_file("type Name = String");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_base() {
+        let f = parse_file("meta Name = String");
+        let td = f.meta_decls().next().unwrap();
         assert_eq!(td.name.node, "Name");
         assert_eq!(td.body.node, TypeExpr::Base(BaseType::String));
     }
 
     #[test]
-    fn test_type_decl_union() {
-        let f = parse_file("type Status = \"active\" | \"inactive\"");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_union() {
+        let f = parse_file("meta Status = \"active\" | \"inactive\"");
+        let td = f.meta_decls().next().unwrap();
         assert!(matches!(td.body.node, TypeExpr::Union(_)));
     }
 
     #[test]
-    fn test_type_decl_list() {
-        let f = parse_file("type Names = []String");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_list() {
+        let f = parse_file("meta Names = []String");
+        let td = f.meta_decls().next().unwrap();
         assert!(matches!(td.body.node, TypeExpr::List(_, _)));
     }
 
     #[test]
-    fn test_type_decl_reference() {
-        let f = parse_file("type FooRef = &Foo");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_reference() {
+        let f = parse_file("meta FooRef = &Foo");
+        let td = f.meta_decls().next().unwrap();
         assert_eq!(td.body.node, TypeExpr::Reference("Foo".into()));
     }
 
     #[test]
-    fn test_type_decl_intersection() {
-        let f = parse_file("type Ext = {...} & {id Uuid}");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_intersection() {
+        let f = parse_file("meta Ext = {...} & {id Uuid}");
+        let td = f.meta_decls().next().unwrap();
         assert!(matches!(td.body.node, TypeExpr::Intersection(_, _)));
     }
 
     #[test]
-    fn test_type_decl_with_annotation() {
-        let f = parse_file("@doc \"A doc\"\ntype Foo = Int");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_with_annotation() {
+        let f = parse_file("@doc \"A doc\"\nmeta Foo = Int");
+        let td = f.meta_decls().next().unwrap();
         assert_eq!(td.annotations.len(), 1);
         assert_eq!(td.annotations[0].node, Annotation::Doc("A doc".into()));
     }
 
     #[test]
-    fn test_type_decl_with_multiple_annotations() {
-        let f = parse_file("@doc \"help\"\n@constraint true\ntype Foo = {x Int}");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_with_multiple_annotations() {
+        let f = parse_file("@doc \"help\"\n@constraint true\nmeta Foo = {x Int}");
+        let td = f.meta_decls().next().unwrap();
         assert_eq!(td.annotations.len(), 2);
     }
 
     #[test]
-    fn test_type_decl_no_annotations() {
-        let f = parse_file("type Foo = Int");
-        let td = f.type_decls().next().unwrap();
+    fn test_meta_decl_no_annotations() {
+        let f = parse_file("meta Foo = Int");
+        let td = f.meta_decls().next().unwrap();
         assert!(td.annotations.is_empty());
     }
 
@@ -214,7 +217,10 @@ mod tests {
     fn test_instance_main_annotation() {
         let f = parse_file("@main\nboard = Board {x Int}");
         let inst = f.instances().next().unwrap();
-        assert!(inst.annotations.iter().any(|a| matches!(a.node, Annotation::Main)));
+        assert!(inst
+            .annotations
+            .iter()
+            .any(|a| matches!(a.node, Annotation::Main)));
     }
 
     #[test]
@@ -242,7 +248,10 @@ mod tests {
     fn test_instance_main_and_doc() {
         let f = parse_file("@main\n@doc \"main board\"\nboard = Board {x Int}");
         let inst = f.instances().next().unwrap();
-        assert!(inst.annotations.iter().any(|a| matches!(a.node, Annotation::Main)));
+        assert!(inst
+            .annotations
+            .iter()
+            .any(|a| matches!(a.node, Annotation::Main)));
         assert_eq!(inst.doc, Some("main board".into()));
     }
 
@@ -287,8 +296,8 @@ mod tests {
 
     #[test]
     fn test_single_type() {
-        let f = parse_file("type Foo = Int");
-        assert_eq!(f.type_decls().count(), 1);
+        let f = parse_file("meta Foo = Int");
+        assert_eq!(f.meta_decls().count(), 1);
         assert_eq!(f.instances().count(), 0);
         assert_eq!(f.imports().count(), 0);
     }
@@ -296,16 +305,16 @@ mod tests {
     #[test]
     fn test_single_instance() {
         let f = parse_file("foo = Foo {x Int}");
-        assert_eq!(f.type_decls().count(), 0);
+        assert_eq!(f.meta_decls().count(), 0);
         assert_eq!(f.instances().count(), 1);
         assert_eq!(f.imports().count(), 0);
     }
 
     #[test]
     fn test_imports_and_types() {
-        let f = parse_file("import \"./a.ilk\"\n\ntype Foo = Int");
+        let f = parse_file("import \"./a.ilk\"\n\nmeta Foo = Int");
         assert_eq!(f.imports().count(), 1);
-        assert_eq!(f.type_decls().count(), 1);
+        assert_eq!(f.meta_decls().count(), 1);
     }
 
     #[test]
@@ -316,8 +325,8 @@ mod tests {
 
     #[test]
     fn test_multiple_types() {
-        let f = parse_file("type A = Int\ntype B = String");
-        assert_eq!(f.type_decls().count(), 2);
+        let f = parse_file("meta A = Int\nmeta B = String");
+        assert_eq!(f.meta_decls().count(), 2);
     }
 
     #[test]
@@ -329,9 +338,9 @@ mod tests {
     #[test]
     fn test_full_file() {
         let src = r#"
-type Tag = {_ String}
+meta Tag = {_ String}
 
-type Event = {...} & {timestamp Int}
+meta Event = {...} & {timestamp Int}
 
 tag1 = Tag {x String}
 
@@ -345,15 +354,15 @@ board = Board {
 }
 "#;
         let f = parse_file(src);
-        assert_eq!(f.type_decls().count(), 2);
+        assert_eq!(f.meta_decls().count(), 2);
         assert_eq!(f.instances().count(), 3);
     }
 
     #[test]
     fn test_file_with_comments() {
-        let src = "// header comment\ntype Foo = Int\n// another\nfoo = Foo 42";
+        let src = "// header comment\nmeta Foo = Int\n// another\nfoo = Foo 42";
         let f = parse_file(src);
-        assert_eq!(f.type_decls().count(), 1);
+        assert_eq!(f.meta_decls().count(), 1);
         assert_eq!(f.instances().count(), 1);
     }
 
@@ -361,14 +370,14 @@ board = Board {
     fn test_file_mixed_order() {
         let src = r#"
 import "./base.ilk"
-type Foo = Int
+meta Foo = Int
 foo = Foo 42
-type Bar = String
+meta Bar = String
 bar = Bar "hello"
 "#;
         let f = parse_file(src);
         assert_eq!(f.imports().count(), 1);
-        assert_eq!(f.type_decls().count(), 2);
+        assert_eq!(f.meta_decls().count(), 2);
         assert_eq!(f.instances().count(), 2);
     }
 
@@ -387,7 +396,9 @@ ev = Event {
 "#;
         let f = parse_file(src);
         let inst = f.instances().next().unwrap();
-        let Value::Struct(fields) = &inst.body.node else { panic!("Expected struct"); };
+        let Value::Struct(fields) = &inst.body.node else {
+            panic!("Expected struct");
+        };
         assert_eq!(fields.len(), 4);
         assert_eq!(fields[0].node.name.node, "id");
         assert_eq!(fields[1].node.name.node, "name");
@@ -407,8 +418,12 @@ board = Board {
 "#;
         let f = parse_file(src);
         let inst = f.instances().next().unwrap();
-        let Value::Struct(fields) = &inst.body.node else { panic!("Expected struct"); };
-        let Value::List(elems) = &fields[0].node.value.node else { panic!("Expected list"); };
+        let Value::Struct(fields) = &inst.body.node else {
+            panic!("Expected struct");
+        };
+        let Value::List(elems) = &fields[0].node.value.node else {
+            panic!("Expected list");
+        };
         assert_eq!(elems.len(), 2);
         assert!(matches!(elems[0].node, ListElement::Refinement(_, _)));
         assert!(matches!(elems[1].node, ListElement::Refinement(_, _)));
@@ -424,7 +439,7 @@ board = Board {
 
     #[test]
     fn test_reject_type_without_body() {
-        parse_file_err("type Foo =");
+        parse_file_err("meta Foo =");
     }
 
     #[test]

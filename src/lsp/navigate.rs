@@ -4,9 +4,9 @@ use crate::span::{Span, S};
 
 /// Find the definition span for the symbol at the given offset
 pub fn find_definition(file: &File, env: &TypeEnv, offset: usize) -> Option<Span> {
-    // Check type declarations
+    // Check meta declarations
     for item in &file.items {
-        if let Item::TypeDecl(decl) = &item.node {
+        if let Item::MetaDecl(decl) = &item.node {
             if let Some(span) = find_in_type_expr(&decl.body, env, offset) {
                 return Some(span);
             }
@@ -18,7 +18,7 @@ pub fn find_definition(file: &File, env: &TypeEnv, offset: usize) -> Option<Span
         if let Item::Instance(inst) = &item.node {
             // Instance type_name
             if inst.type_name.span.contains(&offset) {
-                return env.get_type(&inst.type_name.node).map(|t| t.span.clone());
+                return env.get_meta(&inst.type_name.node).map(|t| t.span.clone());
             }
             // Instance body
             if let Some(span) = find_in_value(&inst.body, env, offset) {
@@ -37,7 +37,7 @@ fn find_in_type_expr(ty: &S<TypeExpr>, env: &TypeEnv, offset: usize) -> Option<S
 
     match &ty.node {
         TypeExpr::Named(name) | TypeExpr::Reference(name) | TypeExpr::RefinableRef(name) => {
-            env.get_type(name).map(|t| t.span.clone())
+            env.get_meta(name).map(|t| t.span.clone())
         }
         TypeExpr::Concrete(inner) | TypeExpr::List(_, inner) => {
             find_in_type_expr(inner, env, offset)
@@ -82,7 +82,7 @@ fn find_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<Span> {
     }
 
     match &val.node {
-        Value::TypeRef(name) => env.get_type(name).map(|t| t.span.clone()),
+        Value::TypeRef(name) => env.get_meta(name).map(|t| t.span.clone()),
         Value::BindingRef(name) => env.get_instance(name).map(|i| i.span.clone()),
         Value::Struct(fields) => {
             for field in fields {
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_goto_named_type() {
-        let src = "type Foo = {x Int}\ntype Bar = Foo";
+        let src = "meta Foo = {x Int}\nmeta Bar = Foo";
         // "Foo" in "Bar = Foo" starts at position 30
         let span = test_definition(src, 30);
         assert!(span.is_some());
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_goto_instance_type() {
-        let src = "type Foo = {x Int}\nfoo = Foo {x Int}";
+        let src = "meta Foo = {x Int}\nfoo = Foo {x Int}";
         // "Foo" in "foo = Foo" starts around position 25
         let span = test_definition(src, 25);
         assert!(span.is_some());

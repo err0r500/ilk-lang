@@ -3,7 +3,7 @@ use crate::resolve::TypeEnv;
 use serde_json::{json, Map, Value as JsonValue};
 
 pub fn emit_json(file: &File, env: &TypeEnv) -> JsonValue {
-    let types = emit_types(file);
+    let types = emit_metas(file);
     let instances = emit_instances(file, env);
 
     json!({
@@ -12,18 +12,18 @@ pub fn emit_json(file: &File, env: &TypeEnv) -> JsonValue {
     })
 }
 
-fn emit_types(file: &File) -> JsonValue {
+fn emit_metas(file: &File) -> JsonValue {
     let mut types = Map::new();
 
-    for decl in file.type_decls() {
+    for decl in file.meta_decls() {
         let name = &decl.name.node;
-        types.insert(name.clone(), emit_type_def(&decl.body.node));
+        types.insert(name.clone(), emit_meta_def(&decl.body.node));
     }
 
     JsonValue::Object(types)
 }
 
-fn emit_type_def(ty: &TypeExpr) -> JsonValue {
+fn emit_meta_def(ty: &TypeExpr) -> JsonValue {
     match ty {
         TypeExpr::Base(base) => json!({
             "kind": "base",
@@ -43,7 +43,7 @@ fn emit_type_def(ty: &TypeExpr) -> JsonValue {
         }),
         TypeExpr::Concrete(inner) => json!({
             "kind": "concrete",
-            "inner": emit_type_def(&inner.node)
+            "inner": emit_meta_def(&inner.node)
         }),
         TypeExpr::LitString(s) => json!({
             "kind": "literal",
@@ -61,10 +61,10 @@ fn emit_type_def(ty: &TypeExpr) -> JsonValue {
         TypeExpr::List(card, inner) => json!({
             "kind": "list",
             "cardinality": emit_cardinality(card),
-            "element": emit_type_def(&inner.node)
+            "element": emit_meta_def(&inner.node)
         }),
         TypeExpr::Union(variants) => {
-            let vs: Vec<JsonValue> = variants.iter().map(|v| emit_type_def(&v.node)).collect();
+            let vs: Vec<JsonValue> = variants.iter().map(|v| emit_meta_def(&v.node)).collect();
             json!({
                 "kind": "union",
                 "variants": vs
@@ -72,8 +72,8 @@ fn emit_type_def(ty: &TypeExpr) -> JsonValue {
         }
         TypeExpr::Intersection(left, right) => json!({
             "kind": "intersection",
-            "left": emit_type_def(&left.node),
-            "right": emit_type_def(&right.node)
+            "left": emit_meta_def(&left.node),
+            "right": emit_meta_def(&right.node)
         }),
     }
 }
@@ -86,7 +86,7 @@ fn emit_struct_type(kind: &StructKind) -> JsonValue {
                 field_map.insert(
                     f.node.name.node.clone(),
                     json!({
-                        "type": emit_type_def(&f.node.ty.node),
+                        "type": emit_meta_def(&f.node.ty.node),
                         "optional": f.node.optional
                     }),
                 );
@@ -103,7 +103,7 @@ fn emit_struct_type(kind: &StructKind) -> JsonValue {
                 field_map.insert(
                     f.node.name.node.clone(),
                     json!({
-                        "type": emit_type_def(&f.node.ty.node),
+                        "type": emit_meta_def(&f.node.ty.node),
                         "optional": f.node.optional
                     }),
                 );
@@ -119,7 +119,7 @@ fn emit_struct_type(kind: &StructKind) -> JsonValue {
                 .iter()
                 .map(|t| {
                     t.as_ref()
-                        .map(|t| emit_type_def(&t.node))
+                        .map(|t| emit_meta_def(&t.node))
                         .unwrap_or(json!(null))
                 })
                 .collect();

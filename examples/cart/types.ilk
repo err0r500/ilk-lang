@@ -1,9 +1,9 @@
-// Type declarations
+// Meta declarations
 // A tag is a single-field String struct, or a unique concrete string
-type Tag = {_ String} | Concrete<String>
+meta Tag = {_ String} | Concrete<String>
 
 
-type TaggedEvent = {
+meta TaggedEvent = {
     type! Concrete<String>
 
     fields {...}
@@ -14,10 +14,10 @@ type TaggedEvent = {
 }
 
 
-type Actor = {name Concrete<String>}
+meta Actor = {name Concrete<String>}
 
 
-type QueryItem = {
+meta QueryItem = {
     @constraint all(tags, t => all(eventTypes, e => t in e.tags))
     eventTypes! []&TaggedEvent
 
@@ -25,7 +25,7 @@ type QueryItem = {
 }
 
 
-type Command = {
+meta Command = {
     fields! {...}
 
     @source [fields]
@@ -36,7 +36,7 @@ type Command = {
 }
 
 
-type HttpResponse = {
+meta HttpResponse = {
     @constraint status > 0 && status < 600
     status! Concrete<Int>
 
@@ -44,7 +44,7 @@ type HttpResponse = {
 }
 
 
-type HttpEndpoint = {
+meta HttpEndpoint = {
     method! GET | POST | DELETE | PUT | PATCH
 
     @constraint all(templateVars(path), v => v in keys(params))
@@ -57,10 +57,10 @@ type HttpEndpoint = {
 }
 
 
-type Error = {error Concrete<String>}
+meta Error = {error Concrete<String>}
 
 
-type ChangeSlice = {
+meta ChangeSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
     actor Actor
@@ -75,7 +75,7 @@ type ChangeSlice = {
 }
 
 
-type ChangeScenario = {
+meta ChangeScenario = {
     name! Concrete<String>
 
     given! []-TaggedEvent
@@ -84,14 +84,14 @@ type ChangeScenario = {
 }
 
 
-type Context = {
+meta Context = {
     name Concrete<String>
     description Concrete<String>
     chapters []{...}
 }
 
 
-type ReadModelHandler = {
+meta ReadModelHandler = {
     event! &TaggedEvent
     action! "upsert" | "delete"
 
@@ -100,7 +100,7 @@ type ReadModelHandler = {
 }
 
 
-type ViewScenario = {
+meta ViewScenario = {
     name! Concrete<String>
     given! []-TaggedEvent
     query! {...}
@@ -108,7 +108,7 @@ type ViewScenario = {
 }
 
 
-type ViewSlice = {
+meta ViewSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
     actor Actor
@@ -124,17 +124,17 @@ type ViewSlice = {
 }
 
 
-type Slice = ChangeSlice | ViewSlice
+meta Slice = ChangeSlice | ViewSlice
 
 
-type Chapter = {
+meta Chapter = {
     name Concrete<String>
     description Concrete<String>
     flow []Slice
 }
 
 
-type Board = {
+meta Board = {
     name Concrete<String>
     contexts []Context
 }

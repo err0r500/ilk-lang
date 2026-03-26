@@ -33,7 +33,7 @@ pub fn complete(compiler: &Compiler, path: &Path, src: &str, pos: Position) -> V
 
     let env = compiler.get_env(path);
     let type_names: Vec<&str> = env
-        .map(|e| e.types.keys().map(|s| s.as_str()).collect())
+        .map(|e| e.metas.keys().map(|s| s.as_str()).collect())
         .unwrap_or_default();
 
     match ctx {
@@ -68,7 +68,7 @@ fn detect_context(src: &str, offset: usize) -> Context {
         // Check if there's a closing brace between the opening brace and cursor
         if !after_brace.contains('}') {
             // We're inside a struct
-            // Try to find what type this struct belongs to
+            // Try to find what meta this struct belongs to
             let before_brace = &trimmed[..brace_pos].trim_end();
 
             // Pattern: "name = TypeName {" for instances
@@ -95,11 +95,11 @@ fn detect_context(src: &str, offset: usize) -> Context {
         return Context::TopLevel;
     }
 
-    // Check if line starts with 'type'
-    if trimmed_line.starts_with("type ") {
-        let after_type = trimmed_line.strip_prefix("type ").unwrap().trim();
-        // After "type Name = " we want type completions
-        if after_type.contains('=') {
+    // Check if line starts with 'meta'
+    if trimmed_line.starts_with("meta ") {
+        let after_meta = trimmed_line.strip_prefix("meta ").unwrap().trim();
+        // After "meta Name = " we want meta completions
+        if after_meta.contains('=') {
             return Context::AfterEquals;
         }
     }
@@ -134,11 +134,11 @@ fn detect_context(src: &str, offset: usize) -> Context {
 fn top_level_completions(type_names: &[&str]) -> Vec<CompletionItem> {
     let mut items = vec![
         CompletionItem {
-            label: "type".to_string(),
+            label: "meta".to_string(),
             kind: Some(CompletionItemKind::KEYWORD),
-            insert_text: Some("type ${1:Name} = ${2:Body}".to_string()),
+            insert_text: Some("meta ${1:Name} = ${2:Body}".to_string()),
             insert_text_format: Some(InsertTextFormat::SNIPPET),
-            detail: Some("Define a new type".to_string()),
+            detail: Some("Define a new meta".to_string()),
             ..Default::default()
         },
         CompletionItem {
@@ -149,7 +149,7 @@ fn top_level_completions(type_names: &[&str]) -> Vec<CompletionItem> {
         },
     ];
 
-    // Add existing type names for instance creation
+    // Add existing meta names for instance creation
     for name in type_names {
         items.push(CompletionItem {
             label: name.to_string(),
@@ -224,7 +224,7 @@ fn after_type_name_completions(
 
     // If we know the type, suggest its fields
     if let Some(env) = compiler.get_env(path) {
-        if let Some(decl) = env.get_type(type_name) {
+        if let Some(decl) = env.get_meta(type_name) {
             if let Some(fields) = get_struct_fields(&decl.node.body) {
                 let snippet = generate_struct_snippet(fields);
                 items.insert(
@@ -253,9 +253,9 @@ fn struct_field_completions(
 ) -> Vec<CompletionItem> {
     let mut items = Vec::new();
 
-    // Get fields from type definition
+    // Get fields from meta definition
     if let Some(env) = compiler.get_env(path) {
-        if let Some(decl) = env.get_type(type_name) {
+        if let Some(decl) = env.get_meta(type_name) {
             if let Some(fields) = get_struct_fields(&decl.node.body) {
                 for field in fields {
                     let type_str = type_expr_to_string(&field.node.ty.node);
@@ -271,7 +271,7 @@ fn struct_field_completions(
         }
     }
 
-    // Also add type completions for field values
+    // Also add meta completions for field values
     items.extend(type_completions(all_types));
 
     items

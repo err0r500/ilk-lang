@@ -12,7 +12,7 @@
 (value_field name: (identifier) @variable.member)
 
 ; Type/instance names
-(type_decl name: (identifier) @type.definition)
+(meta_decl name: (identifier) @type.definition)
 (instance name: (identifier) @variable.definition)
 (instance type: (identifier) @type.builtin)
 
@@ -36,7 +36,7 @@
 "compute" @function.builtin
 
 ; Keywords
-"type" @keyword
+"meta" @keyword
 "import" @keyword
 "as" @keyword
 "Concrete" @keyword

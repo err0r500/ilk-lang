@@ -39,7 +39,7 @@ const ilkLang = StreamLanguage.define({
         }
 
         // type keyword
-        if (stream.match(/\btype\b/)) {
+        if (stream.match(/\bmeta\b/)) {
             return "keyword";
         }
 

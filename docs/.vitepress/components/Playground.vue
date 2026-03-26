@@ -20,9 +20,9 @@ function makeRelativeLineNumbers(state) {
 }
 
 const DEMO_CODE = `
-type Event = {...} & {_type Concrete<String>}
+meta Event = {...} & {_type Concrete<String>}
 
-type Command = {
+meta Command = {
   fields {...}
 
   @source [fields]

@@ -99,14 +99,14 @@ type Endpoint = {
 
 ## The idea in 30 seconds
 
-A `.ilk` file has two sections: **type declarations** and **instance bindings**.
+A `.ilk` file has two sections: **meta declarations** and **instance bindings**.
 
 - **Types** define abstract shapes — what fields exist, what types they have, what constraints apply.
 - **Instances** name the concrete entities in *your* domain — not runtime values, but a typed catalog of the things your system knows about.
 
 ```ilk
-// Type declaration
-type HttpResponse = {
+// Meta declaration
+meta HttpResponse = {
     status! Concrete<Int> // required (!), Concrete<...> means instances have to declare a value
     body {...} // open : any fields allowed, no constraints
 }
@@ -154,7 +154,7 @@ Every open field must be explicitly mapped — the compiler checks it.
 ### Structs
 ```ilk
 {_}              // exactly 1 field of any name/type
-{_ String}       // exactly 1 field, type String
+{_ String}       // exactly 1 field, meta String
 {...}            // any fields (open)
 {id Uuid}        // specific named fields
 {...} & {id Uuid} // any fields + required id
@@ -173,9 +173,9 @@ Every open field must be explicitly mapped — the compiler checks it.
 
 ### Unions
 ```ilk
-type HttpMethod = "GET" | "POST" | "PUT"   // literal union
-type Status = Pending | Active | Archived  // identifier union
-type Tag = {_ String} | Concrete<String>   // mixed
+meta HttpMethod = "GET" | "POST" | "PUT"   // literal union
+meta Status = Pending | Active | Archived  // identifier union
+meta Tag = {_ String} | Concrete<String>   // mixed
 ```
 
 ### Annotations

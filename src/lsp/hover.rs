@@ -4,10 +4,10 @@ use crate::span::S;
 
 /// Get hover info for the symbol at the given offset
 pub fn hover_info(file: &File, env: &TypeEnv, offset: usize) -> Option<String> {
-    // Check type declarations (for references within type bodies)
+    // Check meta declarations (for references within meta bodies)
     for item in &file.items {
-        if let Item::TypeDecl(decl) = &item.node {
-            // Hovering on the type name itself
+        if let Item::MetaDecl(decl) = &item.node {
+            // Hovering on the meta name itself
             if decl.name.span.contains(&offset) {
                 return Some(format_type_hover(decl));
             }
@@ -26,7 +26,7 @@ pub fn hover_info(file: &File, env: &TypeEnv, offset: usize) -> Option<String> {
             }
             // Hovering on instance type_name
             if inst.type_name.span.contains(&offset) {
-                if let Some(decl) = env.get_type(&inst.type_name.node) {
+                if let Some(decl) = env.get_meta(&inst.type_name.node) {
                     return Some(format_type_hover(&decl.node));
                 }
             }
@@ -47,7 +47,7 @@ fn hover_in_type_expr(ty: &S<TypeExpr>, env: &TypeEnv, offset: usize) -> Option<
 
     match &ty.node {
         TypeExpr::Named(name) | TypeExpr::Reference(name) | TypeExpr::RefinableRef(name) => {
-            env.get_type(name).map(|t| format_type_hover(&t.node))
+            env.get_meta(name).map(|t| format_type_hover(&t.node))
         }
         TypeExpr::Concrete(inner) | TypeExpr::List(_, inner) => {
             hover_in_type_expr(inner, env, offset)
@@ -100,7 +100,7 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
     }
 
     match &val.node {
-        Value::TypeRef(name) => env.get_type(name).map(|t| format_type_hover(&t.node)),
+        Value::TypeRef(name) => env.get_meta(name).map(|t| format_type_hover(&t.node)),
         Value::BindingRef(name) => env
             .get_instance(name)
             .map(|i| format_instance_hover(&i.node)),
@@ -160,8 +160,8 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
     }
 }
 
-fn format_type_hover(decl: &TypeDecl) -> String {
-    let mut result = format!("**type {}**\n\n", decl.name.node);
+fn format_type_hover(decl: &MetaDecl) -> String {
+    let mut result = format!("**meta {}**\n\n", decl.name.node);
     result.push_str(&format!(
         "```ilk\n{}\n```",
         type_expr_to_string(&decl.body.node)
@@ -304,16 +304,16 @@ mod tests {
 
     #[test]
     fn test_hover_type_name() {
-        let src = "type Foo = {x Int}";
+        let src = "meta Foo = {x Int}";
         // "Foo" starts at position 5
         let info = test_hover(src, 5);
         assert!(info.is_some());
-        assert!(info.unwrap().contains("type Foo"));
+        assert!(info.unwrap().contains("meta Foo"));
     }
 
     #[test]
     fn test_hover_instance_name() {
-        let src = "type Foo = {x Int}\nfoo = Foo {x Int}";
+        let src = "meta Foo = {x Int}\nfoo = Foo {x Int}";
         // "foo" starts at position 19
         let info = test_hover(src, 19);
         assert!(info.is_some());

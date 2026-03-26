@@ -6,8 +6,8 @@ use crate::validate::structural::{get_field_type_from_type_expr, ValidationConte
 pub fn validate_source(ctx: &ValidationContext, inst: &Instance) -> Vec<Diagnostic> {
     let mut errors = Vec::new();
     let type_name = &inst.type_name.node;
-    if let Some(type_decl) = ctx.env.get_type(type_name) {
-        validate_instance_sources(ctx, inst, &type_decl.node, &mut errors);
+    if let Some(meta_decl) = ctx.env.get_meta(type_name) {
+        validate_instance_sources(ctx, inst, &meta_decl.node, &mut errors);
     }
     errors
 }
@@ -15,21 +15,21 @@ pub fn validate_source(ctx: &ValidationContext, inst: &Instance) -> Vec<Diagnost
 fn validate_instance_sources(
     ctx: &ValidationContext,
     inst: &Instance,
-    type_decl: &TypeDecl,
+    meta_decl: &MetaDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
     if let Value::Struct(inst_fields) = &inst.body.node {
-        validate_struct_sources(ctx, inst_fields, type_decl, errors);
+        validate_struct_sources(ctx, inst_fields, meta_decl, errors);
     }
 }
 
 fn validate_struct_sources(
     ctx: &ValidationContext,
     inst_fields: &[S<InstanceField>],
-    type_decl: &TypeDecl,
+    meta_decl: &MetaDecl,
     errors: &mut Vec<Diagnostic>,
 ) {
-    let type_fields = match &type_decl.body.node {
+    let type_fields = match &meta_decl.body.node {
         TypeExpr::Struct(StructKind::Closed(f) | StructKind::Open(f)) => f.as_slice(),
         TypeExpr::Intersection(left, right) => {
             let mut all_fields = Vec::new();
@@ -96,17 +96,17 @@ fn validate_fields_sources_inner(
             }
         }
 
-        // Recurse into nested struct values when the field type is a named type
+        // Recurse into nested struct values when the field meta is a named type
         if let Some(inst_field) = inst_fields.iter().find(|f| &f.node.name.node == field_name) {
             if let Value::Struct(nested_inst_fields) = &inst_field.node.value.node {
                 if let Some(nested_type_name) =
                     get_type_name_from_type_expr(&type_field.node.ty.node)
                 {
-                    if let Some(nested_type_decl) = ctx.env.get_type(&nested_type_name) {
+                    if let Some(nested_meta_decl) = ctx.env.get_meta(&nested_type_name) {
                         validate_struct_sources(
                             ctx,
                             nested_inst_fields,
-                            &nested_type_decl.node,
+                            &nested_meta_decl.node,
                             errors,
                         );
                     }
@@ -116,7 +116,7 @@ fn validate_fields_sources_inner(
     }
 }
 
-/// Check if a type is a list of references (e.g., []&Event)
+/// Check if a meta is a list of references (e.g., []&Event)
 fn is_reference_list(ty: &TypeExpr) -> bool {
     if let TypeExpr::List(_, inner) = ty {
         matches!(inner.node, TypeExpr::Reference(_))
@@ -211,7 +211,13 @@ fn validate_field_source(
         &inst_field.node.value.node
     {
         validate_binding_ref_or_refinement(
-            ctx, inst_field, ref_name, sources, parent_fields, field_type, errors,
+            ctx,
+            inst_field,
+            ref_name,
+            sources,
+            parent_fields,
+            field_type,
+            errors,
         );
     }
 }
@@ -230,26 +236,50 @@ fn validate_list_elements(
             ListElement::Refinement(_name, ref_fields) => {
                 for ref_field in ref_fields {
                     validate_refinement_field(
-                        ctx, ref_field, sources, parent_fields, elem_type, errors,
+                        ctx,
+                        ref_field,
+                        sources,
+                        parent_fields,
+                        elem_type,
+                        errors,
                     );
                 }
             }
             ListElement::BindingRef(name) => {
                 validate_ref_instance_fields(
-                    ctx, name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx,
+                    name,
+                    elem.span.clone(),
+                    sources,
+                    parent_fields,
+                    elem_type,
+                    &no_skip,
+                    errors,
                 );
             }
             ListElement::Value(v) => match v {
                 Value::Struct(fields) => {
                     for field in fields {
                         validate_refinement_field(
-                            ctx, field, sources, parent_fields, elem_type, errors,
+                            ctx,
+                            field,
+                            sources,
+                            parent_fields,
+                            elem_type,
+                            errors,
                         );
                     }
                 }
                 Value::BindingRef(name) => {
                     validate_ref_instance_fields(
-                        ctx, name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
+                        ctx,
+                        name,
+                        elem.span.clone(),
+                        sources,
+                        parent_fields,
+                        elem_type,
+                        &no_skip,
+                        errors,
                     );
                 }
                 _ => {}
@@ -287,7 +317,14 @@ fn validate_binding_ref_or_refinement(
         .chain(fields_to_skip.iter().map(|s| s.as_str()))
         .collect();
     validate_ref_instance_fields(
-        ctx, ref_name, inst_field.span.clone(), sources, parent_fields, Some(field_type), &skip, errors,
+        ctx,
+        ref_name,
+        inst_field.span.clone(),
+        sources,
+        parent_fields,
+        Some(field_type),
+        &skip,
+        errors,
     );
 }
 
@@ -305,7 +342,7 @@ fn collect_fields_to_skip_resolved(
 ) {
     match ty {
         TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => {
-            if let Some(decl) = ctx.env.get_type(name) {
+            if let Some(decl) = ctx.env.get_meta(name) {
                 collect_fields_to_skip(&decl.node.body.node, result);
             }
         }
@@ -389,19 +426,39 @@ fn validate_refinement_field(
         FieldOrigin::None => {
             if let Value::Struct(nested_fields) = &field.node.value.node {
                 validate_none_origin_struct(
-                    ctx, name, nested_fields, sources, parent_fields, parent_type, errors,
+                    ctx,
+                    name,
+                    nested_fields,
+                    sources,
+                    parent_fields,
+                    parent_type,
+                    errors,
                 );
                 return;
             }
             if let Value::Refinement(ref_name, ref_fields) = &field.node.value.node {
                 validate_none_origin_refinement(
-                    ctx, name, ref_name, ref_fields, field.span.clone(), sources, parent_fields, parent_type, errors,
+                    ctx,
+                    name,
+                    ref_name,
+                    ref_fields,
+                    field.span.clone(),
+                    sources,
+                    parent_fields,
+                    parent_type,
+                    errors,
                 );
                 return;
             }
             if let Value::List(elements) = &field.node.value.node {
                 validate_none_origin_list(
-                    ctx, name, elements, sources, parent_fields, parent_type, errors,
+                    ctx,
+                    name,
+                    elements,
+                    sources,
+                    parent_fields,
+                    parent_type,
+                    errors,
                 );
                 return;
             }
@@ -463,7 +520,14 @@ fn validate_none_origin_refinement(
         .map(|f| f.node.name.node.as_str())
         .collect();
     validate_ref_instance_fields(
-        ctx, ref_name, caller_span, sources, parent_fields, nested_type, &refined_names, errors,
+        ctx,
+        ref_name,
+        caller_span,
+        sources,
+        parent_fields,
+        nested_type,
+        &refined_names,
+        errors,
     );
 }
 
@@ -494,13 +558,25 @@ fn validate_none_origin_list(
                     continue;
                 }
                 validate_ref_instance_fields(
-                    ctx, ref_name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx,
+                    ref_name,
+                    elem.span.clone(),
+                    sources,
+                    parent_fields,
+                    elem_type,
+                    &no_skip,
+                    errors,
                 );
             }
             ListElement::Refinement(_, ref_fields) => {
                 for ref_field in ref_fields {
                     validate_refinement_field(
-                        ctx, ref_field, sources, parent_fields, elem_type, errors,
+                        ctx,
+                        ref_field,
+                        sources,
+                        parent_fields,
+                        elem_type,
+                        errors,
                     );
                 }
             }
@@ -514,7 +590,14 @@ fn validate_none_origin_list(
                     continue;
                 }
                 validate_ref_instance_fields(
-                    ctx, ref_name, elem.span.clone(), sources, parent_fields, elem_type, &no_skip, errors,
+                    ctx,
+                    ref_name,
+                    elem.span.clone(),
+                    sources,
+                    parent_fields,
+                    elem_type,
+                    &no_skip,
+                    errors,
                 );
             }
             _ => {}
@@ -743,8 +826,8 @@ mod tests {
     fn test_generated_exempt() {
         let errors = validate_source_src(
             r#"
-type Event = {timestamp Int}
-type Cmd = {
+meta Event = {timestamp Int}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -763,8 +846,8 @@ cmd = Cmd {
     fn test_list_generated_exempt() {
         let errors = validate_source_src(
             r#"
-type Event = {timestamp Int}
-type Cmd = {
+meta Event = {timestamp Int}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -783,8 +866,8 @@ cmd = Cmd {
     fn test_mapped_valid() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -802,8 +885,8 @@ cmd = Cmd {
     fn test_mapped_valid_list() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -822,8 +905,8 @@ cmd = Cmd {
     fn test_source_not_found() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -842,8 +925,8 @@ cmd = Cmd {
     fn test_source_not_found_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -861,8 +944,8 @@ cmd = Cmd {
     fn test_concrete_exempt() {
         let errors = validate_source_src(
             r#"
-type Event = {status Concrete<Int>}
-type Cmd = {
+meta Event = {status Concrete<Int>}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -881,8 +964,8 @@ cmd = Cmd {
     fn test_concrete_exempt_single() {
         let errors = validate_source_src(
             r#"
-type Event = {status Concrete<Int>}
-type Cmd = {
+meta Event = {status Concrete<Int>}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -900,8 +983,8 @@ cmd = Cmd {
     fn test_binding_ref_missing_source() {
         let errors = validate_source_src(
             r#"
-type Event = {bla String}
-type Cmd = {
+meta Event = {bla String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -923,8 +1006,8 @@ cmd = Cmd {
     fn test_binding_ref_missing_source_single() {
         let errors = validate_source_src(
             r#"
-type Event = {bla String}
-type Cmd = {
+meta Event = {bla String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -946,8 +1029,8 @@ cmd = Cmd {
     fn test_binding_ref_valid_source() {
         let errors = validate_source_src(
             r#"
-type Event = {bla String}
-type Cmd = {
+meta Event = {bla String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -966,8 +1049,8 @@ cmd = Cmd {
     fn test_binding_ref_valid_source_single() {
         let errors = validate_source_src(
             r#"
-type Event = {bla String}
-type Cmd = {
+meta Event = {bla String}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -986,8 +1069,8 @@ cmd = Cmd {
     fn test_mapped_type_mismatch() {
         let errors = validate_source_src(
             r#"
-type Event = {id Int}
-type Cmd = {
+meta Event = {id Int}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits []Event
@@ -1009,8 +1092,8 @@ cmd = Cmd {
     fn test_mapped_type_mismatch_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id Int}
-type Cmd = {
+meta Event = {id Int}
+meta Cmd = {
   fields {...}
   @source [fields]
   emits Event
@@ -1031,13 +1114,13 @@ cmd = Cmd {
     fn test_nested_struct_source_context() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Command = {
+meta Event = {userId String}
+meta Command = {
   fields {...}
   @source [fields]
   emits []Event
 }
-type Wrapper = {
+meta Wrapper = {
   outerFields {...}
   @source [outerFields]
   command Command
@@ -1059,13 +1142,13 @@ wrapper = Wrapper {
     fn test_nested_struct_source_missing_in_local_context() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Command = {
+meta Event = {userId String}
+meta Command = {
   fields {...}
   @source [fields]
   emits []Event
 }
-type Wrapper = {
+meta Wrapper = {
   outerFields {...}
   @source [outerFields]
   command Command
@@ -1094,8 +1177,8 @@ wrapper = Wrapper {
     fn test_source_path_prefix_validation() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Endpoint = {
+meta Event = {id String}
+meta Endpoint = {
     method String
     params {...}
     body {...}
@@ -1118,8 +1201,8 @@ endpoint = Endpoint {
     fn test_source_path_prefix_validation_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Endpoint = {
+meta Event = {id String}
+meta Endpoint = {
     method String
     params {...}
     body {...}
@@ -1141,8 +1224,8 @@ endpoint = Endpoint {
     fn test_source_path_rejects_outside_subtree() {
         let errors = validate_source_src(
             r#"
-type Event = {method String}
-type Endpoint = {
+meta Event = {method String}
+meta Endpoint = {
     method String
     params {...}
     body {...}
@@ -1166,8 +1249,8 @@ endpoint = Endpoint {
     fn test_source_path_rejects_outside_subtree_single() {
         let errors = validate_source_src(
             r#"
-type Event = {method String}
-type Endpoint = {
+meta Event = {method String}
+meta Endpoint = {
     method String
     params {...}
     body {...}
@@ -1190,8 +1273,8 @@ endpoint = Endpoint {
     fn test_mandatory_from_optional_source() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! []Event
@@ -1213,8 +1296,8 @@ cmd = Cmd {
     fn test_mandatory_from_optional_source_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! Event
@@ -1235,8 +1318,8 @@ cmd = Cmd {
     fn test_optional_from_optional_source() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! []Event
@@ -1255,8 +1338,8 @@ cmd = Cmd {
     fn test_optional_from_optional_source_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id String}
-type Cmd = {
+meta Event = {id String}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! Event
@@ -1274,8 +1357,8 @@ cmd = Cmd {
     fn test_optional_from_optional_type_mismatch() {
         let errors = validate_source_src(
             r#"
-type Event = {id Int}
-type Cmd = {
+meta Event = {id Int}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! []Event
@@ -1295,8 +1378,8 @@ cmd = Cmd {
     fn test_optional_from_optional_type_mismatch_single() {
         let errors = validate_source_src(
             r#"
-type Event = {id Int}
-type Cmd = {
+meta Event = {id Int}
+meta Cmd = {
   fields! {...}
   @source [fields]
   emits! Event
@@ -1315,8 +1398,8 @@ cmd = Cmd {
     fn test_implicit_type_mismatch() {
         let errors = validate_source_src(
             r#"
-type Event = {userId Uuid}
-type Cmd = {
+meta Event = {userId Uuid}
+meta Cmd = {
   fields {...}
   auth {...}
   @source [fields, auth]
@@ -1339,8 +1422,8 @@ cmd = Cmd {
     fn test_implicit_type_mismatch_single() {
         let errors = validate_source_src(
             r#"
-type Event = {userId Uuid}
-type Cmd = {
+meta Event = {userId Uuid}
+meta Cmd = {
   fields {...}
   auth {...}
   @source [fields, auth]
@@ -1363,8 +1446,8 @@ cmd = Cmd {
     fn test_ambiguous_source() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Cmd = {
+meta Event = {userId String}
+meta Cmd = {
   fields {...}
   auth {...}
   @source [fields, auth]
@@ -1388,8 +1471,8 @@ cmd = Cmd {
     fn test_ambiguous_source_single() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Cmd = {
+meta Event = {userId String}
+meta Cmd = {
   fields {...}
   auth {...}
   @source [fields, auth]
@@ -1413,18 +1496,18 @@ cmd = Cmd {
     fn test_mapped_in_source_root_field_validates_path() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Command = {
+meta Event = {userId String}
+meta Command = {
   fields {...}
   @source [fields]
   emits []Event
 }
-type Endpoint = {
+meta Endpoint = {
     method String
     params {...}
     body {...}
 }
-type Slice = {
+meta Slice = {
     endpoint Endpoint
     @source [endpoint.params, endpoint.body]
     command Command
@@ -1462,8 +1545,8 @@ slice = Slice {
     fn test_explicit_source_on_ref_list_valid() {
         let errors = validate_source_src(
             r#"
-type Tag = {name String}
-type Event = {
+meta Tag = {name String}
+meta Event = {
     fields {...}
     @source [fields]
     tags []&Tag
@@ -1482,8 +1565,8 @@ ev = Event {
     fn test_explicit_source_on_ref_list_missing() {
         let errors = validate_source_src(
             r#"
-type Tag = {name String}
-type Event = {
+meta Tag = {name String}
+meta Event = {
     fields {...}
     @source [fields]
     tags []&Tag
@@ -1509,18 +1592,18 @@ ev = Event {
     fn test_implicit_in_source_root_field_validates() {
         let errors = validate_source_src(
             r#"
-type Event = {userId String}
-type Command = {
+meta Event = {userId String}
+meta Command = {
   fields {...}
   @source [fields]
   emits []Event
 }
-type Endpoint = {
+meta Endpoint = {
     method String
     params {...}
     body {...}
 }
-type Slice = {
+meta Slice = {
     endpoint Endpoint
     @source [endpoint.params, endpoint.body]
     command Command
@@ -1560,20 +1643,20 @@ slice = Slice {
         // @source in those types should be skipped from parent @source validation.
         let errors = validate_source_src(
             r#"
-type Schema = {...}
-type QueryA = {
+meta Schema = {...}
+meta QueryA = {
     name! Concrete<String>
     params {...}
     @source [params]
     result {...}
 }
-type QueryB = {
+meta QueryB = {
     name! Concrete<String>
     params {...}
     @source [params]
     result {...}
 }
-type Wrapper = {
+meta Wrapper = {
     auth {...}
     @source [auth]
     query QueryA | QueryB
@@ -1594,18 +1677,18 @@ w = Wrapper {
 
     #[test]
     fn test_union_field_type_still_validates_non_sourced_fields() {
-            // Fields without their own @source in union variants, and not referenced
+        // Fields without their own @source in union variants, and not referenced
         // as source roots, should still be validated against parent @source.
         let errors = validate_source_src(
             r#"
-type QueryA = {
+meta QueryA = {
     name! Concrete<String>
     extra {...}
     params {...}
     @source [params]
     result {...}
 }
-type Wrapper = {
+meta Wrapper = {
     auth {...}
     @source [auth]
     query QueryA
@@ -1639,14 +1722,14 @@ w = Wrapper {
         // since they are references/configuration, not data flow.
         let errors = validate_source_src(
             r#"
-type Schema = {...}
-type Query = {
+meta Schema = {...}
+meta Query = {
     table &Schema
     params {...}
     @source [table]
     return {...}
 }
-type Wrapper = {
+meta Wrapper = {
     auth {...}
     @source [auth]
     query Query
@@ -1671,15 +1754,15 @@ w = Wrapper {
         // -T refinable ref fields should also be exempt from parent @source validation.
         let errors = validate_source_src(
             r#"
-type Schema = {...}
-type Command = {
+meta Schema = {...}
+meta Command = {
     params {...}
     table &Schema
     @source [params]
     insert -Schema
     return {...}
 }
-type Wrapper = {
+meta Wrapper = {
     auth {...}
     @source [auth]
     command Command

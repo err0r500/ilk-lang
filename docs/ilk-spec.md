@@ -1,9 +1,9 @@
 <script setup>
 const exConstraints = {
   type: `
-type Name = String
-type Mode = Concrete<String>
-type Version = 1
+meta Name = String
+meta Mode = Concrete<String>
+meta Version = 1
 `,
   instances: [
     { label: 'Valid', expect: 'pass', code: `
@@ -18,7 +18,7 @@ version = Version 1
     { label: 'Wrong type-fixed value', expect: 'fail', code: `
     version = Version 2
 ` },
-    { label: 'Open type for Concrete field', expect: 'fail', code: `
+    { label: 'Open meta for Concrete field', expect: 'fail', code: `
     mode  = Mode String
 ` },
   ]
@@ -26,7 +26,7 @@ version = Version 1
 
 const exLitteralsUnion = {
   type: `
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+meta HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
 `,
   instances: [
     { label: 'Valid', expect: 'pass', code: `
@@ -41,20 +41,20 @@ type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
 const exStruct = {
     type: `
 
-type OneFieldAny = {_} // exactly 1 field of any name and type (= {_ *})
-type OneString = {_ String} // exactly 1 field of any name, type String
-type TwoFieldsAny = {_, _} // exactly 2 fields of any names and types
-type TwoFieldsIntString = {_ Int, _ String} // exactly 2 fields with specific types
-type TwoFieldsNamed = {age Int, name String} // exactly 2 fields with specific types
-type Empty = {} // zero fields (empty struct)
-type AStruct = {...} // zero or more fields of any names and types
-type InlineDeclaration = {
+meta OneFieldAny = {_} // exactly 1 field of any name and type (= {_ *})
+meta OneString = {_ String} // exactly 1 field of any name, type String
+meta TwoFieldsAny = {_, _} // exactly 2 fields of any names and types
+meta TwoFieldsIntString = {_ Int, _ String} // exactly 2 fields with specific types
+meta TwoFieldsNamed = {age Int, name String} // exactly 2 fields with specific types
+meta Empty = {} // zero fields (empty struct)
+meta AStruct = {...} // zero or more fields of any names and types
+meta InlineDeclaration = {
     a {
         b Concrete<Int>
     }
 }
 
-type InlineWithRef = {
+meta InlineWithRef = {
     user OneFieldAny
 }
     `
@@ -89,12 +89,12 @@ f = AStruct String
 
 const exStruct2 = {
     type : `
-type AllOptional = {
+meta AllOptional = {
     age Int
     name String
 }
 
-type NameIsRequired = {
+meta NameIsRequired = {
     age Int
     name! String
 }
@@ -124,10 +124,10 @@ a = AllOptional {
 
 const exIntersection = {
   type: `
-type Id = {id! Uuid}
-type Entity = {...} & Id // Open struct extended with a required id field
+meta Id = {id! Uuid}
+meta Entity = {...} & Id // Open struct extended with a required id field
 
-type Conflict = {timestamp String} & {timestamp Int} // Right side wins (int)
+meta Conflict = {timestamp String} & {timestamp Int} // Right side wins (int)
 `,
   instances: [
     { label: 'Entity: id + extra fields', expect: 'pass', code: `
@@ -150,9 +150,9 @@ s = Conflict {
 
 const exIdentifierUnion = {
   type: `
-type Status = Pending | Active | Archived
+meta Status = Pending | Active | Archived
 
-type Process = {
+meta Process = {
     status! Status
 }`,
   instances: [
@@ -169,7 +169,7 @@ p = Process {
 
 const exUnionAnonymousStruct = {
   type: `
-type Tag = {_ String} | Concrete<String>
+meta Tag = {_ String} | Concrete<String>
 `,
   instances: [
     { label: 'Valid', expect: 'pass', code: `
@@ -182,9 +182,9 @@ simpleTag = Tag "simple-tag"      // Concrete<String> branch — a literal strin
 
 const exLiteralUnion = {
   type: `
-type HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
+meta HttpMethod = "GET" | "POST" | "PUT" | "DELETE"
 
-type Endpoint = {
+meta Endpoint = {
     method! HttpMethod
 }`,
   instances: [
@@ -199,13 +199,13 @@ type Endpoint = {
 }
 
 const exNamedUnion = {
-  type: `type Pending  = { queue Concrete<String> }
-type Active   = { since Timestamp }
-type Archived = { at Timestamp }
+  type: `meta Pending  = { queue Concrete<String> }
+meta Active   = { since Timestamp }
+meta Archived = { at Timestamp }
 
-type Status = Pending | Active | Archived
+meta Status = Pending | Active | Archived
 
-type Job = {
+meta Job = {
     name!   Concrete<String>
     status! Status
 }`,
@@ -231,7 +231,7 @@ type Job = {
 
 
 const exClosed = {
-  type: `type Point = {
+  type: `meta Point = {
     x! Int
     y! Int
 }`,
@@ -256,11 +256,11 @@ const exClosed = {
 }
 
 const exOpen = {
-  type: `type Flexible = {...}
+  type: `meta Flexible = {...}
 
-type Single = {_ String}
+meta Single = {_ String}
 
-type Pair = {_ Int, _ String}`,
+meta Pair = {_ Int, _ String}`,
   instances: [
     { label: 'Open: any fields', expect: 'pass', code: `data = Flexible {
     name  String
@@ -277,9 +277,9 @@ type Pair = {_ Int, _ String}`,
 }
 
 const exList = {
-  type: `type Item = Concrete<String>
+  type: `meta Item = Concrete<String>
 
-type Bag = {
+meta Bag = {
     contents! [1..3]Item
 }`,
   instances: [
@@ -297,9 +297,9 @@ bag = Bag {
 }
 
 const exRef = {
-  type: `type Color = Concrete<String>
+  type: `meta Color = Concrete<String>
 
-type Theme = {
+meta Theme = {
     primary!  &Color
     secondary &Color
     all!      []&Color
@@ -324,7 +324,7 @@ t = Theme {
     primary phantom
     all     []
 }` },
-    { label: 'Wrong type', expect: 'fail', code: `type Font = Concrete<String>
+    { label: 'Wrong type', expect: 'fail', code: `meta Font = Concrete<String>
 serif = Font "serif"
 
 t = Theme {
@@ -335,7 +335,7 @@ t = Theme {
 }
 
 const exSource = {
-  type: `type Form = {
+  type: `meta Form = {
     inputs {...}
 
     @source [inputs]
@@ -362,14 +362,14 @@ const exSource = {
 }
 
 const exOut = {
-  type: `type DbQuery = {
+  type: `meta DbQuery = {
     name Concrete<String>
     args {...}
 
     returns {...}
 }
 
-type Endpoint = {
+meta Endpoint = {
     params {...}
 
     @source [params]
@@ -430,9 +430,9 @@ type Endpoint = {
 }
 
 const exConstraint = {
-  type: `type Tag = Concrete<String>
+  type: `meta Tag = Concrete<String>
 
-type List = {
+meta List = {
     @constraint count(items) >= 2
     @constraint count(items) <= 4
     items! []Tag
@@ -458,7 +458,7 @@ list = List { items [a, b, c, d, e] }` },
 }
 
 const exOrigins = {
-  type: `type Request = {
+  type: `meta Request = {
     params {...}
     body   {...}
 
@@ -502,7 +502,7 @@ const exOrigins = {
 }
 
 const exOptional = {
-  type: `type Profile = {
+  type: `meta Profile = {
     id!      Uuid
     name!    String
     email?   String
@@ -538,7 +538,7 @@ ilk is a **data modeling language** it can be used to design your system and val
 especially at the data flow level.
 
 A `.ilk` file contains both :
-- **type declarations** : the abstract vocabulary of a domain (which concepts exist, what
+- **meta declarations** : the abstract vocabulary of a domain (which concepts exist, what
 shape they have, what constraints apply)
 - **instance bindings** : the concrete entities that exist in a specific domain (which named events, commands, tags, etc.).
 
@@ -565,7 +565,7 @@ userIdTag = Tag {userId String} // inline comment
 
 | Token | Description |
 |-|-|
-| `*` | Wildcard — matches any type. Usable as a field type or in struct cardinality notation. |
+| `*` | Wildcard — matches any type. Usable as a field meta or in struct cardinality notation. |
 | `Bool` | Boolean |
 | `Int` | Integer |
 | `Float` | Floating-point number |
@@ -575,17 +575,17 @@ userIdTag = Tag {userId String} // inline comment
 | `Timestamp` | Point in time |
 | `Money` | Monetary amount |
 
-`*` can be used as a field type (any concrete type or value is accepted) or in struct
+`*` can be used as a field meta (any concrete meta or value is accepted) or in struct
 cardinality notation like `{_}` (shorthand for `{_ *}`).
 
 
 
-## Type declarations
+## Meta declarations
 
-Type declarations define named types. The `type` keyword introduces a declaration:
+Meta declarations define named types. The `meta` keyword introduces a declaration:
 
 ```ilk
-type Name = TypeExpr
+meta Name = TypeExpr
 ```
 
 Type names start with a capital letter.
@@ -624,15 +624,15 @@ Three forms express how tightly a field's value is constrained:
 
 | Form | Constraint | Meaning |
 |--|--|--|
-| `String`, `Int`, … | Open | Instance must accept any value of that type |
-| `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the type does not prescribe which |
+| `String`, `Int`, … | Open | Instance must accept any value of that meta |
+| `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the meta does not prescribe which |
 | `"hello"`, `42`, `true`, … | Type-fixed | Only this exact value is valid |
 
 
 <TypeExample :example="exConstraints" />
 
 
-**Types must match exactly.** Instances must use the same type as declared — no subtyping
+**Types must match exactly.** Instances must use the same meta as declared — no subtyping
 
 > **Future consideration:** Variance annotations (`+T` covariant, `-T` contravariant) could
 > allow controlled narrowing/widening of constraint levels. Currently all levels are invariant.
@@ -664,7 +664,7 @@ The **anonymous-field shorthand** uses `_` as a placeholder for "a field of any 
 
 ### Struct Intersection
 
-`A & B` produces a type whose instances must satisfy **both** `A` and `B`. All fields
+`A & B` produces a meta whose instances must satisfy **both** `A` and `B`. All fields
 from both sides are merged into a single struct.
 
 
@@ -676,7 +676,7 @@ NB : Reference types (`&T`) cannot participate in intersections.
 
 `A | B` means a value must satisfy **exactly one** of the alternatives.
 
-### Litteral type branches
+### Litteral meta branches
 
 <TypeExample :example="exLiteralUnion" />
 
@@ -692,7 +692,7 @@ The branch is matched structurally:
 
 ### Discriminated unions
 
-For named-type branches, every union is discriminated by name. When two branches have the
+For named-meta branches, every union is discriminated by name. When two branches have the
 same shape, the name distinguishes them:
 
 <TypeExample :example="exNamedUnion" />
@@ -734,12 +734,12 @@ List values in instances are separated by **commas** (or newlines):
 
 ## Reference types (add to advanced topic, after @source)
 
-`&T` — a reference to a binding of type `T`.
+`&T` — a reference to a binding of meta `T`.
 
 Reference types point to an existing binding without instantiating it or flowing data
 through it. The validator checks that the referenced binding exists and is of the correct type.
 
-The main purpose of reference type is to be able to use them in overall validation
+The main purpose of reference meta is to be able to use them in overall validation
 without them participating in the data flow.
 
 ```ilk
@@ -750,18 +750,18 @@ without them participating in the data flow.
 **Validation rules:**
 - The instance value must be an unquoted binding name
 - The binding must exist in the file
-- The binding must be of type `T` (or a subtype)
+- The binding must be of meta `T` (or a subtype)
 - No data flows through references — `@source` checks do not apply
 
 <TypeExample :example="exRef" />
 
-## Refinable type references
+## Refinable meta references
 
-`-T` — a **refinable** reference to a binding of type `T`. The `-` prefix signals that
+`-T` — a **refinable** reference to a binding of meta `T`. The `-` prefix signals that
 the instance may refine the binding with concrete values using `& { ... }` syntax.
 
 ```ilk
-type Scenario = {
+meta Scenario = {
     name  Concrete<String>
     given []-Event    // list of refinable Event references
 }
@@ -811,7 +811,7 @@ Lists are covariant in their element type:
 
 ### Reference subtyping (covariant)
 
-References are covariant — `&S` is a subtype of `&T` when `S` is a subtype of `T`:
+References are covariant — `&S` is a submeta of `&T` when `S` is a submeta of `T`:
 
 ```ilk
 &Event            // accepts reference to Event or Event subtype
@@ -827,7 +827,7 @@ Annotations appear on the line immediately before the declaration they annotate.
 |--|--|--|
 | `@main` | instance binding | Entry point — the file is validated starting from this instance |
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
-| `@constraint <expr>` | type body | Boolean predicate that must hold for every instance |
+| `@constraint <expr>` | meta body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field | Implementation hint preserved in AST; not stripped during parsing |
 
 ### `@main`
@@ -854,7 +854,7 @@ to one of the named source fields. Multiple sources may be listed, comma-separat
 body {...}
 ```
 
-Source paths are resolved from the enclosing type root, not relative to the annotation's
+Source paths are resolved from the enclosing meta root, not relative to the annotation's
 position.
 
 The validator resolves each field in an instance struct in priority order:
@@ -873,7 +873,7 @@ sub-field of that struct must be traceable to the named sources.
 instantiating them, so no data flows and `@source` validation does not apply.
 
 ```ilk
-type Command = {
+meta Command = {
     fields {...}
 
     @source [fields]
@@ -908,7 +908,7 @@ Rules:
 
 #### Subtyping rules for `@source`
 
-Direct field mapping (implicit or explicit `= path`) requires the source type to be a
+Direct field mapping (implicit or explicit `= path`) requires the source meta to be a
 **subtype** of the target type. Narrowing mappings require `compute()`.
 
 | Mapping | Syntax | Type rule | Example |
@@ -921,21 +921,21 @@ Direct field mapping (implicit or explicit `= path`) requires the source type to
 
 ```ilk
 // OK: fields.id (Uuid) can map to Event.id (String) — Uuid <: String
-type Command = {
+meta Command = {
     fields {id Uuid}
     @source [fields]
     emits []Event
 }
 
 // ERROR: fields.id (String) cannot narrow to Event.id (Uuid) — String </: Uuid
-type Command = {
+meta Command = {
     fields {id String}
     @source [fields]
     emits []Event  // Event.id is Uuid — fails, needs compute()
 }
 
 // OK: narrowing via compute() — runtime validation
-type Command = {
+meta Command = {
     fields {id String}
     @source [fields]
     emits []Event & {
@@ -948,7 +948,7 @@ type Command = {
 
 ### `@constraint`
 
-An inline boolean predicate that every instance of the enclosing type must satisfy.
+An inline boolean predicate that every instance of the enclosing meta must satisfy.
 Uses the constraint expression language (see [Constraint expression language](#constraint-expression-language)).
 
 <TypeExample :example="exConstraint" />
@@ -1034,21 +1034,21 @@ A struct value is a `{ ... }` block of named fields separated by **newlines**:
 }
 ```
 
-Each field is a `name value` pair. The value is a type name, a literal, a reference to a
+Each field is a `name value` pair. The value is a meta name, a literal, a reference to a
 binding, or another nested struct/list.
 
 
 
 ## Reference values
 
-When a field has type `&T` (reference to T), the instance value is an unquoted binding name:
+When a field has meta `&T` (reference to T), the instance value is an unquoted binding name:
 
 ```ilk
 // type: eventTypes []&Event
 eventTypes [cartCreated, itemAdded]
 ```
 
-The binding must exist in the file and be of type `T`. References are not strings —
+The binding must exist in the file and be of meta `T`. References are not strings —
 `"cartCreated"` (quoted) would not satisfy `&Event`. No data flows through references.
 
 
@@ -1058,19 +1058,19 @@ The binding must exist in the file and be of type `T`. References are not string
 `?` appended to a field name marks it as optional. The semantics differ between type
 declarations and instance bindings.
 
-### Optional in type declarations
+### Optional in meta declarations
 
-`field? Type` in a type declaration means instances are not required to provide this field:
+`field? Type` in a meta declaration means instances are not required to provide this field:
 
 ```ilk
-type User = {
+meta User = {
     id    Uuid
     name  String
     email? String   // instances may omit email
 }
 ```
 
-A missing optional type field does not cause a validation error. When present, it must
+A missing optional meta field does not cause a validation error. When present, it must
 match the declared type.
 
 ### Optional in instance bindings
@@ -1111,13 +1111,13 @@ emits [userRegistered & {
 
 ## Anonymous struct instantiation
 
-When a field or list element has an unambiguous expected type from the schema, the type
+When a field or list element has an unambiguous expected meta from the schema, the type
 name may be omitted and an anonymous struct `{ ... }` supplied directly. Structural typing
 validates that the struct matches the expected type:
 
 ```ilk
 // type: query []QueryItem
-// QueryItem type name omitted — struct matches structurally
+// QueryItem meta name omitted — struct matches structurally
 query [
     {
         eventTypes [userRegistered, other]
@@ -1126,7 +1126,7 @@ query [
 ]
 ```
 
-This is only valid when the expected element type is a single unambiguous named type
+This is only valid when the expected element meta is a single unambiguous named type
 (not a union). For union-typed lists, write the branch name explicitly.
 
 
@@ -1141,7 +1141,7 @@ import "./common-tags.ilk" as tags   // namespaced: tags.SomeType
 ```
 
 All types in a file are automatically exported — no explicit export annotation needed.
-Files without a `@main` instance are pure type libraries.
+Files without a `@main` instance are pure meta libraries.
 
 
 

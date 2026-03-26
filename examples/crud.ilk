@@ -1,6 +1,6 @@
-type TableSchema = {...}
+meta TableSchema = {...}
 
-type InsertQuery = {
+meta InsertQuery = {
     name! Concrete<String>
     table &TableSchema
     params {...}
@@ -11,7 +11,7 @@ type InsertQuery = {
     return {...}
 }
 
-type UpdateQuery = {
+meta UpdateQuery = {
     name! Concrete<String>
     table &TableSchema
     params {...}
@@ -22,7 +22,7 @@ type UpdateQuery = {
     return {...}
 }
 
-type ReadQuery = {
+meta ReadQuery = {
     name! Concrete<String>
     table &TableSchema
 
@@ -32,7 +32,7 @@ type ReadQuery = {
     return {...}
 }
 
-type Endpoint = {
+meta Endpoint = {
     method! "GET" | "POST"
     path! Concrete<String>
     auth {...}

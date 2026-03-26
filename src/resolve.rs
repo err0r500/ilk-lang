@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
-    pub types: HashMap<String, S<TypeDecl>>,
+    pub metas: HashMap<String, S<MetaDecl>>,
     pub instances: HashMap<String, S<Instance>>,
     pub instance_files: HashMap<String, PathBuf>,
     pub main_instance: Option<String>,
@@ -15,15 +15,15 @@ pub struct TypeEnv {
 impl TypeEnv {
     pub fn new() -> Self {
         Self {
-            types: HashMap::new(),
+            metas: HashMap::new(),
             instances: HashMap::new(),
             instance_files: HashMap::new(),
             main_instance: None,
         }
     }
 
-    pub fn get_type(&self, name: &str) -> Option<&S<TypeDecl>> {
-        self.types.get(name)
+    pub fn get_meta(&self, name: &str) -> Option<&S<MetaDecl>> {
+        self.metas.get(name)
     }
 
     pub fn get_instance(&self, name: &str) -> Option<&S<Instance>> {
@@ -59,33 +59,33 @@ pub fn resolve_with_imports(
     let mut env = imported_env;
     let mut errors = Vec::new();
 
-    // Collect all type declarations
+    // Collect all meta declarations
     for item in &file.items {
-        if let Item::TypeDecl(decl) = &item.node {
+        if let Item::MetaDecl(decl) = &item.node {
             let name = &decl.name.node;
-            if env.types.contains_key(name) {
+            if env.metas.contains_key(name) {
                 errors.push(Diagnostic::error(
                     decl.name.span.clone(),
-                    format!("Duplicate type: {}", name),
+                    format!("Duplicate meta: {}", name),
                     path,
                 ));
             } else {
-                env.types
+                env.metas
                     .insert(name.clone(), S::new(decl.clone(), item.span.clone()));
             }
         }
     }
 
-    // Auto-register implicit marker types from union variants
-    let mut implicit_types: Vec<(String, Span)> = Vec::new();
+    // Auto-register implicit marker meta from union variants
+    let mut implicit_metas: Vec<(String, Span)> = Vec::new();
     for item in &file.items {
-        if let Item::TypeDecl(decl) = &item.node {
-            collect_implicit_union_variants(&decl.body, &env, &mut implicit_types);
+        if let Item::MetaDecl(decl) = &item.node {
+            collect_implicit_union_variants(&decl.body, &env, &mut implicit_metas);
         }
     }
-    for (name, span) in implicit_types {
-        if !env.types.contains_key(&name) && !is_base_type(&name) {
-            let decl = TypeDecl {
+    for (name, span) in implicit_metas {
+        if !env.metas.contains_key(&name) && !is_base_type(&name) {
+            let decl = MetaDecl {
                 name: S::new(name.clone(), span.clone()),
                 annotations: Vec::new(),
                 body: S::new(
@@ -93,7 +93,7 @@ pub fn resolve_with_imports(
                     span.clone(),
                 ),
             };
-            env.types.insert(name, S::new(decl, span));
+            env.metas.insert(name, S::new(decl, span));
         }
     }
 
@@ -130,18 +130,18 @@ pub fn resolve_with_imports(
         }
     }
 
-    // Check for unknown type references in type declarations
+    // Check for unknown meta references in meta declarations
     for item in &file.items {
-        if let Item::TypeDecl(decl) = &item.node {
-            check_type_refs(&decl.body, &env, path, &mut errors);
+        if let Item::MetaDecl(decl) = &item.node {
+            check_meta_refs(&decl.body, &env, path, &mut errors);
         }
     }
 
-    // Check for unknown type references in instances
+    // Check for unknown meta references in instances
     for item in &file.items {
         if let Item::Instance(inst) = &item.node {
             let type_name = &inst.type_name.node;
-            if !env.types.contains_key(type_name) && !is_base_type(type_name) {
+            if !env.metas.contains_key(type_name) && !is_base_type(type_name) {
                 errors.push(Diagnostic::error(
                     inst.type_name.span.clone(),
                     format!("Unknown type: {}", type_name),
@@ -151,7 +151,7 @@ pub fn resolve_with_imports(
         }
     }
 
-    // Check for cycles in type definitions
+    // Check for cycles in meta definitions
     check_cycles(&env, path, &mut errors);
 
     (env, errors)
@@ -169,7 +169,7 @@ fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Ve
         TypeExpr::Union(variants) => {
             for v in variants {
                 if let TypeExpr::Named(name) = &v.node {
-                    if !env.types.contains_key(name) && !is_base_type(name) {
+                    if !env.metas.contains_key(name) && !is_base_type(name) {
                         out.push((name.clone(), v.span.clone()));
                     }
                 }
@@ -198,10 +198,10 @@ fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Ve
     }
 }
 
-fn check_type_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
+fn check_meta_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
     match &ty.node {
         TypeExpr::Named(name) => {
-            if !env.types.contains_key(name) {
+            if !env.metas.contains_key(name) {
                 errors.push(Diagnostic::error(
                     ty.span.clone(),
                     format!("Unknown type: {}", name),
@@ -210,34 +210,34 @@ fn check_type_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Ve
             }
         }
         TypeExpr::Reference(name) => {
-            if !env.types.contains_key(name) {
+            if !env.metas.contains_key(name) {
                 errors.push(Diagnostic::error(
                     ty.span.clone(),
-                    format!("Unknown type in reference: {}", name),
+                    format!("Unknown meta in reference: {}", name),
                     path,
                 ));
             }
         }
-        TypeExpr::Concrete(inner) => check_type_refs(inner, env, path, errors),
-        TypeExpr::List(_, inner) => check_type_refs(inner, env, path, errors),
+        TypeExpr::Concrete(inner) => check_meta_refs(inner, env, path, errors),
+        TypeExpr::List(_, inner) => check_meta_refs(inner, env, path, errors),
         TypeExpr::Union(variants) => {
             for v in variants {
-                check_type_refs(v, env, path, errors);
+                check_meta_refs(v, env, path, errors);
             }
         }
         TypeExpr::Intersection(left, right) => {
-            check_type_refs(left, env, path, errors);
-            check_type_refs(right, env, path, errors);
+            check_meta_refs(left, env, path, errors);
+            check_meta_refs(right, env, path, errors);
         }
         TypeExpr::Struct(kind) => match kind {
             StructKind::Closed(fields) | StructKind::Open(fields) => {
                 for field in fields {
-                    check_type_refs(&field.node.ty, env, path, errors);
+                    check_meta_refs(&field.node.ty, env, path, errors);
                 }
             }
             StructKind::Anonymous(types) => {
                 for ty in types.iter().flatten() {
-                    check_type_refs(ty, env, path, errors);
+                    check_meta_refs(ty, env, path, errors);
                 }
             }
         },
@@ -249,7 +249,7 @@ fn check_cycles(env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
     let mut visited = HashSet::new();
     let mut in_stack = HashSet::new();
 
-    for name in env.types.keys() {
+    for name in env.metas.keys() {
         if !visited.contains(name) {
             check_cycles_dfs(name, env, path, &mut visited, &mut in_stack, errors);
         }
@@ -267,7 +267,7 @@ fn check_cycles_dfs(
     visited.insert(name.to_string());
     in_stack.insert(name.to_string());
 
-    if let Some(decl) = env.types.get(name) {
+    if let Some(decl) = env.metas.get(name) {
         let deps = collect_direct_deps(&decl.node.body);
         for dep in deps {
             if in_stack.contains(&dep) {
@@ -334,47 +334,47 @@ mod tests {
 
     #[test]
     fn test_type_collection() {
-        let (env, errors) = resolve_str("type Foo = {x Int}");
+        let (env, errors) = resolve_str("meta Foo = {x Int}");
         assert!(errors.is_empty());
-        assert!(env.types.contains_key("Foo"));
+        assert!(env.metas.contains_key("Foo"));
     }
 
     #[test]
     fn test_instance_collection() {
-        let (env, errors) = resolve_str("type Foo = {x Int}\nfoo = Foo {x Int}");
+        let (env, errors) = resolve_str("meta Foo = {x Int}\nfoo = Foo {x Int}");
         assert!(errors.is_empty());
         assert!(env.instances.contains_key("foo"));
     }
 
     #[test]
     fn test_main_instance() {
-        let (env, errors) = resolve_str("type Foo = {...}\n@main\nfoo = Foo {x Int}");
+        let (env, errors) = resolve_str("meta Foo = {...}\n@main\nfoo = Foo {x Int}");
         assert!(errors.is_empty());
         assert_eq!(env.main_instance, Some("foo".to_string()));
     }
 
     #[test]
     fn test_forward_refs() {
-        let (_env, errors) = resolve_str("type A = B\ntype B = {x Int}");
+        let (_env, errors) = resolve_str("meta A = B\nmeta B = {x Int}");
         assert!(errors.is_empty());
     }
 
     #[test]
     fn test_cycles() {
-        let (_env, errs) = resolve_str("type A = B\ntype B = A");
+        let (_env, errs) = resolve_str("meta A = B\nmeta B = A");
         assert!(errs.iter().any(|e| e.message.contains("Cyclic")));
     }
 
     #[test]
     fn test_multiple_main() {
         let (_env, errs) =
-            resolve_str("type A = {}\ntype B = {}\n@main\na = A {}\n@main\nb = B {}");
+            resolve_str("meta A = {}\nmeta B = {}\n@main\na = A {}\n@main\nb = B {}");
         assert!(errs.iter().any(|e| e.message.contains("Multiple @main")));
     }
 
     #[test]
     fn test_unknown_type() {
-        let (_env, errs) = resolve_str("type A = Unknown");
+        let (_env, errs) = resolve_str("meta A = Unknown");
         assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
     }
 
@@ -387,12 +387,12 @@ mod tests {
     #[test]
     fn test_implicit_union_marker_types() {
         let (env, errors) = resolve_str(
-            "type Status = Pending | Active | Archived\ntype Process = { status! Status }",
+            "meta Status = Pending | Active | Archived\nmeta Process = { status! Status }",
         );
         assert!(errors.is_empty());
-        assert!(env.types.contains_key("Status"));
-        assert!(env.types.contains_key("Pending"));
-        assert!(env.types.contains_key("Active"));
-        assert!(env.types.contains_key("Archived"));
+        assert!(env.metas.contains_key("Status"));
+        assert!(env.metas.contains_key("Pending"));
+        assert!(env.metas.contains_key("Active"));
+        assert!(env.metas.contains_key("Archived"));
     }
 }

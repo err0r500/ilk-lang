@@ -114,7 +114,7 @@ fn emit_refinement(base: &str, overrides: &[S<InstanceField>], env: &TypeEnv) ->
 // --- Type resolution ---
 
 fn resolve_field_type(type_name: &str, field_name: &str, env: &TypeEnv) -> Option<String> {
-    let decl = env.get_type(type_name)?;
+    let decl = env.get_meta(type_name)?;
     find_field_type(&decl.node.body.node, field_name, env)
 }
 

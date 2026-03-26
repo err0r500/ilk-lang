@@ -10,7 +10,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 ```
                     ┌─ PARSE (parser.rs)
                     │   chumsky combinators → AST
-                    │   Output: File { TypeDecl, Instance, Import }
+                    │   Output: File { MetaDecl, Instance, Import }
                     ↓
                     ├─ RESOLVE (resolve.rs)
                     │   1. Collect types into symbol table
@@ -51,7 +51,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 - `ListElement` - Value, BindingRef, Refinement
 
 **Top-Level**:
-- `TypeDecl` - type X = TypeExpr
+- `MetaDecl` - type X = TypeExpr
 - `Instance` - x = Type Value
 - `Import` - import "path" [as alias]
 - `File` - collection with helper iterators
@@ -62,17 +62,17 @@ Layers (bottom-up):
 1. **Primitives**: ident, ws, sep
 2. **Type parsers**: base_type, literal types, concrete, reference, cardinality, list, struct, constraint_expr, type_expr (combines with | and &)
 3. **Value parsers**: literals, type_ref, binding_ref, field_origin, instance_field/struct/list, value
-4. **Top-level**: type_decl, instance, import, file
+4. **Top-level**: meta_decl, instance, import, file
 
 ### resolve.rs
 
 `TypeEnv` = symbol table:
-- `types: HashMap<String, S<TypeDecl>>`
+- `metas: HashMap<String, S<MetaDecl>>`
 - `instances: HashMap<String, S<Instance>>`
 - `main_instance: Option<String>`
 
 Phases:
-1. Collect types (error on dups)
+1. Collect metas (error on dups)
 2. Collect instances (track @main, error on dups/multiple @main)
 3. Validate type refs exist
 4. Check cycles (DFS with visited/in_stack)

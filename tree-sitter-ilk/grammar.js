@@ -26,7 +26,7 @@ module.exports = grammar({
     rules: {
         source_file: ($) => repeat($._definition),
 
-        _definition: ($) => choice($.type_decl, $.instance, $.import_stmt),
+        _definition: ($) => choice($.meta_decl, $.instance, $.import_stmt),
 
         // ===================
         // Comments
@@ -239,11 +239,11 @@ module.exports = grammar({
         // Top-Level Items
         // ===================
 
-        // type Name = TypeExpr
-        type_decl: ($) =>
+        // meta Name = TypeExpr
+        meta_decl: ($) =>
             seq(
                 repeat($.annotation),
-                "type",
+                "meta",
                 field("name", $.identifier),
                 "=",
                 field("body", $._type_expr),
@@ -313,9 +313,7 @@ module.exports = grammar({
             ),
 
         origin_path: ($) =>
-            choice(
-                seq($.identifier, repeat(seq(".", $.identifier))),
-            ),
+            choice(seq($.identifier, repeat(seq(".", $.identifier)))),
 
         origin_paths: ($) => commaSep1($.origin_path),
 

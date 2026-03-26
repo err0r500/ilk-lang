@@ -122,7 +122,7 @@ impl<'a> Formatter<'a> {
     fn format_item(&mut self, item: &S<Item>) {
         match &item.node {
             Item::Import(imp) => self.format_import(imp),
-            Item::TypeDecl(td) => self.format_type_decl(td),
+            Item::MetaDecl(td) => self.format_meta_decl(td),
             Item::Instance(inst) => self.format_instance(inst),
         }
     }
@@ -138,12 +138,12 @@ impl<'a> Formatter<'a> {
         self.writeln();
     }
 
-    fn format_type_decl(&mut self, td: &TypeDecl) {
+    fn format_meta_decl(&mut self, td: &MetaDecl) {
         for ann in &td.annotations {
             self.format_annotation(ann);
             self.writeln();
         }
-        self.write("type ");
+        self.write("meta ");
         self.write(&td.name.node);
         self.write(" = ");
         self.format_type_expr(&td.body);
@@ -702,22 +702,22 @@ mod tests {
 
     #[test]
     fn test_format_simple_type() {
-        let src = "type Foo = String\n";
+        let src = "meta Foo = String\n";
         let out = roundtrip(src);
         assert_eq!(out, src);
     }
 
     #[test]
     fn test_format_preserves_comment() {
-        let src = "// comment\ntype Foo = String\n";
+        let src = "// comment\nmeta Foo = String\n";
         let out = roundtrip(src);
         assert!(out.contains("// comment"));
-        assert!(out.contains("type Foo = String"));
+        assert!(out.contains("meta Foo = String"));
     }
 
     #[test]
     fn test_format_struct() {
-        let src = "type Foo = {x! Int, y! String}\n";
+        let src = "meta Foo = {x! Int, y! String}\n";
         let out = roundtrip(src);
         assert!(out.contains("x!"));
         assert!(out.contains("y!"));
@@ -725,16 +725,16 @@ mod tests {
 
     #[test]
     fn test_comment_between_items() {
-        let src = "type A = Int\n// middle comment\ntype B = String\n";
+        let src = "meta A = Int\n// middle comment\nmeta B = String\n";
         let out = roundtrip(src);
         assert!(out.contains("// middle comment"));
-        assert!(out.contains("type A = Int"));
-        assert!(out.contains("type B = String"));
+        assert!(out.contains("meta A = Int"));
+        assert!(out.contains("meta B = String"));
     }
 
     #[test]
     fn test_comment_at_end() {
-        let src = "type A = Int\n// trailing comment\n";
+        let src = "meta A = Int\n// trailing comment\n";
         let out = roundtrip(src);
         assert!(out.contains("// trailing comment"));
     }

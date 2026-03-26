@@ -1,15 +1,15 @@
-// Type declarations
+// Meta declarations
 // A tag is a single-field String struct, or a unique concrete string
-type Tag = {_ String} | Concrete<String>
+meta Tag = {_ String} | Concrete<String>
 
 
-type Event = {...} & {
+meta Event = {...} & {
     timestamp Int
     tags []&Tag
 }
 
 
-type QueryItem = {
+meta QueryItem = {
     @constraint all(tags, t => all(eventTypes, e => t in e.tags))
     eventTypes! []&Event
 
@@ -17,7 +17,7 @@ type QueryItem = {
 }
 
 
-type Command = {
+meta Command = {
     fields! {...}
 
     @source [fields]
@@ -28,13 +28,13 @@ type Command = {
 }
 
 
-type HttpResponse = {
+meta HttpResponse = {
     status! Concrete<Int>
     body {...}
 }
 
 
-type HttpEndpoint = {
+meta HttpEndpoint = {
     method! "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
 
     @constraint all(templateVars(path), v => v in keys(params))
@@ -46,7 +46,7 @@ type HttpEndpoint = {
 }
 
 
-type ChangeSlice = {
+meta ChangeSlice = {
     name! Concrete<String>
     endpoint! HttpEndpoint
 
@@ -60,7 +60,7 @@ type ChangeSlice = {
 }
 
 
-type ChangeScenario = {
+meta ChangeScenario = {
     name! Concrete<String>
 
     given! []-Event
@@ -69,7 +69,7 @@ type ChangeScenario = {
 }
 
 
-type Board = {changes! [1..]ChangeSlice}
+meta Board = {changes! [1..]ChangeSlice}
 
 
 userIdTag = Tag {userId String}
