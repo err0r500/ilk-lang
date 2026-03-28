@@ -27,7 +27,7 @@ features:
 
 <script setup>
 const ex1 = {
-  type: `type HttpResponse = {
+  type: `meta HttpResponse = {
     status! Concrete<Int> // required field (note the "!")
     body {...} // optional open field
 }`,
@@ -54,7 +54,7 @@ const ex1 = {
 }
 
 const ex2 = {
-  type: `type HttpResponse = {
+  type: `meta HttpResponse = {
     status! Concrete<Int>
     body {...}
 }
