@@ -59,7 +59,7 @@ const ex2 = {
     body {...}
 }
 
-type Endpoint = {
+meta Endpoint = {
     params  {...}
     body    {...}
 
