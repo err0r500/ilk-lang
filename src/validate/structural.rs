@@ -1036,30 +1036,6 @@ fn validate_refinement_fields_against_instance(
         }
     }
 
-    // Check all required instance fields are present in refinement
-    // Only for non-refinable types (refinable refs are just documentation)
-    // Use type-level optionality (!) rather than instance-level
-    if !is_refinable {
-        let meta_decl = ctx.env.get_meta(&inst.type_name.node);
-        for inst_field in inst_fields {
-            let fname = &inst_field.node.name.node;
-            let required_in_type = meta_decl
-                .map(|td| is_field_required_in_type(ctx, &td.node.body.node, fname))
-                .unwrap_or(!inst_field.node.optional);
-            if required_in_type {
-                if !fields.iter().any(|f| &f.node.name.node == fname) {
-                    errors.push(Diagnostic::error(
-                        refinement_span.clone(),
-                        format!(
-                            "Missing required field '{}' in refinement of {}",
-                            fname, inst.name.node
-                        ),
-                        ctx.path,
-                    ));
-                }
-            }
-        }
-    }
 }
 
 fn type_ref_matches_base(type_ref: &str, base: &BaseType) -> bool {
@@ -1289,6 +1265,19 @@ scenario = Scenario {
             "Should accept: id is Concrete<String> and refinement is String: {:?}",
             errors
         );
+    }
+
+    #[test]
+    fn test_refinement_inherits_required_fields_from_base_instance() {
+        let errors = validate_src(
+            r#"
+meta T = {req! Concrete<String> extra Concrete<String>}
+meta W = {items []T}
+base = T {req "v" extra "x"}
+w = W {items [base & {extra "y"}]}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]
