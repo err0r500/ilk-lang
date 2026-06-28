@@ -144,6 +144,7 @@ pub enum Value {
     BindingRef(String),                        // someBinding
     Struct(Vec<S<InstanceField>>),             // {x Int, y String}
     List(Vec<S<ListElement>>),                 // [a, b, c]
+    ListType(Cardinality, Box<S<Value>>),      // []String, [3]Foo — typed-list declaration
     Variant(String, Box<S<Value>>),            // VariantName body
     Refinement(String, Vec<S<InstanceField>>), // binding & {fields}
 }

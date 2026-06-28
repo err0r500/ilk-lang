@@ -334,6 +334,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
         Value::LitInt(n) => EvalValue::Int(*n),
         Value::LitBool(b) => EvalValue::Bool(*b),
         Value::TypeRef(t) => EvalValue::String(t.clone()),
+        Value::ListType(_, _) => EvalValue::List(vec![]),
         Value::BindingRef(name) => EvalValue::BindingRef(name.clone()),
         Value::Struct(fields) => {
             let mut map = HashMap::new();

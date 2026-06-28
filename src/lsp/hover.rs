@@ -156,6 +156,7 @@ fn hover_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<String
             None
         }
         Value::Variant(_, inner) => hover_in_value(inner, env, offset),
+        Value::ListType(_, elem) => hover_in_value(elem, env, offset),
         _ => None,
     }
 }
@@ -284,6 +285,7 @@ fn value_to_type_string(val: &Value) -> String {
         Value::BindingRef(name) => format!("&{}", name),
         Value::Struct(_) => "{...}".to_string(),
         Value::List(_) => "[...]".to_string(),
+        Value::ListType(_, elem) => format!("[]{}", value_to_type_string(&elem.node)),
         Value::Variant(name, _) => name.clone(),
         Value::Refinement(name, _) => format!("{} & {{...}}", name),
     }

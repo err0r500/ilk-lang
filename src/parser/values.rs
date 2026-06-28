@@ -217,6 +217,18 @@ fn instance_list<'a>(
         .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 
+fn list_type_value<'a>(
+    value: impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone + 'a,
+) -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('[')
+        .ignore_then(super::types::cardinality())
+        .then_ignore(just(']'))
+        .then_ignore(ws())
+        .then(value)
+        .map(|(card, elem)| Value::ListType(card, Box::new(elem)))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
 fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
     let refinement = text::ident()
         .filter(|s: &&str| {
@@ -285,6 +297,7 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>
             lit_int_value(),
             type_ref_value(),
             instance_struct(value.clone()),
+            list_type_value(value.clone()),
             instance_list(value.clone()),
             // Variant: TypeName value
             ident()
@@ -583,6 +596,62 @@ mod tests {
             ListElement::Value(Value::BindingRef(_))
         ));
         assert!(matches!(elems[1].node, ListElement::Refinement(_, _)));
+    }
+
+    // === Typed list (ListType) ===
+
+    #[test]
+    fn test_list_type_string() {
+        let Value::ListType(card, elem) = parse_value("[]String").node else {
+            panic!("Expected ListType");
+        };
+        assert_eq!(card, Cardinality::Any);
+        assert_eq!(elem.node, Value::TypeRef("String".into()));
+    }
+
+    #[test]
+    fn test_list_type_named() {
+        let Value::ListType(card, elem) = parse_value("[]Foo").node else {
+            panic!("Expected ListType");
+        };
+        assert_eq!(card, Cardinality::Any);
+        assert_eq!(elem.node, Value::BindingRef("Foo".into()));
+    }
+
+    #[test]
+    fn test_list_type_nested_struct() {
+        let Value::ListType(_, elem) = parse_value("[]{x Int}").node else {
+            panic!("Expected ListType");
+        };
+        assert!(matches!(elem.node, Value::Struct(_)));
+    }
+
+    #[test]
+    fn test_list_type_bounds() {
+        assert_eq!(
+            matches!(parse_value("[3]Int").node, Value::ListType(Cardinality::Exact(3), _)),
+            true
+        );
+        assert_eq!(
+            matches!(parse_value("[1..]Int").node, Value::ListType(Cardinality::AtLeast(1), _)),
+            true
+        );
+        assert_eq!(
+            matches!(parse_value("[2..5]Int").node, Value::ListType(Cardinality::Range(2, 5), _)),
+            true
+        );
+    }
+
+    #[test]
+    fn test_empty_list_not_list_type() {
+        // `[]` alone (no trailing element) is still an empty value list
+        assert_eq!(parse_value("[]").node, Value::List(vec![]));
+    }
+
+    #[test]
+    fn test_value_list_not_list_type() {
+        // `[a, b]` is a value list, not a typed list
+        assert!(matches!(parse_value("[a, b]").node, Value::List(_)));
     }
 
     // === Refinement ===

@@ -43,6 +43,7 @@ fn value_kind(value: &Value) -> &'static str {
         Value::BindingRef(_) => "binding reference",
         Value::Struct(_) => "struct",
         Value::List(_) => "list",
+        Value::ListType(_, _) => "typed list",
         Value::Variant(_, _) => "variant",
         Value::Refinement(_, _) => "refinement",
     }
@@ -223,6 +224,14 @@ fn validate_value_against_type(
         (Value::List(elements), TypeExpr::List(card, elem_ty)) => {
             validate_list(ctx, elements, card, elem_ty, &value.span, errors);
         }
+
+        // Typed-list declaration (schema-style) against a list type - element types must match
+        (Value::ListType(_card, elem_val), TypeExpr::List(_ty_card, elem_ty)) => {
+            validate_value_against_type(ctx, elem_val, elem_ty, errors);
+        }
+
+        // Typed-list declaration against an open/named type - valid (the instance is the declaration)
+        (Value::ListType(_, _), TypeExpr::Named(_)) => {}
 
         // References
         (Value::BindingRef(name), TypeExpr::Reference(expected_type)) => {
@@ -820,6 +829,10 @@ fn refinement_value_matches_type(
         (Value::TypeRef(name), TypeExpr::Base(base)) => type_ref_matches_base(name, base),
         // TypeRef against named type
         (Value::TypeRef(_), TypeExpr::Named(_) | TypeExpr::RefinableRef(_)) => true,
+        // Typed-list declaration against a list type - recurse on element
+        (Value::ListType(_, elem), TypeExpr::List(_, ety)) => {
+            refinement_value_matches_type(ctx, &elem.node, &ety.node)
+        }
         // Resolve named types
         (_, TypeExpr::Named(name) | TypeExpr::RefinableRef(name)) => {
             // First try to resolve as base type
@@ -1157,6 +1170,49 @@ mod tests {
     #[test]
     fn test_open_struct() {
         let errors = validate_src("meta Foo = {...}\nfoo = Foo {x Int, y String}");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    // === Typed-list declarations in schema-style instances ===
+
+    #[test]
+    fn test_list_type_in_open_struct() {
+        // []String declared in an open struct - the instance IS the declaration
+        let errors = validate_src("meta Foo = {...}\nfoo = Foo {tags []String}");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_list_type_nested_open_struct() {
+        // mirrors the reported case: typed list inside a nested open payload
+        let src = "meta Event = {type! Concrete<String>, payload {...}}\n\
+                   articlePublished = Event {type \"X\", payload {title String, tags []String}}";
+        let errors = validate_src(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_list_type_matches_declared_list() {
+        let errors = validate_src("meta Foo = {tags []String}\nfoo = Foo {tags []String}");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_list_type_element_mismatch() {
+        // []Int against a declared []String must error
+        let errors = validate_src("meta Foo = {tags []String}\nfoo = Foo {tags []Int}");
+        assert!(
+            errors.iter().any(|e| e.message.contains("expected")),
+            "{:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_list_type_bounds_and_named_element() {
+        let src = "meta Tag = {...}\nmeta Foo = {...}\n\
+                   foo = Foo {scores [2..5]Int, refs []Tag, rows []{id Uuid}}";
+        let errors = validate_src(src);
         assert!(errors.is_empty(), "{:?}", errors);
     }
 

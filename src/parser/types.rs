@@ -55,7 +55,8 @@ fn concrete<'a>(
         .map_with(|t, e| Spanned::from_simple(t, e.span()))
 }
 
-fn cardinality<'a>() -> impl Parser<'a, ParserInput<'a>, Cardinality, ParserExtra<'a>> + Clone {
+pub(super) fn cardinality<'a>(
+) -> impl Parser<'a, ParserInput<'a>, Cardinality, ParserExtra<'a>> + Clone {
     let num = text::int(10).map(|s: &str| s.parse::<usize>().expect("valid usize from parser"));
 
     choice((

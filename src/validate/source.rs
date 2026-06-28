@@ -219,6 +219,14 @@ fn validate_field_source(
             field_type,
             errors,
         );
+    } else if matches!(
+        &inst_field.node.origin,
+        FieldOrigin::Mapped(_) | FieldOrigin::Computed(_)
+    ) {
+        // Leaf-shaped field (scalar `TypeRef` or typed-list `ListType` declaration)
+        // carrying an explicit mapping directly at the @source field level,
+        // e.g. `tags []Int = payload.tags`. The container branches above don't apply.
+        validate_refinement_field(ctx, inst_field, sources, parent_fields, Some(field_type), errors);
     }
 }
 
@@ -698,12 +706,16 @@ fn validate_source_path(
     }
 }
 
-fn get_value_type(value: &Value) -> Option<&str> {
+fn get_value_type(value: &Value) -> Option<String> {
     match value {
-        Value::TypeRef(t) => Some(t),
-        Value::LitString(_) => Some("String"),
-        Value::LitInt(_) => Some("Int"),
-        Value::LitBool(_) => Some("Bool"),
+        Value::TypeRef(t) => Some(t.clone()),
+        Value::LitString(_) => Some("String".to_string()),
+        Value::LitInt(_) => Some("Int".to_string()),
+        Value::LitBool(_) => Some("Bool".to_string()),
+        // Typed-list declaration: signature is `[]<element>` so flow between
+        // mismatched element types (e.g. []String -> []Int) is caught. Cardinality
+        // is ignored — only the element type governs data-flow compatibility.
+        Value::ListType(_, elem) => Some(format!("[]{}", get_value_type(&elem.node)?)),
         _ => None,
     }
 }
@@ -1538,6 +1550,122 @@ slice = Slice {
             messages.iter().any(|m| m.contains("not found")),
             "Expected 'not found' error, got: {:?}",
             messages
+        );
+    }
+
+    #[test]
+    fn test_list_type_source_element_mismatch() {
+        // Mapping a []String source into a []Int field must fail on element type.
+        let errors = validate_source_src(
+            r#"
+meta Event = {
+  fields {...}
+  @source [fields]
+  emits {...}
+}
+e = Event {
+  fields { tags []String }
+  emits { tags []Int = fields.tags }
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(
+            errors[0].message.contains("Type mismatch")
+                && errors[0].message.contains("[]String")
+                && errors[0].message.contains("[]Int"),
+            "{:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_list_type_source_element_match() {
+        // Matching element types ([]String -> []String) flow cleanly.
+        let errors = validate_source_src(
+            r#"
+meta Event = {
+  fields {...}
+  @source [fields]
+  emits {...}
+}
+e = Event {
+  fields { tags []String }
+  emits { tags []String = fields.tags }
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_top_level_mapped_list_type_mismatch() {
+        // Typed-list field mapped directly at the @source field level (not nested
+        // in a struct): []String source into []Int field must fail.
+        let errors = validate_source_src(
+            r#"
+meta Event = {
+  payload {...}
+  @source [payload]
+  tags []Int
+}
+e = Event {
+  payload { tags []String }
+  tags []Int = payload.tags
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(
+            errors[0].message.contains("Type mismatch")
+                && errors[0].message.contains("[]String")
+                && errors[0].message.contains("[]Int"),
+            "{:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_top_level_mapped_list_type_match() {
+        let errors = validate_source_src(
+            r#"
+meta Event = {
+  payload {...}
+  @source [payload]
+  tags []String
+}
+e = Event {
+  payload { tags []String }
+  tags []String = payload.tags
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_top_level_mapped_path_not_allowed() {
+        // Mapping from outside the @source subtree is rejected even at top level.
+        let errors = validate_source_src(
+            r#"
+meta Event = {
+  payload {...}
+  other {...}
+  @source [payload]
+  tags []String
+}
+e = Event {
+  payload { tags []String }
+  other { tags []String }
+  tags []String = other.tags
+}
+"#,
+        );
+        assert!(!errors.is_empty());
+        assert!(
+            errors[0].message.contains("not allowed by @source"),
+            "{:?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
         );
     }
 

@@ -172,6 +172,10 @@ fn emit_instances(file: &File, env: &TypeEnv) -> JsonValue {
 fn emit_value(value: &Value, env: &TypeEnv) -> JsonValue {
     match value {
         Value::TypeRef(name) => json!({ "$typeRef": name }),
+        Value::ListType(card, elem) => json!({
+            "$listType": emit_value(&elem.node, env),
+            "cardinality": emit_cardinality(card),
+        }),
         Value::LitString(s) => json!(s),
         Value::LitInt(n) => json!(n),
         Value::LitBool(b) => json!(b),

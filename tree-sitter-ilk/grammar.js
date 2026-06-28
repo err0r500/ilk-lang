@@ -21,7 +21,12 @@ module.exports = grammar({
 
     extras: ($) => [/\s/, $.comment],
 
-    conflicts: ($) => [[$.binding_ref, $.variant_value]],
+    conflicts: ($) => [
+        [$.binding_ref, $.variant_value],
+        // [N]… is ambiguous: cardinality of a typed list vs a number literal in a value list
+        [$.cardinality, $.literal_value],
+        [$.list_type_value, $.list_value],
+    ],
 
     rules: {
         source_file: ($) => repeat($._definition),
@@ -279,12 +284,17 @@ module.exports = grammar({
         _value: ($) =>
             choice(
                 $.struct_value,
+                $.list_type_value,
                 $.list_value,
                 $.type_ref,
                 $.literal_value,
                 $.binding_ref,
                 $.variant_value,
             ),
+
+        // []String, [3]Foo — typed-list declaration in schema-style instances
+        list_type_value: ($) =>
+            seq("[", optional($.cardinality), "]", $._value),
 
         type_ref: ($) => $.base_type,
 

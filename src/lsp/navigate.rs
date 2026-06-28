@@ -125,6 +125,7 @@ fn find_in_value(val: &S<Value>, env: &TypeEnv, offset: usize) -> Option<Span> {
             None
         }
         Value::Variant(_, inner) => find_in_value(inner, env, offset),
+        Value::ListType(_, elem) => find_in_value(elem, env, offset),
         _ => None,
     }
 }

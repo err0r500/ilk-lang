@@ -517,6 +517,12 @@ impl<'a> Formatter<'a> {
             Value::BindingRef(s) => self.write(s),
             Value::Struct(fields) => self.format_instance_struct(fields),
             Value::List(elems) => self.format_instance_list(elems),
+            Value::ListType(card, elem) => {
+                self.write("[");
+                self.format_cardinality(card);
+                self.write("]");
+                self.format_value(elem);
+            }
             Value::Variant(name, body) => {
                 self.write(name);
                 self.write(" ");

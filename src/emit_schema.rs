@@ -33,6 +33,7 @@ fn emit_instance(inst: &Instance, env: &TypeEnv) -> JsonValue {
 fn emit_value(value: &Value, type_name: Option<&str>, env: &TypeEnv) -> JsonValue {
     match value {
         Value::TypeRef(name) => json!(name),
+        Value::ListType(_card, elem) => json!([emit_value(&elem.node, type_name, env)]),
         Value::LitString(s) => json!(s),
         Value::LitInt(n) => json!(n),
         Value::LitBool(b) => json!(b),

@@ -729,6 +729,36 @@ List values in instances are separated by **commas** (or newlines):
 
 <TypeExample :example="exList" />
 
+### Typed lists in schema-style instances
+
+When an instance fills an open struct (`{...}`), its fields *declare types* rather than
+supplying values — `title String` declares a `String` field. The same list syntax used at
+the meta level is available here to declare a **list-typed** field:
+
+```ilk
+meta Event = {
+    type! Concrete<String>
+    payload {...}
+}
+
+articlePublished = Event {
+    type "ArticlePublished"
+    payload {
+        id      Uuid
+        title   String
+        tags    []String      // list of String, any length
+        ratings [2..5]Int      // bounds also allowed
+        authors []Author       // named element type
+        links   []{ url String } // struct element type
+    }
+}
+```
+
+The element may be a base type, a named type, or a nested struct, and the cardinality
+forms (`[]`, `[N]`, `[N..]`, `[N..M]`, `[..M]`) match the meta-level [list types](#list-types).
+This mirrors scalar type declarations (`title String`); a bare `[a, b]` remains a list of
+*values*, not a type.
+
 ## >>> DRAFT DOCUMENTATION BELOW
 
 
