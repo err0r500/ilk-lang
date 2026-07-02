@@ -107,6 +107,8 @@ meta ViewScenario = {
     expect! {...}
 }
 
+meta ReadModel = {...}
+
 
 meta ViewSlice = {
     name! Concrete<String>
@@ -117,7 +119,7 @@ meta ViewSlice = {
     @source [endpoint.params, endpoint.body, endpoint.auth]
     query! []QueryItem
 
-    readModel! {...}
+    readModel! ReadModel
 
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(query, q => event in q.eventTypes)))
     scenarios []ViewScenario

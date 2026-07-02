@@ -107,6 +107,23 @@ Constraint ops:
 - Access: x.y.z
 - String: templateVars(str), keys(struct)
 
+### emit_schema.rs / emit_jsonschema.rs
+
+Post-validation output. Both walk `@main` instances (inlining binding refs and
+refinements, threading the declared field type via `resolve_field_type`):
+
+- `emit_schema` → a shape document; leaves are bare type names (`"Uuid"`) or fixed
+  literals.
+- `emit_jsonschema` → a valid JSON Schema (draft 2020-12); base types map to
+  `{"type":…}` (+ `format`), instance-fixed values and identifier-only union
+  variants (e.g. `method POST`) to `{"const":…}`, structs to `object` schemas
+  (`required` from non-optional fields, `additionalProperties` from struct
+  openness), named types to `$ref` into `$defs`. The struct's meta type name is
+  carried in a custom `_type` key (a type tag, shared across same-type nodes).
+  Arrays always expose a single `items` schema — differing elements collapse to
+  `items:{"oneOf":[…]}`. Single `@main` sits at the document root under a
+  `$schema` header. Selected via `emit --json-schema`.
+
 ## Key Patterns
 
 1. **Spanned AST** - every node carries source span via `S<T>`

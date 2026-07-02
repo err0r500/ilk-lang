@@ -32,9 +32,15 @@ enum Commands {
         /// Emit JSON schema on successful validation
         #[arg(long)]
         emit: bool,
+        /// Emit a valid JSON Schema (draft 2020-12) instead of the shape document
+        #[arg(long)]
+        json_schema: bool,
         /// Pretty-print the emitted JSON output
         #[arg(long)]
         pretty: bool,
+        /// Write emitted output to this file (rewritten each cycle) instead of stdout
+        #[arg(long, short)]
+        output: Option<PathBuf>,
     },
     /// Parse a file and dump the AST
     Parse {
@@ -60,6 +66,9 @@ enum Commands {
     Emit {
         /// Path to the ilk file
         file: PathBuf,
+        /// Emit a valid JSON Schema (draft 2020-12) instead of the shape document
+        #[arg(long)]
+        json_schema: bool,
         /// Pretty-print the JSON output
         #[arg(long)]
         pretty: bool,
@@ -104,8 +113,14 @@ fn main() {
         Commands::Check { file } => {
             run_check(&file, cli.json);
         }
-        Commands::Watch { file, emit, pretty } => {
-            run_watch(&file, cli.json, emit, pretty);
+        Commands::Watch {
+            file,
+            emit,
+            json_schema,
+            pretty,
+            output,
+        } => {
+            run_watch(&file, cli.json, emit, json_schema, pretty, output.as_ref());
         }
         Commands::Parse { file } => {
             run_parse(&file, cli.json);
@@ -121,8 +136,12 @@ fn main() {
         Commands::Format { file } => {
             run_format(&file);
         }
-        Commands::Emit { file, pretty } => {
-            run_emit(&file, pretty);
+        Commands::Emit {
+            file,
+            json_schema,
+            pretty,
+        } => {
+            run_emit(&file, json_schema, pretty);
         }
     }
 }
@@ -163,20 +182,39 @@ fn run_check(file: &PathBuf, json: bool) {
     }
 }
 
-fn run_watch(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
-    if !json {
+fn run_watch(
+    file: &PathBuf,
+    json: bool,
+    emit: bool,
+    json_schema: bool,
+    pretty: bool,
+    output: Option<&PathBuf>,
+) {
+    // Status banners are only for plain watch; when emitting to stdout, stdout
+    // must stay clean (machine-read JSON). Writing to a file keeps stdout free.
+    let banners = !json && (!emit || output.is_some());
+    if banners {
         println!("Watching {}", file.display());
     }
 
     // Initial validation
-    run_validation(file, json, emit, pretty);
+    run_validation(file, json, emit, json_schema, pretty, output);
 
     let (tx, rx) = channel();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res| {
+        move |res: notify::Result<notify::Event>| {
             if let Ok(event) = res {
-                let _ = tx.send(event);
+                // Only react to .ilk source changes. This ignores writes to the
+                // --output file (which lives in the watched dir) that would
+                // otherwise trigger an infinite re-validation loop.
+                let touches_ilk = event
+                    .paths
+                    .iter()
+                    .any(|p| p.extension().is_some_and(|e| e == "ilk"));
+                if touches_ilk {
+                    let _ = tx.send(event);
+                }
             }
         },
         Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -201,12 +239,12 @@ fn run_watch(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
                 while rx.try_recv().is_ok() {}
 
                 let start = std::time::Instant::now();
-                if !json {
+                if banners {
                     let now = chrono::Local::now();
                     println!("\n--- Re-validating at {} ---", now.format("%H:%M:%S"));
                 }
-                run_validation(file, json, emit, pretty);
-                if !json {
+                run_validation(file, json, emit, json_schema, pretty, output);
+                if banners {
                     println!("Completed in {:?}", start.elapsed());
                 }
             }
@@ -218,7 +256,14 @@ fn run_watch(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
     }
 }
 
-fn run_validation(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
+fn run_validation(
+    file: &PathBuf,
+    json: bool,
+    emit: bool,
+    json_schema: bool,
+    pretty: bool,
+    out_file: Option<&PathBuf>,
+) {
     let canonical = match file.canonicalize() {
         Ok(p) => p,
         Err(e) => {
@@ -241,13 +286,25 @@ fn run_validation(file: &PathBuf, json: bool, emit: bool, pretty: bool) {
             if emit {
                 let ast = compiler.get_file(&canonical).unwrap();
                 let env = compiler.get_env(&canonical).unwrap();
-                let output = ilk::emit_schema::emit_schema(ast, env);
+                let output = if json_schema {
+                    ilk::emit_jsonschema::emit_json_schema(ast, env)
+                } else {
+                    ilk::emit_schema::emit_schema(ast, env)
+                };
                 let json_str = if pretty {
                     serde_json::to_string_pretty(&output).unwrap()
                 } else {
                     serde_json::to_string(&output).unwrap()
                 };
-                println!("{}", json_str);
+                if let Some(out_path) = out_file {
+                    // Truncate and rewrite each cycle so the file holds only the
+                    // latest schema (a shell `>` redirect truncates only once).
+                    if let Err(e) = std::fs::write(out_path, format!("{}\n", json_str)) {
+                        eprintln!("Failed to write {}: {}", out_path.display(), e);
+                    }
+                } else {
+                    println!("{}", json_str);
+                }
             } else if json {
                 JsonOutput::success().print();
             } else {
@@ -312,7 +369,7 @@ fn run_json(file: &PathBuf, pretty: bool) {
     }
 }
 
-fn run_emit(file: &PathBuf, pretty: bool) {
+fn run_emit(file: &PathBuf, json_schema: bool, pretty: bool) {
     let canonical = file.canonicalize().expect("Cannot resolve path");
     let mut compiler = ilk::Compiler::new();
 
@@ -329,7 +386,11 @@ fn run_emit(file: &PathBuf, pretty: bool) {
     let ast = compiler.get_file(&canonical).unwrap();
     let env = compiler.get_env(&canonical).unwrap();
 
-    let output = ilk::emit_schema::emit_schema(ast, env);
+    let output = if json_schema {
+        ilk::emit_jsonschema::emit_json_schema(ast, env)
+    } else {
+        ilk::emit_schema::emit_schema(ast, env)
+    };
     let json_str = if pretty {
         serde_json::to_string_pretty(&output).unwrap()
     } else {

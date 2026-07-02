@@ -1,5 +1,6 @@
 meta TableSchema = {...}
 
+
 meta InsertQuery = {
     name! Concrete<String>
     table &TableSchema
@@ -10,6 +11,7 @@ meta InsertQuery = {
 
     return {...}
 }
+
 
 meta UpdateQuery = {
     name! Concrete<String>
@@ -22,6 +24,7 @@ meta UpdateQuery = {
     return {...}
 }
 
+
 meta ReadQuery = {
     name! Concrete<String>
     table &TableSchema
@@ -31,6 +34,7 @@ meta ReadQuery = {
     @source [table]
     return {...}
 }
+
 
 meta Endpoint = {
     method! "GET" | "POST"
@@ -47,10 +51,12 @@ meta Endpoint = {
     }
 }
 
+
 userTable = TableSchema {
     id Uuid
     name String
 }
+
 
 getUserById = ReadQuery {
     name "getUserById"
@@ -63,6 +69,7 @@ getUserById = ReadQuery {
     }
 }
 
+
 insertUser = InsertQuery {
     name "insertUser"
     table userTable
@@ -70,29 +77,21 @@ insertUser = InsertQuery {
     params {name String}
 
     // TODO, why removing id + userTable & passes validation ???
-    insert userTable & {
-        id Uuid*
-        name String = params.name
-    }
+    insert userTable & {id Uuid*, name String = params.name}
 
-    return {
-        id Uuid = insert.id
-    }
+    return {id Uuid = insert.id}
 }
+
 
 updateUser = UpdateQuery {
     name "updateUser"
     table userTable
     params {name String}
-    update userTable & {
-        id? Uuid = table.id
-        name String = params.name
-    }
+    update userTable & {id? Uuid = table.id, name String = params.name}
 
-    return {
-        id Uuid*
-    }
+    return {id Uuid*}
 }
+
 
 getMe = Endpoint {
     method "GET"
@@ -110,3 +109,15 @@ getMe = Endpoint {
         }
     ]
 }
+
+
+meta Main = {...}
+
+
+@main
+main = Main {slices [
+    getMe
+    insertUser
+    getUserById
+    updateUser
+]}

@@ -12,13 +12,15 @@ Source → Parse → Resolve → Validate → Output
 
 | File | Purpose |
 |------|---------|
-| `main.rs` | CLI: check, watch, parse, json commands |
+| `main.rs` | CLI: check, watch, parse, json, format, emit commands |
 | `lib.rs` | Compiler API, orchestrates pipeline |
 | `parser.rs` | chumsky-based parser → AST |
 | `ast.rs` | Type declarations + instance values |
 | `resolve.rs` | Symbol table, type refs, cycle detection |
 | `span.rs` | Source location tracking |
 | `error.rs` | Diagnostic infrastructure |
+| `emit_schema.rs` | `@main` instances → shape document (type-name leaves) |
+| `emit_jsonschema.rs` | `@main` instances → valid JSON Schema (draft 2020-12) |
 | `validate/` | 3-phase validation |
 
 ## Validation Phases
@@ -34,6 +36,8 @@ cargo run -- check file.ilk      # validate
 cargo run -- watch file.ilk      # continuous validation
 cargo run -- parse file.ilk      # debug AST
 cargo run -- json file.ilk       # AST as JSON
+cargo run -- emit file.ilk       # @main instances → shape document
+cargo run -- emit --json-schema file.ilk   # @main instances → JSON Schema (draft 2020-12)
 ```
 
 ## See Also

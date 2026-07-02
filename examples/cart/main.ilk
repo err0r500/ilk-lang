@@ -3,6 +3,9 @@ import "./cmdAddItem.ilk"
 import "./cmdClearCart.ilk"
 import "./cmdRemoveItem.ilk"
 import "./viewCartItems.ilk"
+// import "./viewChangedPrices.ilk"
+// import "./viewProductsInventories.ilk"
+// import "./viewOpenCartsWithProducts.ilk"
 
 
 @main
@@ -19,6 +22,9 @@ board = Board {
                 removeItem
                 clearCart
                 viewCartItems
+                // viewChangedPrices
+                // viewOpenCartsWithProducts
+                // viewProductsInventories
             ]
         }]
     }]
