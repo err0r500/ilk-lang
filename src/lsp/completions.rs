@@ -1,4 +1,4 @@
-use crate::ast::{Field, StructKind, TypeExpr};
+use crate::ast::{BaseType, Field, StructKind, TypeExpr};
 use crate::span::S;
 use crate::Compiler;
 use std::path::Path;
@@ -6,16 +6,7 @@ use tower_lsp::lsp_types::{CompletionItem, CompletionItemKind, InsertTextFormat,
 
 use super::diagnostics::position_to_offset;
 
-const BASE_TYPES: &[&str] = &[
-    "String",
-    "Int",
-    "Float",
-    "Bool",
-    "Uuid",
-    "Date",
-    "Timestamp",
-    "Money",
-];
+const BASE_TYPES: &[&str] = &BaseType::NAMES;
 
 #[derive(Debug)]
 enum Context {

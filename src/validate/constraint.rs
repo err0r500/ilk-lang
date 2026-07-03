@@ -815,19 +815,10 @@ fn eval_values_equal(a: &EvalValue, b: &EvalValue) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse;
-    use crate::resolve::resolve;
-    use std::path::Path;
+    use crate::validate::testutil::run_validators;
 
     fn validate_constraints_src(src: &str) -> Vec<Diagnostic> {
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_constraints(&ctx, inst));
-        }
-        errors
+        run_validators(src, &[validate_constraints])
     }
 
     #[test]
@@ -971,13 +962,7 @@ outer = Outer {
         //         ^0          ^12            ^30      ^43 ^45^47
         // "foo" instance name starts at byte 45 (after "}\n")
         // Type definition ends at byte 44 ("}")
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_constraints(&ctx, inst));
-        }
+        let errors = validate_constraints_src(src);
 
         assert_eq!(errors.len(), 1);
         // Error should point to instance name (after meta def ends at 44)
@@ -994,13 +979,7 @@ outer = Outer {
         let src = "meta Foo = {\n    @constraint y > 0\n    x Int\n}\nfoo = Foo { x 1 }";
         //         ^0          ^12            ^30      ^43  ^48
         // @constraint starts at byte 16
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_constraints(&ctx, inst));
-        }
+        let errors = validate_constraints_src(src);
 
         assert_eq!(errors.len(), 1);
         // Error should point to constraint (within meta def, before byte 48)
@@ -1016,13 +995,7 @@ outer = Outer {
         // Constraint evaluates to false → error at instance
         let src = "meta Foo = {\n    @constraint x > 10\n    x Int\n}\nfoo = Foo { x 5 }";
         //         ^0          ^12             ^31      ^44 ^46
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_constraints(&ctx, inst));
-        }
+        let errors = validate_constraints_src(src);
 
         assert_eq!(errors.len(), 1);
         // Error should point to instance (after meta def)

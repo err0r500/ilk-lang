@@ -759,10 +759,7 @@ forms (`[]`, `[N]`, `[N..]`, `[N..M]`, `[..M]`) match the meta-level [list types
 This mirrors scalar type declarations (`title String`); a bare `[a, b]` remains a list of
 *values*, not a type.
 
-## >>> DRAFT DOCUMENTATION BELOW
-
-
-## Reference types (add to advanced topic, after @source)
+## Reference types
 
 `&T` — a reference to a binding of meta `T`.
 
@@ -780,7 +777,7 @@ without them participating in the data flow.
 **Validation rules:**
 - The instance value must be an unquoted binding name
 - The binding must exist in the file
-- The binding must be of meta `T` (or a subtype)
+- The binding must be of meta `T` exactly — or, when `T` is a union, of one of its variant metas
 - No data flows through references — `@source` checks do not apply
 
 <TypeExample :example="exRef" />
@@ -815,13 +812,13 @@ the validator allows concrete literals for open fields in the refinement struct.
 
 
 
-## Subtyping
+## Type compatibility
 
-Type compatibility in ilk follows structural subtyping with the following rules:
+ilk has no general subtyping — types must match exactly. The only forms of flexibility are:
 
-### Struct subtyping
+### Struct width via open structs
 
-Closed structs require exact field match — no width subtyping:
+Closed structs require exact field match:
 
 ```ilk
 {x Int}           // requires exactly {x Int}, no extra fields
@@ -829,23 +826,17 @@ Closed structs require exact field match — no width subtyping:
 {...} & {x Int}   // accepts any struct with at least {x Int}
 ```
 
-Width subtyping is only available via the open struct pattern (`{...} & {...}`).
+Extra fields are only accepted via the open struct pattern (`{...}` or `{...} & {...}`).
 
-### List subtyping (covariant)
+### Union variant membership
 
-Lists are covariant in their element type:
+A value or binding of a variant meta satisfies the union it belongs to. This also applies
+to references: `&Event` where `meta Event = A | B` accepts a binding of type `A` or `B`.
 
-```ilk
-[]Event           // accepts list of Event or Event subtypes
-```
+### Lists
 
-### Reference subtyping (covariant)
-
-References are covariant — `&S` is a submeta of `&T` when `S` is a submeta of `T`:
-
-```ilk
-&Event            // accepts reference to Event or Event subtype
-```
+Lists check cardinality, then validate each element against the declared element type
+using the same exact-match rules.
 
 
 
@@ -855,15 +846,16 @@ Annotations appear on the line immediately before the declaration they annotate.
 
 | Annotation | Valid target | Meaning |
 |--|--|--|
-| `@main` | instance binding | Entry point — the file is validated starting from this instance |
+| `@main` | instance binding | Entry point — root instance for emitted output (`ilk emit`) |
 | `@source [S, …]` | field / list decl | Values must originate from one of the named source fields |
 | `@constraint <expr>` | meta body | Boolean predicate that must hold for every instance |
 | `@doc "..."` | declaration / field | Implementation hint preserved in AST; not stripped during parsing |
 
 ### `@main`
 
-Exactly one instance binding per `.ilk` file may be marked `@main`. Validation starts
-from this instance.
+At most one instance binding per `.ilk` file may be marked `@main` (a second one is an
+error). It marks the root instance that `ilk emit` outputs. Validation itself covers
+every instance in the file, `@main` or not.
 
 ```ilk
 @main
@@ -893,6 +885,11 @@ The validator resolves each field in an instance struct in priority order:
 2. `Type*` — exempt (generated)
 3. `Type = path` / `Type = compute(paths)` — explicit origin; path root must be in the source list
 4. No origin form — implicit; matched by structural name against the source fields (one level deep)
+
+Implicit matching must be unambiguous: if a field name is found under **more than one**
+of the listed sources, validation fails (`Ambiguous source`) and an explicit
+`= path` mapping is required. If it is found under none, validation fails with
+`No source found`.
 
 **On a list declaration** — each element's fields are checked against the sources.
 
@@ -934,42 +931,45 @@ Rules:
   `Type = compute(...)`), or fields with no annotation (implicit name-match).
 - Fields not mentioned fall back to implicit name-matching against the source.
 - The refinement may not name fields that do not exist in the binding's declared type.
-- This syntax is only valid within `@source`-constrained list declarations.
+- The `binding & { ... }` syntax is the same one used for structural refinements (see
+  [Refinable meta references](#refinable-meta-references)); inside an
+  `@source`-constrained list it additionally carries origin annotations.
 
-#### Subtyping rules for `@source`
+#### Type rules for `@source`
 
-Direct field mapping (implicit or explicit `= path`) requires the source meta to be a
-**subtype** of the target type. Narrowing mappings require `compute()`.
+Direct field mapping (implicit or explicit `= path`) requires the source and target
+types to match **exactly**. Any conversion — widening or narrowing — must go through
+`compute()`, which defers the transformation to runtime and skips the type check.
 
 | Mapping | Syntax | Type rule | Example |
 |--|--|--|--|
 | Author-chosen | `field "hello"` / `Concrete<T>` value | n/a | no source check |
 | Generated | `field Type*` | n/a | no source check |
-| Direct (implicit) | `field Type` | source ≤ target | `Uuid` → `String` ✓ |
-| Direct (explicit) | `field Type = path` | source ≤ target | `Uuid` → `String` ✓ |
-| Narrowing | `field Type = compute(...)` | any (runtime) | `String` → `Uuid` ✓ |
+| Direct (implicit) | `field Type` | source == target | `Uuid` → `Uuid` ✓, `Uuid` → `String` ✗ |
+| Direct (explicit) | `field Type = path` | source == target | `Uuid` → `Uuid` ✓, `Uuid` → `String` ✗ |
+| Converted | `field Type = compute(...)` | any (runtime) | `String` → `Uuid` ✓ |
 
 ```ilk
-// OK: fields.id (Uuid) can map to Event.id (String) — Uuid <: String
+// OK: fields.id (Uuid) maps to Event.id (Uuid) — exact match
 meta Command = {
     fields {id Uuid}
     @source [fields]
-    emits []Event
+    emits []Event       // Event.id is Uuid
 }
 
-// ERROR: fields.id (String) cannot narrow to Event.id (Uuid) — String </: Uuid
+// ERROR: fields.id (String) cannot map to Event.id (Uuid) — types differ
 meta Command = {
     fields {id String}
     @source [fields]
-    emits []Event  // Event.id is Uuid — fails, needs compute()
+    emits []Event       // Event.id is Uuid — fails, needs compute()
 }
 
-// OK: narrowing via compute() — runtime validation
+// OK: conversion via compute() — runtime validation
 meta Command = {
     fields {id String}
     @source [fields]
     emits []Event & {
-        id Uuid = compute(fields.id)  // explicit narrowing
+        id Uuid = compute(fields.id)  // explicit conversion
     }
 }
 ```
@@ -998,8 +998,8 @@ correlationId Uuid*
 ```
 
 Use `@doc` to provide implementation hints — transformation semantics, generation
-strategy, domain context for AI or human implementers. Multiple `@doc` annotations on the
-same element concatenate.
+strategy, domain context for AI or human implementers. A declaration may carry several
+`@doc` annotations (all are preserved); an instance field accepts a single `@doc`.
 
 
 
@@ -1010,7 +1010,7 @@ provably traceable to the listed sources. Three **origin annotations** override 
 implicit resolution:
 
 | Form | Meaning |
-|||
+|--|--|
 | `fieldName Type*` | **Generated** — value is auto-produced at runtime; provenance not checked |
 | `fieldName Type = path` | **Mapped** — value copied from a dot-path in a source field |
 | `fieldName Type = compute(path, ...)` | **Computed** — derived from multiple source fields |
@@ -1042,8 +1042,8 @@ amount Int = compute(fields.quantity, fields.unitAmount)
 
 The value is derived from multiple source fields. Paths are comma-separated dot-paths.
 At least one path is required. All path roots must satisfy the same `@source` constraint
-as mapped fields. Use `compute()` for narrowing mappings (e.g. `String` → `Uuid`) that
-require runtime validation.
+as mapped fields. Use `compute()` for any type conversion (e.g. `String` → `Uuid`) —
+direct mappings require exact type equality; `compute()` defers validation to runtime.
 
 <TypeExample :example="exOrigins" />
 
@@ -1156,8 +1156,9 @@ query [
 ]
 ```
 
-This is only valid when the expected element meta is a single unambiguous named type
-(not a union). For union-typed lists, write the branch name explicitly.
+When the expected type is a union, the anonymous struct is matched structurally against
+each branch and must satisfy at least one. Write the branch name explicitly when two
+branches share the same shape (unions of named metas are discriminated by name).
 
 
 
@@ -1167,11 +1168,16 @@ A file may import types from another `.ilk` file:
 
 ```ilk
 import "./base-types.ilk"
-import "./common-tags.ilk" as tags   // namespaced: tags.SomeType
 ```
 
-All types in a file are automatically exported — no explicit export annotation needed.
-Files without a `@main` instance are pure meta libraries.
+All metas and instances in a file are automatically exported — no explicit export
+annotation needed. Files without a `@main` instance are pure meta libraries. Imports are
+loaded recursively; circular imports are an error.
+
+Imported names share a **flat namespace** with the importing file: declaring a name that
+an import already provides is a duplicate-declaration error. An `import "..." as alias`
+form is accepted by the parser, but namespacing (`alias.SomeType`) is **not yet
+implemented** — the alias is currently ignored.
 
 
 
@@ -1190,6 +1196,7 @@ A minimal expression language for `@constraint` predicates.
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
+| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / bool / struct / list) |
 
 ### Operators
 

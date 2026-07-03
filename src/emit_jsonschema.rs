@@ -98,7 +98,7 @@ impl<'a> Ctx<'a> {
     /// A bare type name in value position: a base type, an identifier variant
     /// (fixed tag), or a named meta we lower into `$defs` and reference.
     fn type_ref_schema(&mut self, name: &str) -> JsonValue {
-        if let Some(bt) = base_type_from_name(name) {
+        if let Some(bt) = BaseType::from_name(name) {
             return base_type_schema(&bt);
         }
         if self.is_nullary_variant(name) {
@@ -137,8 +137,8 @@ impl<'a> Ctx<'a> {
 
         for f in fields {
             let field_name = &f.node.name.node;
-            let field_type =
-                type_name.and_then(|tn| crate::emit_schema::resolve_field_type(tn, field_name, self.env));
+            let field_type = type_name
+                .and_then(|tn| crate::emit_schema::resolve_field_type(tn, field_name, self.env));
             let mut field_schema = self.value_schema(&f.node.value.node, field_type.as_deref());
             annotate_origin(&mut field_schema, &f.node.origin);
             props.insert(field_name.clone(), field_schema);
@@ -308,10 +308,8 @@ impl<'a> Ctx<'a> {
 
     fn union_schema(&mut self, variants: &[S<TypeExpr>]) -> JsonValue {
         // All-literal unions collapse to a JSON Schema `enum`.
-        let consts: Option<Vec<JsonValue>> = variants
-            .iter()
-            .map(|v| literal_const(&v.node))
-            .collect();
+        let consts: Option<Vec<JsonValue>> =
+            variants.iter().map(|v| literal_const(&v.node)).collect();
         if let Some(values) = consts {
             return json!({ "enum": values });
         }
@@ -390,20 +388,6 @@ fn literal_const(ty: &TypeExpr) -> Option<JsonValue> {
     }
 }
 
-fn base_type_from_name(name: &str) -> Option<BaseType> {
-    match name {
-        "String" => Some(BaseType::String),
-        "Int" => Some(BaseType::Int),
-        "Float" => Some(BaseType::Float),
-        "Bool" => Some(BaseType::Bool),
-        "Uuid" => Some(BaseType::Uuid),
-        "Date" => Some(BaseType::Date),
-        "Timestamp" => Some(BaseType::Timestamp),
-        "Money" => Some(BaseType::Money),
-        _ => None,
-    }
-}
-
 fn base_type_schema(base: &BaseType) -> JsonValue {
     match base {
         BaseType::String => json!({ "type": "string" }),
@@ -441,7 +425,10 @@ mod tests {
         );
         assert_eq!(s["$schema"], json!(SCHEMA_URI));
         assert_eq!(s["type"], json!("object"));
-        assert_eq!(s["properties"]["id"], json!({"type":"string","format":"uuid"}));
+        assert_eq!(
+            s["properties"]["id"],
+            json!({"type":"string","format":"uuid"})
+        );
         assert_eq!(s["properties"]["n"], json!({"type":"string"}));
         assert_eq!(s["properties"]["c"], json!({"type":"integer"}));
         assert_eq!(s["properties"]["f"], json!({"type":"number"}));
@@ -468,9 +455,7 @@ mod tests {
     #[test]
     fn named_type_ref_populates_defs() {
         // An open field whose value is a bare meta name becomes a `$ref` into `$defs`.
-        let s = schema_for(
-            "meta B = {x! String}\nmeta T = {b! B}\n@main\nm = T {b B}\n",
-        );
+        let s = schema_for("meta B = {x! String}\nmeta T = {b! B}\n@main\nm = T {b B}\n");
         assert_eq!(s["properties"]["b"], json!({"$ref":"#/$defs/B"}));
         assert_eq!(s["$defs"]["B"]["properties"]["x"], json!({"type":"string"}));
     }
@@ -486,9 +471,7 @@ mod tests {
     fn identifier_variant_value_is_const_without_defs() {
         // `method POST` parses as BindingRef("POST"); POST is an identifier variant
         // (empty-closed-struct meta) → fixed tag, no `$defs` entry.
-        let s = schema_for(
-            "meta E = {m! GET | POST | DELETE}\n@main\nx = E {m POST}\n",
-        );
+        let s = schema_for("meta E = {m! GET | POST | DELETE}\n@main\nx = E {m POST}\n");
         assert_eq!(s["properties"]["m"], json!({"const":"POST"}));
         assert!(s.get("$defs").is_none());
     }

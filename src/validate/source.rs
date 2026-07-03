@@ -226,7 +226,14 @@ fn validate_field_source(
         // Leaf-shaped field (scalar `TypeRef` or typed-list `ListType` declaration)
         // carrying an explicit mapping directly at the @source field level,
         // e.g. `tags []Int = payload.tags`. The container branches above don't apply.
-        validate_refinement_field(ctx, inst_field, sources, parent_fields, Some(field_type), errors);
+        validate_refinement_field(
+            ctx,
+            inst_field,
+            sources,
+            parent_fields,
+            Some(field_type),
+            errors,
+        );
     }
 }
 
@@ -817,21 +824,11 @@ fn is_concrete_value(value: &S<Value>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse;
-    use crate::resolve::resolve;
     use crate::validate::structural::validate_structural;
-    use std::path::Path;
+    use crate::validate::testutil::run_validators;
 
     fn validate_source_src(src: &str) -> Vec<Diagnostic> {
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_structural(&ctx, inst));
-            errors.extend(validate_source(&ctx, inst));
-        }
-        errors
+        run_validators(src, &[validate_structural, validate_source])
     }
 
     #[test]

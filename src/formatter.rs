@@ -353,18 +353,7 @@ impl<'a> Formatter<'a> {
     }
 
     fn format_base_type(&mut self, b: &BaseType) {
-        let s = match b {
-            BaseType::Wildcard => "*",
-            BaseType::Uuid => "Uuid",
-            BaseType::String => "String",
-            BaseType::Int => "Int",
-            BaseType::Float => "Float",
-            BaseType::Bool => "Bool",
-            BaseType::Date => "Date",
-            BaseType::Timestamp => "Timestamp",
-            BaseType::Money => "Money",
-        };
-        self.write(s);
+        self.write(b.name());
     }
 
     fn format_cardinality(&mut self, c: &Cardinality) {

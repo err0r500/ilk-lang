@@ -8,21 +8,15 @@ use super::common::*;
 fn base_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
     choice((
         just("*").to(BaseType::Wildcard),
-        just("Uuid").to(BaseType::Uuid),
-        just("String").to(BaseType::String),
-        just("Int").to(BaseType::Int),
-        just("Float").to(BaseType::Float),
-        just("Bool").to(BaseType::Bool),
-        just("Date").to(BaseType::Date),
-        just("Timestamp").to(BaseType::Timestamp),
-        just("Money").to(BaseType::Money),
+        text::ident()
+            .filter(|s: &&str| BaseType::from_name(s).is_some())
+            .map(|s: &str| BaseType::from_name(s).expect("filtered to base type names")),
     ))
     .map(TypeExpr::Base)
     .map_with(|t, e| Spanned::from_simple(t, e.span()))
 }
 
-fn lit_string_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone
-{
+fn lit_string_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
     just('"')
         .ignore_then(none_of('"').repeated().to_slice())
         .then_ignore(just('"'))
@@ -94,29 +88,22 @@ fn reference<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<
 fn named_type<'a>() -> impl Parser<'a, ParserInput<'a>, S<TypeExpr>, ParserExtra<'a>> + Clone {
     text::ident()
         .filter(|s: &&str| {
-            !matches!(
-                *s,
-                "Uuid"
-                    | "String"
-                    | "Int"
-                    | "Float"
-                    | "Bool"
-                    | "Date"
-                    | "Timestamp"
-                    | "Money"
-                    | "true"
-                    | "false"
-                    | "Concrete"
-                    | "all"
-                    | "exists"
-                    | "unique"
-                    | "count"
-                    | "templateVars"
-                    | "keys"
-                    | "in"
-                    | "meta"
-                    | "import"
-            )
+            !BaseType::NAMES.contains(s)
+                && !matches!(
+                    *s,
+                    "true"
+                        | "false"
+                        | "Concrete"
+                        | "all"
+                        | "exists"
+                        | "unique"
+                        | "count"
+                        | "templateVars"
+                        | "keys"
+                        | "in"
+                        | "meta"
+                        | "import"
+                )
         })
         .map(|s: &str| TypeExpr::Named(s.to_string()))
         .map_with(|t, e| Spanned::from_simple(t, e.span()))
@@ -468,7 +455,10 @@ mod tests {
 
     #[test]
     fn test_wildcard() {
-        assert!(matches!(parse_type("*").node, TypeExpr::Base(BaseType::Wildcard)));
+        assert!(matches!(
+            parse_type("*").node,
+            TypeExpr::Base(BaseType::Wildcard)
+        ));
     }
 
     #[test]
@@ -492,7 +482,10 @@ mod tests {
 
     #[test]
     fn test_lit_string() {
-        assert_eq!(parse_type("\"hello\"").node, TypeExpr::LitString("hello".into()));
+        assert_eq!(
+            parse_type("\"hello\"").node,
+            TypeExpr::LitString("hello".into())
+        );
     }
 
     #[test]
@@ -556,7 +549,10 @@ mod tests {
 
     #[test]
     fn test_refinable_ref() {
-        assert_eq!(parse_type("-Event").node, TypeExpr::RefinableRef("Event".into()));
+        assert_eq!(
+            parse_type("-Event").node,
+            TypeExpr::RefinableRef("Event".into())
+        );
     }
 
     #[test]
@@ -634,7 +630,10 @@ mod tests {
         let TypeExpr::List(_, inner) = parse_type("[]{x Int}").node else {
             panic!("Expected list");
         };
-        assert!(matches!(inner.node, TypeExpr::Struct(StructKind::Closed(_))));
+        assert!(matches!(
+            inner.node,
+            TypeExpr::Struct(StructKind::Closed(_))
+        ));
     }
 
     #[test]
@@ -684,8 +683,7 @@ mod tests {
 
     #[test]
     fn test_multi_field_struct() {
-        let TypeExpr::Struct(StructKind::Closed(fields)) =
-            parse_type("{x Int, y String}").node
+        let TypeExpr::Struct(StructKind::Closed(fields)) = parse_type("{x Int, y String}").node
         else {
             panic!("Expected closed struct");
         };
@@ -706,8 +704,7 @@ mod tests {
 
     #[test]
     fn test_struct_trailing_comma() {
-        let TypeExpr::Struct(StructKind::Closed(fields)) =
-            parse_type("{x Int, y String,}").node
+        let TypeExpr::Struct(StructKind::Closed(fields)) = parse_type("{x Int, y String,}").node
         else {
             panic!("Expected closed struct");
         };
@@ -716,8 +713,7 @@ mod tests {
 
     #[test]
     fn test_nested_struct() {
-        let TypeExpr::Struct(StructKind::Closed(fields)) =
-            parse_type("{inner {x Int}}").node
+        let TypeExpr::Struct(StructKind::Closed(fields)) = parse_type("{inner {x Int}}").node
         else {
             panic!("Expected closed struct");
         };
@@ -748,8 +744,7 @@ mod tests {
 
     #[test]
     fn test_anonymous_struct_multi() {
-        let TypeExpr::Struct(StructKind::Anonymous(fields)) =
-            parse_type("{_ String, _ Int}").node
+        let TypeExpr::Struct(StructKind::Anonymous(fields)) = parse_type("{_ String, _ Int}").node
         else {
             panic!("Expected anonymous struct");
         };
@@ -826,7 +821,10 @@ mod tests {
             panic!("Expected intersection");
         };
         assert!(matches!(left.node, TypeExpr::Struct(StructKind::Open(_))));
-        assert!(matches!(right.node, TypeExpr::Struct(StructKind::Closed(_))));
+        assert!(matches!(
+            right.node,
+            TypeExpr::Struct(StructKind::Closed(_))
+        ));
     }
 
     #[test]
@@ -859,7 +857,10 @@ mod tests {
 
     #[test]
     fn test_annotation_doc() {
-        assert_eq!(parse_ann("@doc \"some help\"").node, Annotation::Doc("some help".into()));
+        assert_eq!(
+            parse_ann("@doc \"some help\"").node,
+            Annotation::Doc("some help".into())
+        );
     }
 
     #[test]
@@ -876,7 +877,10 @@ mod tests {
         let Annotation::Source(paths) = parse_ann("@source [foo.bar.baz]").node else {
             panic!("Expected Source");
         };
-        assert_eq!(paths[0].node, SourcePath::Dotted(vec!["foo".into(), "bar".into(), "baz".into()]));
+        assert_eq!(
+            paths[0].node,
+            SourcePath::Dotted(vec!["foo".into(), "bar".into(), "baz".into()])
+        );
     }
 
     #[test]
@@ -955,10 +959,18 @@ mod tests {
 
     #[test]
     fn test_constraint_lt_le_gt_ge() {
-        assert!(matches!(parse_ann("@constraint x < 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Lt(_, _))));
-        assert!(matches!(parse_ann("@constraint x <= 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Le(_, _))));
-        assert!(matches!(parse_ann("@constraint x > 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Gt(_, _))));
-        assert!(matches!(parse_ann("@constraint x >= 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Ge(_, _))));
+        assert!(
+            matches!(parse_ann("@constraint x < 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Lt(_, _)))
+        );
+        assert!(
+            matches!(parse_ann("@constraint x <= 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Le(_, _)))
+        );
+        assert!(
+            matches!(parse_ann("@constraint x > 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Gt(_, _)))
+        );
+        assert!(
+            matches!(parse_ann("@constraint x >= 1").node, Annotation::Constraint(c) if matches!(c.node, ConstraintExpr::Ge(_, _)))
+        );
     }
 
     #[test]
@@ -974,7 +986,9 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint !x").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::Not(inner) = c.node else { panic!("Expected Not"); };
+        let ConstraintExpr::Not(inner) = c.node else {
+            panic!("Expected Not");
+        };
         assert_eq!(inner.node, ConstraintExpr::Var("x".into()));
     }
 
@@ -1000,7 +1014,9 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint a || b && c").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::Or(left, right) = c.node else { panic!("Expected Or"); };
+        let ConstraintExpr::Or(left, right) = c.node else {
+            panic!("Expected Or");
+        };
         assert_eq!(left.node, ConstraintExpr::Var("a".into()));
         assert!(matches!(right.node, ConstraintExpr::And(_, _)));
     }
@@ -1010,7 +1026,9 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint (a || b) && c").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::And(left, right) = c.node else { panic!("Expected And"); };
+        let ConstraintExpr::And(left, right) = c.node else {
+            panic!("Expected And");
+        };
         assert!(matches!(left.node, ConstraintExpr::Or(_, _)));
         assert_eq!(right.node, ConstraintExpr::Var("c".into()));
     }
@@ -1020,16 +1038,21 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint x == -5").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::Eq(_, right) = c.node else { panic!("Expected Eq"); };
+        let ConstraintExpr::Eq(_, right) = c.node else {
+            panic!("Expected Eq");
+        };
         assert_eq!(right.node, ConstraintExpr::Int(-5));
     }
 
     #[test]
     fn test_constraint_all() {
-        let Annotation::Constraint(c) = parse_ann("@constraint all(items, i => i.valid)").node else {
+        let Annotation::Constraint(c) = parse_ann("@constraint all(items, i => i.valid)").node
+        else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::All(col, var, body) = c.node else { panic!("Expected All"); };
+        let ConstraintExpr::All(col, var, body) = c.node else {
+            panic!("Expected All");
+        };
         assert_eq!(col.node, ConstraintExpr::Var("items".into()));
         assert_eq!(var, "i");
         assert!(matches!(body.node, ConstraintExpr::FieldAccess(_, _)));
@@ -1037,7 +1060,8 @@ mod tests {
 
     #[test]
     fn test_constraint_exists() {
-        let Annotation::Constraint(c) = parse_ann("@constraint exists(xs, x => x == 1)").node else {
+        let Annotation::Constraint(c) = parse_ann("@constraint exists(xs, x => x == 1)").node
+        else {
             panic!("Expected Constraint");
         };
         assert!(matches!(c.node, ConstraintExpr::Exists(_, _, _)));
@@ -1056,16 +1080,21 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint count(items) > 0").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::Gt(left, _) = c.node else { panic!("Expected Gt"); };
+        let ConstraintExpr::Gt(left, _) = c.node else {
+            panic!("Expected Gt");
+        };
         assert!(matches!(left.node, ConstraintExpr::Count(_)));
     }
 
     #[test]
     fn test_constraint_template_vars() {
-        let Annotation::Constraint(c) = parse_ann("@constraint templateVars(x) in keys(y)").node else {
+        let Annotation::Constraint(c) = parse_ann("@constraint templateVars(x) in keys(y)").node
+        else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::In(left, right) = c.node else { panic!("Expected In"); };
+        let ConstraintExpr::In(left, right) = c.node else {
+            panic!("Expected In");
+        };
         assert!(matches!(left.node, ConstraintExpr::TemplateVars(_)));
         assert!(matches!(right.node, ConstraintExpr::Keys(_)));
     }
@@ -1083,7 +1112,9 @@ mod tests {
         let Annotation::Constraint(c) = parse_ann("@constraint isType(x, Foo)").node else {
             panic!("Expected Constraint");
         };
-        let ConstraintExpr::IsType(expr, name) = c.node else { panic!("Expected IsType"); };
+        let ConstraintExpr::IsType(expr, name) = c.node else {
+            panic!("Expected IsType");
+        };
         assert_eq!(expr.node, ConstraintExpr::Var("x".into()));
         assert_eq!(name, "Foo");
     }

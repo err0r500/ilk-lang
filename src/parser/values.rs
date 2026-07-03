@@ -29,18 +29,10 @@ fn lit_bool_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtr
 }
 
 fn type_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
-    choice((
-        just("Uuid").to("Uuid"),
-        just("String").to("String"),
-        just("Int").to("Int"),
-        just("Float").to("Float"),
-        just("Bool").to("Bool"),
-        just("Date").to("Date"),
-        just("Timestamp").to("Timestamp"),
-        just("Money").to("Money"),
-    ))
-    .map(|s| Value::TypeRef(s.to_string()))
-    .map_with(|v, e| Spanned::from_simple(v, e.span()))
+    text::ident()
+        .filter(|s: &&str| BaseType::from_name(s).is_some())
+        .map(|s: &str| Value::TypeRef(s.to_string()))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 
 fn dot_path<'a>() -> impl Parser<'a, ParserInput<'a>, Vec<String>, ParserExtra<'a>> + Clone {
@@ -229,25 +221,15 @@ fn list_type_value<'a>(
         .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 
+/// Identifier usable as a binding name: not a base type, literal, or keyword.
+fn binding_ident<'a>() -> impl Parser<'a, ParserInput<'a>, &'a str, ParserExtra<'a>> + Clone {
+    text::ident().filter(|s: &&str| {
+        !BaseType::NAMES.contains(s) && !matches!(*s, "true" | "false" | "meta" | "import")
+    })
+}
+
 fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
-    let refinement = text::ident()
-        .filter(|s: &&str| {
-            !matches!(
-                *s,
-                "Uuid"
-                    | "String"
-                    | "Int"
-                    | "Float"
-                    | "Bool"
-                    | "Date"
-                    | "Timestamp"
-                    | "Money"
-                    | "true"
-                    | "false"
-                    | "meta"
-                    | "import"
-            )
-        })
+    let refinement = binding_ident()
         .map(|s: &str| s.to_string())
         .then_ignore(ws())
         .then_ignore(just('&'))
@@ -265,24 +247,7 @@ fn binding_ref_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserE
         .map(|(name, fields)| Value::Refinement(name, fields))
         .map_with(|v, e| Spanned::from_simple(v, e.span()));
 
-    let simple = text::ident()
-        .filter(|s: &&str| {
-            !matches!(
-                *s,
-                "Uuid"
-                    | "String"
-                    | "Int"
-                    | "Float"
-                    | "Bool"
-                    | "Date"
-                    | "Timestamp"
-                    | "Money"
-                    | "true"
-                    | "false"
-                    | "meta"
-                    | "import"
-            )
-        })
+    let simple = binding_ident()
         .map(|s: &str| Value::BindingRef(s.to_string()))
         .map_with(|v, e| Spanned::from_simple(v, e.span()));
 
@@ -629,15 +594,24 @@ mod tests {
     #[test]
     fn test_list_type_bounds() {
         assert_eq!(
-            matches!(parse_value("[3]Int").node, Value::ListType(Cardinality::Exact(3), _)),
+            matches!(
+                parse_value("[3]Int").node,
+                Value::ListType(Cardinality::Exact(3), _)
+            ),
             true
         );
         assert_eq!(
-            matches!(parse_value("[1..]Int").node, Value::ListType(Cardinality::AtLeast(1), _)),
+            matches!(
+                parse_value("[1..]Int").node,
+                Value::ListType(Cardinality::AtLeast(1), _)
+            ),
             true
         );
         assert_eq!(
-            matches!(parse_value("[2..5]Int").node, Value::ListType(Cardinality::Range(2, 5), _)),
+            matches!(
+                parse_value("[2..5]Int").node,
+                Value::ListType(Cardinality::Range(2, 5), _)
+            ),
             true
         );
     }

@@ -101,7 +101,7 @@ meta Endpoint = {
 
 A `.ilk` file has two sections: **meta declarations** and **instance bindings**.
 
-- **Types** define abstract shapes — what fields exist, what types they have, what constraints apply.
+- **Metas** define abstract shapes — what fields exist, what types they have, what constraints apply.
 - **Instances** name the concrete entities in *your* domain — not runtime values, but a typed catalog of the things your system knows about.
 
 ```ilk
@@ -154,7 +154,7 @@ Every open field must be explicitly mapped — the compiler checks it.
 ### Structs
 ```ilk
 {_}              // exactly 1 field of any name/type
-{_ String}       // exactly 1 field, meta String
+{_ String}       // exactly 1 field, type String
 {...}            // any fields (open)
 {id Uuid}        // specific named fields
 {...} & {id Uuid} // any fields + required id

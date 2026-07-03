@@ -396,7 +396,6 @@ fn validate_value_against_type(
                     fields,
                     inst,
                     is_refinable,
-                    value.span.clone(),
                     errors,
                 );
             } else {
@@ -442,14 +441,7 @@ fn validate_value_against_type(
         (Value::Refinement(name, fields), TypeExpr::Struct(_kind)) => {
             if let Some(inst) = ctx.get_instance(name) {
                 // Validate refinement fields against the instance
-                validate_refinement_fields_against_instance(
-                    ctx,
-                    fields,
-                    inst,
-                    false,
-                    value.span.clone(),
-                    errors,
-                );
+                validate_refinement_fields_against_instance(ctx, fields, inst, false, errors);
             } else {
                 errors.push(Diagnostic::error(
                     value.span.clone(),
@@ -741,7 +733,6 @@ fn validate_list(
                         fields,
                         inst,
                         is_refinable,
-                        elem.span.clone(),
                         errors,
                     );
                 } else {
@@ -780,27 +771,6 @@ pub(crate) fn get_field_type_from_type_expr<'a>(
     }
 }
 
-/// Check if a field is required in the type declaration
-fn is_field_required_in_type(ctx: &ValidationContext, ty: &TypeExpr, field_name: &str) -> bool {
-    match ty {
-        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => fields
-            .iter()
-            .find(|f| f.node.name.node == field_name)
-            .map(|f| !f.node.optional)
-            .unwrap_or(false),
-        TypeExpr::Named(name) | TypeExpr::RefinableRef(name) => ctx
-            .env
-            .get_meta(name)
-            .map(|decl| is_field_required_in_type(ctx, &decl.node.body.node, field_name))
-            .unwrap_or(false),
-        TypeExpr::Intersection(left, right) => {
-            is_field_required_in_type(ctx, &right.node, field_name)
-                || is_field_required_in_type(ctx, &left.node, field_name)
-        }
-        _ => false,
-    }
-}
-
 /// Check if a refinement value is compatible with a declared field type
 fn refinement_value_matches_type(
     ctx: &ValidationContext,
@@ -836,18 +806,7 @@ fn refinement_value_matches_type(
         // Resolve named types
         (_, TypeExpr::Named(name) | TypeExpr::RefinableRef(name)) => {
             // First try to resolve as base type
-            let base = match name.as_str() {
-                "String" => Some(BaseType::String),
-                "Int" => Some(BaseType::Int),
-                "Bool" => Some(BaseType::Bool),
-                "Float" => Some(BaseType::Float),
-                "Uuid" => Some(BaseType::Uuid),
-                "Date" => Some(BaseType::Date),
-                "Timestamp" => Some(BaseType::Timestamp),
-                "Money" => Some(BaseType::Money),
-                _ => None,
-            };
-            if let Some(base) = base {
+            if let Some(base) = BaseType::from_name(name) {
                 refinement_value_matches_type(ctx, value, &TypeExpr::Base(base))
             } else if let Some(decl) = ctx.env.get_meta(name) {
                 refinement_value_matches_type(ctx, value, &decl.node.body.node)
@@ -894,7 +853,6 @@ fn validate_refinement_fields_against_instance(
     fields: &[S<InstanceField>],
     inst: &Instance,
     is_refinable: bool,
-    refinement_span: Span,
     errors: &mut Vec<Diagnostic>,
 ) {
     // Get fields from the instance's body
@@ -1048,21 +1006,10 @@ fn validate_refinement_fields_against_instance(
             ));
         }
     }
-
 }
 
 fn type_ref_matches_base(type_ref: &str, base: &BaseType) -> bool {
-    match (type_ref, base) {
-        ("Uuid", BaseType::Uuid) => true,
-        ("String", BaseType::String) => true,
-        ("Int", BaseType::Int) => true,
-        ("Float", BaseType::Float) => true,
-        ("Bool", BaseType::Bool) => true,
-        ("Date", BaseType::Date) => true,
-        ("Timestamp", BaseType::Timestamp) => true,
-        ("Money", BaseType::Money) => true,
-        _ => false,
-    }
+    BaseType::from_name(type_ref).as_ref() == Some(base)
 }
 
 /// Resolve Named/RefinableRef to underlying type expression
@@ -1100,19 +1047,10 @@ fn type_matches_ref(inst_type: &str, expected_type: &str, env: &TypeEnv) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse;
-    use crate::resolve::resolve;
-    use std::path::Path;
+    use crate::validate::testutil::run_validators;
 
     fn validate_src(src: &str) -> Vec<Diagnostic> {
-        let file = parse(src, Path::new("test.ilk")).unwrap();
-        let env = resolve(&file, Path::new("test.ilk")).0;
-        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
-        let mut errors = Vec::new();
-        for inst in file.instances() {
-            errors.extend(validate_structural(&ctx, inst));
-        }
-        errors
+        run_validators(src, &[validate_structural])
     }
 
     #[test]
@@ -1377,7 +1315,13 @@ cmd = Cmd {
             !errors.is_empty(),
             "Should reject mismatched refinement type"
         );
-        assert!(errors.iter().any(|e| e.message.contains("type mismatch") || e.message.contains("Type mismatch")), "{:?}", errors);
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("Refinement type mismatch")),
+            "{:?}",
+            errors
+        );
     }
 
     #[test]

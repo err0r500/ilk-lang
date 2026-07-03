@@ -8,7 +8,7 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 ## Pipeline Detail
 
 ```
-                    ┌─ PARSE (parser.rs)
+                    ┌─ PARSE (parser/)
                     │   chumsky combinators → AST
                     │   Output: File { MetaDecl, Instance, Import }
                     ↓
@@ -39,30 +39,31 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 
 **Type-Level** (declarations):
 - `BaseType` - Uuid, String, Int, Float, Bool, Date, Timestamp, Money, Wildcard
-- `TypeExpr` - recursive: Base, Named, Ref(&T), List, Struct, Union, Intersection, Concrete<T>
+- `TypeExpr` - recursive: Base, Named, RefinableRef(-T), Reference(&T), List, Struct, Union, Intersection, Concrete<T>, LitString/LitInt/LitBool (type-fixed literals)
 - `Field` - name, optional?, type, annotations
 - `StructKind` - Closed, Open{...}, Anonymous{_}
 - `Annotation` - @main, @source, @constraint, @doc
 - `ConstraintExpr` - boolean exprs, field access, collection ops
 
 **Instance-Level** (runtime):
-- `Value` - TypeRef, literals, Struct, List, Variant, BindingRef
+- `Value` - TypeRef, literals, Struct, List, ListType (typed list `[]T`), Variant, BindingRef, Refinement (`binding & {…}`)
 - `InstanceField` - field + origin tracking (Generated/Mapped/Computed)
 - `ListElement` - Value, BindingRef, Refinement
 
 **Top-Level**:
-- `MetaDecl` - type X = TypeExpr
+- `MetaDecl` - meta X = TypeExpr
 - `Instance` - x = Type Value
 - `Import` - import "path" [as alias]
 - `File` - collection with helper iterators
 
-### parser.rs
+### parser/
 
-Layers (bottom-up):
-1. **Primitives**: ident, ws, sep
-2. **Type parsers**: base_type, literal types, concrete, reference, cardinality, list, struct, constraint_expr, type_expr (combines with | and &)
-3. **Value parsers**: literals, type_ref, binding_ref, field_origin, instance_field/struct/list, value
-4. **Top-level**: meta_decl, instance, import, file
+Split by layer (bottom-up):
+1. **common.rs** - primitives: ident, ws, sep
+2. **types.rs** - base_type, literal types, concrete, reference, cardinality, list, struct, constraint_expr, annotations, type_expr (combines with | and &)
+3. **values.rs** - literals, type_ref, binding_ref, field_origin, instance_field/struct/list, refinements, value
+4. **items.rs** - meta_decl, instance, import, file
+5. **mod.rs** - `parse()` entry point + comment extraction
 
 ### resolve.rs
 
@@ -106,6 +107,7 @@ Constraint ops:
 - Collections: all, exists, unique, count
 - Access: x.y.z
 - String: templateVars(str), keys(struct)
+- Predicates: isPresent(field), isType(expr, TypeName)
 
 ### emit_schema.rs / emit_jsonschema.rs
 
@@ -145,7 +147,7 @@ All errors become `Diagnostic { span, message, severity, path }` → rendered vi
 
 ## Extending
 
-- **New syntax**: parser.rs (parser) + ast.rs (AST node)
+- **New syntax**: parser/ (parser) + ast.rs (AST node)
 - **New validation**: validate/ module + call from lib.rs
 - **New constraint op**: ConstraintExpr variant + constraint.rs handler
 - **New annotation**: ast.rs Annotation variant + relevant validator

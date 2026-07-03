@@ -158,10 +158,7 @@ pub fn resolve_with_imports(
 }
 
 fn is_base_type(name: &str) -> bool {
-    matches!(
-        name,
-        "Uuid" | "String" | "Int" | "Float" | "Bool" | "Date" | "Timestamp" | "Money"
-    )
+    BaseType::from_name(name).is_some()
 }
 
 fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Vec<(String, Span)>) {

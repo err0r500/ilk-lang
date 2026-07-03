@@ -17,6 +17,48 @@ pub enum BaseType {
     Money,
 }
 
+impl BaseType {
+    /// All nameable base types. Wildcard is spelled `*` and has no name.
+    pub const NAMES: [&'static str; 8] = [
+        "Uuid",
+        "String",
+        "Int",
+        "Float",
+        "Bool",
+        "Date",
+        "Timestamp",
+        "Money",
+    ];
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "Uuid" => Self::Uuid,
+            "String" => Self::String,
+            "Int" => Self::Int,
+            "Float" => Self::Float,
+            "Bool" => Self::Bool,
+            "Date" => Self::Date,
+            "Timestamp" => Self::Timestamp,
+            "Money" => Self::Money,
+            _ => return None,
+        })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Wildcard => "*",
+            Self::Uuid => "Uuid",
+            Self::String => "String",
+            Self::Int => "Int",
+            Self::Float => "Float",
+            Self::Bool => "Bool",
+            Self::Date => "Date",
+            Self::Timestamp => "Timestamp",
+            Self::Money => "Money",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Cardinality {
