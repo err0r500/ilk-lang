@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, DiagnosticCode};
 use crate::resolve::TypeEnv;
 use crate::span::{Span, S};
 use std::path::Path;
@@ -24,21 +24,12 @@ fn format_type(ty: &TypeExpr) -> String {
     }
 }
 
-fn get_value_type_name(value: &Value) -> Option<&str> {
-    match value {
-        Value::TypeRef(t) => Some(t.as_str()),
-        Value::LitString(_) => Some("String"),
-        Value::LitInt(_) => Some("Int"),
-        Value::LitBool(_) => Some("Bool"),
-        _ => None,
-    }
-}
-
 fn value_kind(value: &Value) -> &'static str {
     match value {
         Value::TypeRef(_) => "type reference",
         Value::LitString(_) => "string literal",
         Value::LitInt(_) => "int literal",
+        Value::LitFloat(_) => "float literal",
         Value::LitBool(_) => "bool literal",
         Value::BindingRef(_) => "binding reference",
         Value::Struct(_) => "struct",
@@ -99,11 +90,14 @@ fn validate_value_against_type(
         // Type references
         (Value::TypeRef(val_type), TypeExpr::Base(base)) => {
             if !type_ref_matches_base(val_type, base) {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Type mismatch: expected {:?}, got {}", base, val_type),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Type mismatch: expected {:?}, got {}", base, val_type),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::TypeMismatch),
+                );
             }
         }
 
@@ -114,105 +108,96 @@ fn validate_value_against_type(
 
         // TypeRef against Concrete - error, must provide literal
         (Value::TypeRef(val_type), TypeExpr::Concrete(inner)) => {
-            errors.push(Diagnostic::error(
-                value.span.clone(),
-                format!(
-                    "Concrete<{}> requires a literal value, got type reference {}",
-                    format_type(&inner.node),
-                    val_type
-                ),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    value.span.clone(),
+                    format!(
+                        "Concrete<{}> requires a literal value, got type reference {}",
+                        format_type(&inner.node),
+                        val_type
+                    ),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::ConcreteRequiresLiteral),
+            );
         }
 
-        // Concrete type - must provide a literal
-        (Value::LitString(_), TypeExpr::Concrete(inner)) => {
-            if !matches!(&inner.node, TypeExpr::Base(BaseType::String)) {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!(
-                        "String literal doesn't match expected type {}",
-                        format_type(&ty.node)
-                    ),
-                    ctx.path,
-                ));
-            }
-        }
-        (Value::LitInt(_), TypeExpr::Concrete(inner)) => {
-            if !matches!(&inner.node, TypeExpr::Base(BaseType::Int)) {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!(
-                        "Int literal doesn't match expected type {}",
-                        format_type(&ty.node)
-                    ),
-                    ctx.path,
-                ));
-            }
-        }
-        (Value::LitBool(_), TypeExpr::Concrete(inner)) => {
-            if !matches!(&inner.node, TypeExpr::Base(BaseType::Bool)) {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!(
-                        "Bool literal doesn't match expected type {}",
-                        format_type(&ty.node)
-                    ),
-                    ctx.path,
-                ));
+        // Concrete type - must provide a literal of the matching base type
+        (
+            Value::LitString(_) | Value::LitInt(_) | Value::LitFloat(_) | Value::LitBool(_),
+            TypeExpr::Concrete(inner),
+        ) => {
+            let base = literal_base_type(&value.node).expect("arm covers literals only");
+            if !matches!(&inner.node, TypeExpr::Base(b) if *b == base) {
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!(
+                            "{} literal doesn't match expected type {}",
+                            base.name(),
+                            format_type(&ty.node)
+                        ),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::TypeMismatch),
+                );
             }
         }
 
         // Schema-fixed literals - must match exactly
         (Value::LitString(s), TypeExpr::LitString(expected)) => {
             if s != expected {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Literal mismatch: expected \"{}\", got \"{}\"", expected, s),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Literal mismatch: expected \"{}\", got \"{}\"", expected, s),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::LiteralMismatch),
+                );
             }
         }
         (Value::LitInt(n), TypeExpr::LitInt(expected)) => {
             if n != expected {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Literal mismatch: expected {}, got {}", expected, n),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Literal mismatch: expected {}, got {}", expected, n),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::LiteralMismatch),
+                );
             }
         }
         (Value::LitBool(b), TypeExpr::LitBool(expected)) => {
             if b != expected {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Literal mismatch: expected {}, got {}", expected, b),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Literal mismatch: expected {}, got {}", expected, b),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::LiteralMismatch),
+                );
             }
         }
 
-        // Literal against open type - error
-        (Value::LitString(_), TypeExpr::Base(BaseType::String)) => {
-            errors.push(Diagnostic::error(
-                value.span.clone(),
-                "Cannot use literal for open String type - use Concrete<String>",
-                ctx.path,
-            ));
-        }
-        (Value::LitInt(_), TypeExpr::Base(BaseType::Int)) => {
-            errors.push(Diagnostic::error(
-                value.span.clone(),
-                "Cannot use literal for open Int type - use Concrete<Int>",
-                ctx.path,
-            ));
-        }
-        (Value::LitBool(_), TypeExpr::Base(BaseType::Bool)) => {
-            errors.push(Diagnostic::error(
-                value.span.clone(),
-                "Cannot use literal for open Bool type - use Concrete<Bool>",
-                ctx.path,
-            ));
+        // Literal against its own open base type - error
+        (
+            Value::LitString(_) | Value::LitInt(_) | Value::LitFloat(_) | Value::LitBool(_),
+            TypeExpr::Base(base),
+        ) if literal_base_type(&value.node).as_ref() == Some(base) => {
+            errors.push(
+                Diagnostic::error(
+                    value.span.clone(),
+                    format!(
+                        "Cannot use literal for open {0} type - use Concrete<{0}>",
+                        base.name()
+                    ),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::LiteralForOpenType),
+            );
         }
 
         // Structs
@@ -238,111 +223,38 @@ fn validate_value_against_type(
             if let Some(inst) = ctx.get_instance(name) {
                 let inst_type = &inst.type_name.node;
                 if !type_matches_ref(inst_type, expected_type, ctx.env) {
-                    errors.push(Diagnostic::error(
-                        value.span.clone(),
-                        format!(
-                            "Reference type mismatch: {} is type {}, expected {}",
-                            name, inst_type, expected_type
-                        ),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            value.span.clone(),
+                            format!(
+                                "Reference type mismatch: {} is type {}, expected {}",
+                                name, inst_type, expected_type
+                            ),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::ReferenceTypeMismatch),
+                    );
                 }
             } else {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Unknown instance: {}", name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Unknown instance: {}", name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::UnknownInstance),
+                );
             }
         }
 
         // Unions
         (_, TypeExpr::Union(variants)) => {
-            let mut matched = false;
-            for variant in variants {
-                let mut variant_errors = Vec::new();
-                validate_value_against_type(ctx, value, variant, &mut variant_errors);
-                if variant_errors.is_empty() {
-                    matched = true;
-                    break;
-                }
-            }
-            if !matched {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    "Value doesn't match any union variant",
-                    ctx.path,
-                ));
-            }
+            validate_union(ctx, value, variants, errors);
         }
 
         // Intersections
         (_, TypeExpr::Intersection(left, right)) => {
-            // Resolve types to check for open struct pattern
-            let left_resolved = resolve_type_expr(ctx, &left.node);
-            let right_resolved = resolve_type_expr(ctx, &right.node);
-
-            if matches!(left_resolved, Some(TypeExpr::Struct(StructKind::Open(_)))) {
-                // Open struct on left - extra fields allowed, validate only right's required fields
-                if let Value::Struct(val_fields) = &value.node {
-                    if let Some(TypeExpr::Struct(StructKind::Closed(type_fields))) = right_resolved
-                    {
-                        // Validate field types
-                        for type_field in type_fields {
-                            let name = &type_field.node.name.node;
-                            if let Some(val_field) =
-                                val_fields.iter().find(|f| &f.node.name.node == name)
-                            {
-                                validate_value_against_type(
-                                    ctx,
-                                    &val_field.node.value,
-                                    &type_field.node.ty,
-                                    errors,
-                                );
-                            }
-                        }
-                        // Check required fields are present
-                        for type_field in type_fields {
-                            if !type_field.node.optional {
-                                let name = &type_field.node.name.node;
-                                if !val_fields.iter().any(|f| &f.node.name.node == name) {
-                                    errors.push(Diagnostic::error(
-                                        value.span.clone(),
-                                        format!("Missing required field: {}", name),
-                                        ctx.path,
-                                    ));
-                                }
-                            }
-                        }
-                        return; // Don't fall through
-                    }
-                }
-                // Fallback: validate both sides
-                validate_value_against_type(ctx, value, left, errors);
-                validate_value_against_type(ctx, value, right, errors);
-            } else if let Value::Struct(val_fields) = &value.node {
-                // Both closed structs - merge with right-wins semantics
-                if let (
-                    Some(TypeExpr::Struct(StructKind::Closed(left_fields))),
-                    Some(TypeExpr::Struct(StructKind::Closed(right_fields))),
-                ) = (left_resolved, right_resolved)
-                {
-                    validate_intersection_struct(
-                        ctx,
-                        val_fields,
-                        left_fields,
-                        right_fields,
-                        &value.span,
-                        errors,
-                    );
-                } else {
-                    validate_value_against_type(ctx, value, left, errors);
-                    validate_value_against_type(ctx, value, right, errors);
-                }
-            } else {
-                validate_value_against_type(ctx, value, left, errors);
-                validate_value_against_type(ctx, value, right, errors);
-            }
+            validate_intersection(ctx, value, left, right, errors);
         }
 
         // BindingRef against Named/RefinableRef
@@ -353,22 +265,28 @@ fn validate_value_against_type(
             if let Some(inst) = ctx.get_instance(name) {
                 let inst_type = &inst.type_name.node;
                 if !type_matches_ref(inst_type, expected_type, ctx.env) {
-                    errors.push(Diagnostic::error(
-                        value.span.clone(),
-                        format!(
-                            "Reference type mismatch: {} is type {}, expected {}",
-                            name, inst_type, expected_type
-                        ),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            value.span.clone(),
+                            format!(
+                                "Reference type mismatch: {} is type {}, expected {}",
+                                name, inst_type, expected_type
+                            ),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::ReferenceTypeMismatch),
+                    );
                 }
             } else if !type_matches_ref(name, expected_type, ctx.env) {
                 // Not an instance and not a valid union variant
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Unknown instance: {}", name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Unknown instance: {}", name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::UnknownInstance),
+                );
             }
         }
 
@@ -380,14 +298,17 @@ fn validate_value_against_type(
             if let Some(inst) = ctx.get_instance(name) {
                 let inst_type = &inst.type_name.node;
                 if !type_matches_ref(inst_type, expected_type, ctx.env) {
-                    errors.push(Diagnostic::error(
-                        value.span.clone(),
-                        format!(
-                            "Refinement type mismatch: {} is {}, expected {}",
-                            name, inst_type, expected_type
-                        ),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            value.span.clone(),
+                            format!(
+                                "Refinement type mismatch: {} is {}, expected {}",
+                                name, inst_type, expected_type
+                            ),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::RefinementTypeMismatch),
+                    );
                 }
                 // Validate refinement fields against the instance
                 let is_refinable = matches!(ty.node, TypeExpr::RefinableRef(_));
@@ -399,11 +320,14 @@ fn validate_value_against_type(
                     errors,
                 );
             } else {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Unknown instance in refinement: {}", name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Unknown instance in refinement: {}", name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::UnknownInstance),
+                );
             }
         }
 
@@ -426,11 +350,14 @@ fn validate_value_against_type(
             if let Some(meta_decl) = ctx.env.get_meta(variant_name) {
                 validate_value_against_type(ctx, body, &meta_decl.node.body, errors);
             } else {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Unknown variant type: {}", variant_name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Unknown variant type: {}", variant_name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::UnknownVariant),
+                );
             }
         }
 
@@ -443,30 +370,148 @@ fn validate_value_against_type(
                 // Validate refinement fields against the instance
                 validate_refinement_fields_against_instance(ctx, fields, inst, false, errors);
             } else {
-                errors.push(Diagnostic::error(
-                    value.span.clone(),
-                    format!("Unknown instance in refinement: {}", name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        value.span.clone(),
+                        format!("Unknown instance in refinement: {}", name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::UnknownInstance),
+                );
             }
         }
 
         // Literals against struct types - reject (e.g., "ongoing" vs marker type Pending)
-        (Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_), TypeExpr::Struct(_)) => {
-            errors.push(Diagnostic::error(
-                value.span.clone(),
-                format!(
-                    "Type mismatch: {} cannot satisfy {}",
-                    value_kind(&value.node),
-                    format_type(&ty.node)
-                ),
-                ctx.path,
-            ));
+        (
+            Value::LitString(_) | Value::LitInt(_) | Value::LitFloat(_) | Value::LitBool(_),
+            TypeExpr::Struct(_),
+        ) => {
+            errors.push(
+                Diagnostic::error(
+                    value.span.clone(),
+                    format!(
+                        "Type mismatch: {} cannot satisfy {}",
+                        value_kind(&value.node),
+                        format_type(&ty.node)
+                    ),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::TypeMismatch),
+            );
         }
 
         _ => {
             // Other patterns handled elsewhere or valid
         }
+    }
+}
+
+/// Base type a literal value instantiates, if it is a literal.
+fn literal_base_type(value: &Value) -> Option<BaseType> {
+    match value {
+        Value::LitString(_) => Some(BaseType::String),
+        Value::LitInt(_) => Some(BaseType::Int),
+        Value::LitFloat(_) => Some(BaseType::Float),
+        Value::LitBool(_) => Some(BaseType::Bool),
+        _ => None,
+    }
+}
+
+/// A value satisfies a union when it satisfies at least one variant.
+fn validate_union(
+    ctx: &ValidationContext,
+    value: &S<Value>,
+    variants: &[S<TypeExpr>],
+    errors: &mut Vec<Diagnostic>,
+) {
+    let matched = variants.iter().any(|variant| {
+        let mut variant_errors = Vec::new();
+        validate_value_against_type(ctx, value, variant, &mut variant_errors);
+        variant_errors.is_empty()
+    });
+    if !matched {
+        errors.push(
+            Diagnostic::error(
+                value.span.clone(),
+                "Value doesn't match any union variant",
+                ctx.path,
+            )
+            .with_code(DiagnosticCode::UnionMismatch),
+        );
+    }
+}
+
+fn validate_intersection(
+    ctx: &ValidationContext,
+    value: &S<Value>,
+    left: &S<TypeExpr>,
+    right: &S<TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    // Resolve types to check for open struct pattern
+    let left_resolved = resolve_type_expr(ctx, &left.node);
+    let right_resolved = resolve_type_expr(ctx, &right.node);
+
+    if matches!(left_resolved, Some(TypeExpr::Struct(StructKind::Open(_)))) {
+        // Open struct on left - extra fields allowed, validate only right's required fields
+        if let Value::Struct(val_fields) = &value.node {
+            if let Some(TypeExpr::Struct(StructKind::Closed(type_fields))) = right_resolved {
+                // Validate field types
+                for type_field in type_fields {
+                    let name = &type_field.node.name.node;
+                    if let Some(val_field) = val_fields.iter().find(|f| &f.node.name.node == name) {
+                        validate_value_against_type(
+                            ctx,
+                            &val_field.node.value,
+                            &type_field.node.ty,
+                            errors,
+                        );
+                    }
+                }
+                // Check required fields are present
+                for type_field in type_fields {
+                    if !type_field.node.optional {
+                        let name = &type_field.node.name.node;
+                        if !val_fields.iter().any(|f| &f.node.name.node == name) {
+                            errors.push(
+                                Diagnostic::error(
+                                    value.span.clone(),
+                                    format!("Missing required field: {}", name),
+                                    ctx.path,
+                                )
+                                .with_code(DiagnosticCode::MissingRequiredField),
+                            );
+                        }
+                    }
+                }
+                return; // Don't fall through
+            }
+        }
+        // Fallback: validate both sides
+        validate_value_against_type(ctx, value, left, errors);
+        validate_value_against_type(ctx, value, right, errors);
+    } else if let Value::Struct(val_fields) = &value.node {
+        // Both closed structs - merge with right-wins semantics
+        if let (
+            Some(TypeExpr::Struct(StructKind::Closed(left_fields))),
+            Some(TypeExpr::Struct(StructKind::Closed(right_fields))),
+        ) = (left_resolved, right_resolved)
+        {
+            validate_intersection_struct(
+                ctx,
+                val_fields,
+                left_fields,
+                right_fields,
+                &value.span,
+                errors,
+            );
+        } else {
+            validate_value_against_type(ctx, value, left, errors);
+            validate_value_against_type(ctx, value, right, errors);
+        }
+    } else {
+        validate_value_against_type(ctx, value, left, errors);
+        validate_value_against_type(ctx, value, right, errors);
     }
 }
 
@@ -482,11 +527,14 @@ fn validate_struct(
     for val_field in val_fields {
         let name = &val_field.node.name.node;
         if !seen_fields.insert(name.as_str()) {
-            errors.push(Diagnostic::error(
-                val_field.node.name.span.clone(),
-                format!("Duplicate field: {}", name),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    val_field.node.name.span.clone(),
+                    format!("Duplicate field: {}", name),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::DuplicateField),
+            );
         }
     }
 
@@ -503,11 +551,14 @@ fn validate_struct(
                         errors,
                     );
                 } else {
-                    errors.push(Diagnostic::error(
-                        val_field.node.name.span.clone(),
-                        format!("Extra field not in schema: {}", name),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            val_field.node.name.span.clone(),
+                            format!("Extra field not in schema: {}", name),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::ExtraField),
+                    );
                 }
             }
 
@@ -518,17 +569,20 @@ fn validate_struct(
                 }
                 let name = &type_field.node.name.node;
                 if !val_fields.iter().any(|f| &f.node.name.node == name) {
-                    errors.push(Diagnostic::error(
-                        span.clone(),
-                        format!("Missing required field: {}", name),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            span.clone(),
+                            format!("Missing required field: {}", name),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::MissingRequiredField),
+                    );
                 }
             }
         }
 
         StructKind::Open(type_fields) => {
-            // Check required fields are present and match
+            // Type-check declared fields that are present; extra fields are allowed.
             for type_field in type_fields {
                 let name = &type_field.node.name.node;
                 if let Some(val_field) = val_fields.iter().find(|f| &f.node.name.node == name) {
@@ -540,20 +594,42 @@ fn validate_struct(
                     );
                 }
             }
+
+            // Required declared fields must be present, same as on the
+            // intersection path ({...} & {x! T}).
+            for type_field in type_fields {
+                if type_field.node.optional {
+                    continue;
+                }
+                let name = &type_field.node.name.node;
+                if !val_fields.iter().any(|f| &f.node.name.node == name) {
+                    errors.push(
+                        Diagnostic::error(
+                            span.clone(),
+                            format!("Missing required field: {}", name),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::MissingRequiredField),
+                    );
+                }
+            }
         }
 
         StructKind::Anonymous(types) => {
             // Check cardinality
             if val_fields.len() != types.len() {
-                errors.push(Diagnostic::error(
-                    span.clone(),
-                    format!(
-                        "Wrong field count: expected {}, got {}",
-                        types.len(),
-                        val_fields.len()
-                    ),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        span.clone(),
+                        format!(
+                            "Wrong field count: expected {}, got {}",
+                            types.len(),
+                            val_fields.len()
+                        ),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::WrongFieldCount),
+                );
                 return;
             }
 
@@ -581,11 +657,14 @@ fn validate_intersection_struct(
     for val_field in val_fields {
         let name = &val_field.node.name.node;
         if !seen_fields.insert(name.as_str()) {
-            errors.push(Diagnostic::error(
-                val_field.node.name.span.clone(),
-                format!("Duplicate field: {}", name),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    val_field.node.name.span.clone(),
+                    format!("Duplicate field: {}", name),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::DuplicateField),
+            );
         }
     }
 
@@ -605,24 +684,28 @@ fn validate_intersection_struct(
         if let Some(type_field) = merged_fields.get(name.as_str()) {
             validate_value_against_type(ctx, &val_field.node.value, &type_field.node.ty, errors);
         } else {
-            errors.push(Diagnostic::error(
-                val_field.node.name.span.clone(),
-                format!("Extra field not in schema: {}", name),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    val_field.node.name.span.clone(),
+                    format!("Extra field not in schema: {}", name),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::ExtraField),
+            );
         }
     }
 
     // Check required fields are present
     for (name, type_field) in &merged_fields {
-        if !type_field.node.optional {
-            if !val_fields.iter().any(|f| &f.node.name.node == *name) {
-                errors.push(Diagnostic::error(
+        if !type_field.node.optional && !val_fields.iter().any(|f| f.node.name.node == **name) {
+            errors.push(
+                Diagnostic::error(
                     span.clone(),
                     format!("Missing required field: {}", name),
                     ctx.path,
-                ));
-            }
+                )
+                .with_code(DiagnosticCode::MissingRequiredField),
+            );
         }
     }
 }
@@ -647,14 +730,17 @@ fn validate_list(
     };
 
     if !valid_card {
-        errors.push(Diagnostic::error(
-            span.clone(),
-            format!(
-                "List cardinality mismatch: got {} elements, expected {:?}",
-                len, card
-            ),
-            ctx.path,
-        ));
+        errors.push(
+            Diagnostic::error(
+                span.clone(),
+                format!(
+                    "List cardinality mismatch: got {} elements, expected {:?}",
+                    len, card
+                ),
+                ctx.path,
+            )
+            .with_code(DiagnosticCode::ListCardinalityMismatch),
+        );
     }
 
     // Check each element
@@ -675,22 +761,28 @@ fn validate_list(
                     };
                     if let Some(expected) = expected {
                         if !type_matches_ref(inst_type, expected, ctx.env) {
-                            errors.push(Diagnostic::error(
-                                elem.span.clone(),
-                                format!(
-                                    "List element type mismatch: {} is {}, expected {}",
-                                    name, inst_type, expected
-                                ),
-                                ctx.path,
-                            ));
+                            errors.push(
+                                Diagnostic::error(
+                                    elem.span.clone(),
+                                    format!(
+                                        "List element type mismatch: {} is {}, expected {}",
+                                        name, inst_type, expected
+                                    ),
+                                    ctx.path,
+                                )
+                                .with_code(DiagnosticCode::ReferenceTypeMismatch),
+                            );
                         }
                     }
                 } else {
-                    errors.push(Diagnostic::error(
-                        elem.span.clone(),
-                        format!("Unknown instance in list: {}", name),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            elem.span.clone(),
+                            format!("Unknown instance in list: {}", name),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::UnknownInstance),
+                    );
                 }
             }
             ListElement::Refinement(name, fields) => {
@@ -703,24 +795,30 @@ fn validate_list(
                         TypeExpr::Named(t) => t,
                         TypeExpr::Reference(t) => t,
                         _ => {
-                            errors.push(Diagnostic::error(
-                                elem.span.clone(),
-                                "Refinement on non-named type",
-                                ctx.path,
-                            ));
+                            errors.push(
+                                Diagnostic::error(
+                                    elem.span.clone(),
+                                    "Refinement on non-named type",
+                                    ctx.path,
+                                )
+                                .with_code(DiagnosticCode::InvalidRefinement),
+                            );
                             continue;
                         }
                     };
 
                     if !type_matches_ref(inst_type, expected_type, ctx.env) {
-                        errors.push(Diagnostic::error(
-                            elem.span.clone(),
-                            format!(
-                                "Refinement type mismatch: {} is {}, expected {}",
-                                name, inst_type, expected_type
-                            ),
-                            ctx.path,
-                        ));
+                        errors.push(
+                            Diagnostic::error(
+                                elem.span.clone(),
+                                format!(
+                                    "Refinement type mismatch: {} is {}, expected {}",
+                                    name, inst_type, expected_type
+                                ),
+                                ctx.path,
+                            )
+                            .with_code(DiagnosticCode::RefinementTypeMismatch),
+                        );
                     }
 
                     // Validate refinement fields against the instance's actual fields
@@ -736,11 +834,14 @@ fn validate_list(
                         errors,
                     );
                 } else {
-                    errors.push(Diagnostic::error(
-                        elem.span.clone(),
-                        format!("Unknown instance in refinement: {}", name),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            elem.span.clone(),
+                            format!("Unknown instance in refinement: {}", name),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::UnknownInstance),
+                    );
                 }
             }
         }
@@ -790,6 +891,10 @@ fn refinement_value_matches_type(
         (Value::LitBool(_), TypeExpr::Base(BaseType::Bool)) => true,
         (Value::LitBool(_), TypeExpr::Concrete(inner)) => {
             matches!(&inner.node, TypeExpr::Base(BaseType::Bool))
+        }
+        (Value::LitFloat(_), TypeExpr::Base(BaseType::Float)) => true,
+        (Value::LitFloat(_), TypeExpr::Concrete(inner)) => {
+            matches!(&inner.node, TypeExpr::Base(BaseType::Float))
         }
         // Literal against literal type - must match exactly
         (Value::LitString(s), TypeExpr::LitString(expected)) => s == expected,
@@ -870,7 +975,7 @@ fn validate_refinement_fields_against_instance(
             // Check if refinement value is a concrete literal
             let is_concrete = matches!(
                 &field.node.value.node,
-                Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_)
+                Value::LitString(_) | Value::LitInt(_) | Value::LitFloat(_) | Value::LitBool(_)
             );
 
             // Check if the instance field expects an open type (TypeRef like String, Int)
@@ -884,7 +989,7 @@ fn validate_refinement_fields_against_instance(
                         field_name, inst.type_name.node
                     ),
                     ctx.path,
-                ));
+                ).with_code(DiagnosticCode::NotRefinable));
             }
 
             // Validate refinement value type against declared field type
@@ -902,22 +1007,26 @@ fn validate_refinement_fields_against_instance(
 
             if let Some(field_type) = declared_type {
                 if !refinement_value_matches_type(ctx, &field.node.value.node, &field_type) {
-                    errors.push(Diagnostic::error(
-                        field.node.value.span.clone(),
-                        format!(
-                            "Type mismatch in refinement: field '{}' expects {}, got {}",
-                            field_name,
-                            format_type(&field_type),
-                            match &field.node.value.node {
-                                Value::LitInt(_) => "Int".to_string(),
-                                Value::LitString(_) => "String".to_string(),
-                                Value::LitBool(_) => "Bool".to_string(),
-                                Value::TypeRef(t) => t.clone(),
-                                _ => "?".to_string(),
-                            }
-                        ),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            field.node.value.span.clone(),
+                            format!(
+                                "Type mismatch in refinement: field '{}' expects {}, got {}",
+                                field_name,
+                                format_type(&field_type),
+                                match &field.node.value.node {
+                                    Value::LitInt(_) => "Int".to_string(),
+                                    Value::LitFloat(_) => "Float".to_string(),
+                                    Value::LitString(_) => "String".to_string(),
+                                    Value::LitBool(_) => "Bool".to_string(),
+                                    Value::TypeRef(t) => t.clone(),
+                                    _ => "?".to_string(),
+                                }
+                            ),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::RefinementTypeMismatch),
+                    );
                 }
             }
 
@@ -963,6 +1072,7 @@ fn validate_refinement_fields_against_instance(
                                         format_type(field_type),
                                         match &nested_field.node.value.node {
                                             Value::LitInt(_) => "Int".to_string(),
+                                            Value::LitFloat(_) => "Float".to_string(),
                                             Value::LitString(_) => "String".to_string(),
                                             Value::LitBool(_) => "Bool".to_string(),
                                             Value::TypeRef(t) => t.clone(),
@@ -970,12 +1080,12 @@ fn validate_refinement_fields_against_instance(
                                         }
                                     ),
                                     ctx.path,
-                                ));
+                                ).with_code(DiagnosticCode::RefinementTypeMismatch));
                             }
                         } else {
                             // Fallback: naive string comparison when type info unavailable
-                            let ref_type = get_value_type_name(&nested_field.node.value.node);
-                            let inst_type = get_value_type_name(&inst_nested_field.node.value.node);
+                            let ref_type = nested_field.node.value.node.type_name();
+                            let inst_type = inst_nested_field.node.value.node.type_name();
                             if let (Some(rt), Some(it)) = (ref_type, inst_type) {
                                 if rt != it {
                                     errors.push(Diagnostic::error(
@@ -985,25 +1095,31 @@ fn validate_refinement_fields_against_instance(
                                             nested_name, it, rt
                                         ),
                                         ctx.path,
-                                    ));
+                                    ).with_code(DiagnosticCode::RefinementTypeMismatch));
                                 }
                             }
                         }
                     } else {
-                        errors.push(Diagnostic::error(
-                            nested_field.node.name.span.clone(),
-                            format!("Unknown field in nested refinement: {}", nested_name),
-                            ctx.path,
-                        ));
+                        errors.push(
+                            Diagnostic::error(
+                                nested_field.node.name.span.clone(),
+                                format!("Unknown field in nested refinement: {}", nested_name),
+                                ctx.path,
+                            )
+                            .with_code(DiagnosticCode::UnknownField),
+                        );
                     }
                 }
             }
         } else {
-            errors.push(Diagnostic::error(
-                field.node.name.span.clone(),
-                format!("Unknown field in refinement: {}", field_name),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    field.node.name.span.clone(),
+                    format!("Unknown field in refinement: {}", field_name),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::UnknownField),
+            );
         }
     }
 }
@@ -1072,6 +1188,24 @@ mod tests {
     }
 
     #[test]
+    fn test_concrete_float() {
+        let errors = validate_src("meta Foo = {x Concrete<Float>}\nfoo = Foo {x 2.75}");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_float_literal_vs_open() {
+        let errors = validate_src("meta Foo = {x Float}\nfoo = Foo {x 2.75}");
+        assert!(!errors.is_empty()); // literal can't satisfy open Float
+    }
+
+    #[test]
+    fn test_int_literal_vs_concrete_float() {
+        let errors = validate_src("meta Foo = {x Concrete<Float>}\nfoo = Foo {x 3}");
+        assert!(!errors.is_empty()); // Int literal is not a Float
+    }
+
+    #[test]
     fn test_literal_vs_open() {
         let errors = validate_src("meta Foo = {x String}\nfoo = Foo {x \"hello\"}");
         assert!(!errors.is_empty()); // literal can't satisfy open type
@@ -1099,7 +1233,9 @@ mod tests {
     fn test_duplicate_field() {
         let errors = validate_src("meta Foo = {x Int}\nfoo = Foo {x Int, x Int}");
         assert!(
-            errors.iter().any(|e| e.message.contains("Duplicate field")),
+            errors
+                .iter()
+                .any(|e| e.code == DiagnosticCode::DuplicateField),
             "{:?}",
             errors
         );
@@ -1109,6 +1245,40 @@ mod tests {
     fn test_open_struct() {
         let errors = validate_src("meta Foo = {...}\nfoo = Foo {x Int, y String}");
         assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_open_struct_missing_required_field() {
+        // Required declared fields are enforced even without an intersection
+        let ty = TypeExpr::Struct(StructKind::Open(vec![S::new(
+            Field {
+                name: S::new("id".to_string(), 0..0),
+                optional: false,
+                ty: S::new(TypeExpr::Base(BaseType::Uuid), 0..0),
+                annotations: vec![],
+            },
+            0..0,
+        )]));
+        let env = crate::resolve::TypeEnv::new();
+        let ctx = ValidationContext::new(&env, Path::new("test.ilk"));
+        let mut errors = Vec::new();
+        validate_struct(
+            &ctx,
+            &[],
+            &match ty {
+                TypeExpr::Struct(ref k) => k.clone(),
+                _ => unreachable!(),
+            },
+            &(0..0),
+            &mut errors,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("Missing required field: id")),
+            "{:?}",
+            errors
+        );
     }
 
     // === Typed-list declarations in schema-style instances ===
@@ -1318,7 +1488,7 @@ cmd = Cmd {
         assert!(
             errors
                 .iter()
-                .any(|e| e.message.contains("Refinement type mismatch")),
+                .any(|e| e.code == DiagnosticCode::RefinementTypeMismatch),
             "{:?}",
             errors
         );
@@ -1357,7 +1527,7 @@ e = Entity {name String}
         assert!(
             errors
                 .iter()
-                .any(|e| e.message.contains("Missing required field")),
+                .any(|e| e.code == DiagnosticCode::MissingRequiredField),
             "{:?}",
             errors
         );
@@ -1394,7 +1564,9 @@ p = Process {status "ongoing"}
         );
         assert!(!errors.is_empty(), "Should reject value not in union");
         assert!(
-            errors.iter().any(|e| e.message.contains("union")),
+            errors
+                .iter()
+                .any(|e| e.code == DiagnosticCode::UnionMismatch),
             "{:?}",
             errors
         );

@@ -568,7 +568,7 @@ userIdTag = Tag {userId String} // inline comment
 | `*` | Wildcard — matches any type. Usable as a field meta or in struct cardinality notation. |
 | `Bool` | Boolean |
 | `Int` | Integer |
-| `Float` | Floating-point number |
+| `Float` | Floating-point number. Literals are written with a decimal point (`3.14`, `-0.5`, `1.0`) |
 | `String` | UTF-8 string |
 | `Uuid` | UUID value |
 | `Date` | Calendar date |
@@ -626,7 +626,7 @@ Three forms express how tightly a field's value is constrained:
 |--|--|--|
 | `String`, `Int`, … | Open | Instance must accept any value of that meta |
 | `Concrete<String>`, `Concrete<Int>`, … | Instance-fixed | Instance declares **one specific** value; the meta does not prescribe which |
-| `"hello"`, `42`, `true`, … | Type-fixed | Only this exact value is valid |
+| `"hello"`, `42`, `3.14`, `true`, … | Type-fixed | Only this exact value is valid |
 
 
 <TypeExample :example="exConstraints" />
@@ -897,7 +897,11 @@ of the listed sources, validation fails (`Ambiguous source`) and an explicit
 sub-field of that struct must be traceable to the named sources.
 
 **Reference types (`&T`) are exempt** — references point to bindings rather than
-instantiating them, so no data flows and `@source` validation does not apply.
+instantiating them, so no data flows and `@source` validation does not apply. The
+exemption can be overridden per field: putting an explicit `@source [ ... ]` directly on
+a reference field (`&T` or `[]&T`) opts it back in, and each referenced binding's fields
+are then validated against the listed sources (use cases: event tags, read-model
+handlers).
 
 ```ilk
 meta Command = {
@@ -1044,6 +1048,8 @@ The value is derived from multiple source fields. Paths are comma-separated dot-
 At least one path is required. All path roots must satisfy the same `@source` constraint
 as mapped fields. Use `compute()` for any type conversion (e.g. `String` → `Uuid`) —
 direct mappings require exact type equality; `compute()` defers validation to runtime.
+In JSON Schema output, computed fields are annotated with `x-computed-from` listing their
+source paths (like `x-generated` for generated fields).
 
 <TypeExample :example="exOrigins" />
 
@@ -1175,9 +1181,10 @@ annotation needed. Files without a `@main` instance are pure meta libraries. Imp
 loaded recursively; circular imports are an error.
 
 Imported names share a **flat namespace** with the importing file: declaring a name that
-an import already provides is a duplicate-declaration error. An `import "..." as alias`
-form is accepted by the parser, but namespacing (`alias.SomeType`) is **not yet
-implemented** — the alias is currently ignored.
+an import already provides is a duplicate-declaration error, and two imports providing
+different declarations under the same name is a conflicting-import error (the same
+declaration reachable through several imports — a diamond — is fine). There is no
+namespacing: `import "..." as alias` is a parse error.
 
 
 
@@ -1196,7 +1203,7 @@ A minimal expression language for `@constraint` predicates.
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
-| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / bool / struct / list) |
+| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list) |
 
 ### Operators
 
@@ -1205,9 +1212,9 @@ A minimal expression language for `@constraint` predicates.
 | `&&` | Logical and |
 | `\|\|` | Logical or |
 | `!` | Logical not |
-| `==`, `!=` | Equality, inequality |
+| `==`, `!=` | Equality, inequality. Structs and lists compare deeply (lists are order-sensitive) |
 | `in` | Set membership (`x in set`) |
-| `<`, `<=`, `>`, `>=` | Numeric comparison |
+| `<`, `<=`, `>`, `>=` | Numeric comparison (Int and Float operands may be mixed) |
 
 Examples:
 

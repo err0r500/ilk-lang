@@ -54,14 +54,11 @@ pub(super) fn cardinality<'a>(
     let num = text::int(10).map(|s: &str| s.parse::<usize>().expect("valid usize from parser"));
 
     choice((
-        num.clone()
-            .then_ignore(just(".."))
-            .then(num.clone())
+        num.then_ignore(just(".."))
+            .then(num)
             .map(|(n, m)| Cardinality::Range(n, m)),
-        num.clone()
-            .then_ignore(just(".."))
-            .map(Cardinality::AtLeast),
-        just("..").ignore_then(num.clone()).map(Cardinality::AtMost),
+        num.then_ignore(just("..")).map(Cardinality::AtLeast),
+        just("..").ignore_then(num).map(Cardinality::AtMost),
         num.map(Cardinality::Exact),
         empty().to(Cardinality::Any),
     ))
@@ -443,8 +440,14 @@ mod tests {
         type_expr().parse(s).into_result().unwrap()
     }
 
-    fn parse_type_err(s: &str) {
-        assert!(type_expr().parse(s).into_result().is_err());
+    /// Parse expecting failure; returns the joined error messages so tests
+    /// can assert which error was raised.
+    fn parse_type_err(s: &str) -> String {
+        let errs = type_expr().parse(s).into_result().unwrap_err();
+        errs.iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn parse_ann(s: &str) -> S<Annotation> {
@@ -1137,11 +1140,17 @@ mod tests {
 
     #[test]
     fn test_reject_empty() {
-        parse_type_err("");
+        let msg = parse_type_err("");
+        assert!(msg.contains("found end of input"), "{}", msg);
     }
 
     #[test]
     fn test_reject_unclosed_struct() {
-        parse_type_err("{x Int");
+        let msg = parse_type_err("{x Int");
+        assert!(
+            msg.contains("found end of input") && msg.contains("'}'"),
+            "{}",
+            msg
+        );
     }
 }

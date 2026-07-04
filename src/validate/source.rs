@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, DiagnosticCode};
 use crate::span::S;
 use crate::validate::structural::{get_field_type_from_type_expr, ValidationContext};
 
@@ -135,6 +135,7 @@ fn resolve_nested_type<'a>(
         .map(|t| &t.node)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_ref_instance_fields(
     ctx: &ValidationContext,
     ref_name: &str,
@@ -418,11 +419,14 @@ fn validate_refinement_field(
         }
         FieldOrigin::Mapped(path) => {
             if !source_allows_path(sources, path) {
-                errors.push(Diagnostic::error(
-                    field.span.clone(),
-                    format!("Source path '{}' not allowed by @source", path.join(".")),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        field.span.clone(),
+                        format!("Source path '{}' not allowed by @source", path.join(".")),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::SourcePathNotAllowed),
+                );
             } else {
                 validate_source_path(ctx, path, field, parent_fields, errors);
             }
@@ -430,11 +434,14 @@ fn validate_refinement_field(
         FieldOrigin::Computed(paths) => {
             for path in paths {
                 if !source_allows_path(sources, path) {
-                    errors.push(Diagnostic::error(
-                        field.span.clone(),
-                        format!("Compute path '{}' not allowed by @source", path.join(".")),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            field.span.clone(),
+                            format!("Compute path '{}' not allowed by @source", path.join(".")),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::SourcePathNotAllowed),
+                    );
                 }
             }
         }
@@ -490,11 +497,14 @@ fn validate_refinement_field(
 
             let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
             if !found && !is_concrete_value(&field.node.value) {
-                errors.push(Diagnostic::error(
-                    field.span.clone(),
-                    format!("No source found for field '{}'", name),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        field.span.clone(),
+                        format!("No source found for field '{}'", name),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::NoSourceFound),
+                );
             }
         }
     }
@@ -515,6 +525,7 @@ fn validate_none_origin_struct(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_none_origin_refinement(
     ctx: &ValidationContext,
     name: &str,
@@ -556,9 +567,7 @@ fn validate_none_origin_list(
     errors: &mut Vec<Diagnostic>,
 ) {
     let field_type_expr = resolve_nested_type(ctx, parent_type, name);
-    let is_ref_list = field_type_expr
-        .map(|t| is_reference_list(t))
-        .unwrap_or(true);
+    let is_ref_list = field_type_expr.map(is_reference_list).unwrap_or(true);
 
     let elem_type = field_type_expr.and_then(|t| match t {
         TypeExpr::List(_, inner) => Some(&inner.node),
@@ -661,11 +670,14 @@ fn validate_source_path(
                 match nested {
                     Some(fields) => current_fields = fields,
                     None => {
-                        errors.push(Diagnostic::error(
-                            field.span.clone(),
-                            format!("Source path '{}' not found", path.join(".")),
-                            ctx.path,
-                        ));
+                        errors.push(
+                            Diagnostic::error(
+                                field.span.clone(),
+                                format!("Source path '{}' not found", path.join(".")),
+                                ctx.path,
+                            )
+                            .with_code(DiagnosticCode::SourcePathNotFound),
+                        );
                         return;
                     }
                 }
@@ -673,24 +685,30 @@ fn validate_source_path(
                 source_field = Some(f);
             }
         } else {
-            errors.push(Diagnostic::error(
-                field.span.clone(),
-                format!("Source path '{}' not found", path.join(".")),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    field.span.clone(),
+                    format!("Source path '{}' not found", path.join(".")),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::SourcePathNotFound),
+            );
             return;
         }
     }
 
     if !field.node.optional && source_optional {
-        errors.push(Diagnostic::error(
-            field.span.clone(),
-            format!(
-                "Mandatory field cannot depend on optional source '{}'",
-                path.join(".")
-            ),
-            ctx.path,
-        ));
+        errors.push(
+            Diagnostic::error(
+                field.span.clone(),
+                format!(
+                    "Mandatory field cannot depend on optional source '{}'",
+                    path.join(".")
+                ),
+                ctx.path,
+            )
+            .with_code(DiagnosticCode::OptionalSourceForMandatoryField),
+        );
     }
 
     if let Some(src) = source_field {
@@ -698,33 +716,26 @@ fn validate_source_path(
         let dst_type = get_value_type(&field.node.value.node);
         if let (Some(s), Some(d)) = (src_type, dst_type) {
             if s != d {
-                errors.push(Diagnostic::error(
-                    field.span.clone(),
-                    format!(
-                        "Type mismatch: source '{}' is {} but field is {}",
-                        path.join("."),
-                        s,
-                        d
-                    ),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        field.span.clone(),
+                        format!(
+                            "Type mismatch: source '{}' is {} but field is {}",
+                            path.join("."),
+                            s,
+                            d
+                        ),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::SourceTypeMismatch),
+                );
             }
         }
     }
 }
 
 fn get_value_type(value: &Value) -> Option<String> {
-    match value {
-        Value::TypeRef(t) => Some(t.clone()),
-        Value::LitString(_) => Some("String".to_string()),
-        Value::LitInt(_) => Some("Int".to_string()),
-        Value::LitBool(_) => Some("Bool".to_string()),
-        // Typed-list declaration: signature is `[]<element>` so flow between
-        // mismatched element types (e.g. []String -> []Int) is caught. Cardinality
-        // is ignored — only the element type governs data-flow compatibility.
-        Value::ListType(_, elem) => Some(format!("[]{}", get_value_type(&elem.node)?)),
-        _ => None,
-    }
+    value.type_name()
 }
 
 fn check_implicit_source(
@@ -772,43 +783,52 @@ fn check_implicit_source(
             let (root, src_field) = matches[0];
 
             if !field.node.optional && src_field.node.optional {
-                errors.push(Diagnostic::error(
-                    field.span.clone(),
-                    format!(
-                        "Mandatory field cannot depend on optional source '{}.{}'",
-                        root, field_name
-                    ),
-                    ctx.path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        field.span.clone(),
+                        format!(
+                            "Mandatory field cannot depend on optional source '{}.{}'",
+                            root, field_name
+                        ),
+                        ctx.path,
+                    )
+                    .with_code(DiagnosticCode::OptionalSourceForMandatoryField),
+                );
             }
 
             let src_type = get_value_type(&src_field.node.value.node);
             let dst_type = get_value_type(&field.node.value.node);
             if let (Some(s), Some(d)) = (src_type, dst_type) {
                 if s != d {
-                    errors.push(Diagnostic::error(
-                        field.span.clone(),
-                        format!(
-                            "Type mismatch: source '{}.{}' is {} but field is {}",
-                            root, field_name, s, d
-                        ),
-                        ctx.path,
-                    ));
+                    errors.push(
+                        Diagnostic::error(
+                            field.span.clone(),
+                            format!(
+                                "Type mismatch: source '{}.{}' is {} but field is {}",
+                                root, field_name, s, d
+                            ),
+                            ctx.path,
+                        )
+                        .with_code(DiagnosticCode::SourceTypeMismatch),
+                    );
                 }
             }
             true
         }
         _ => {
             let sources_list: Vec<_> = matches.iter().map(|(r, _)| *r).collect();
-            errors.push(Diagnostic::error(
-                field.span.clone(),
-                format!(
-                    "Ambiguous source for '{}': found in [{}]. Use explicit mapping.",
-                    field_name,
-                    sources_list.join(", ")
-                ),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    field.span.clone(),
+                    format!(
+                        "Ambiguous source for '{}': found in [{}]. Use explicit mapping.",
+                        field_name,
+                        sources_list.join(", ")
+                    ),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::AmbiguousSource),
+            );
             true
         }
     }
@@ -817,7 +837,7 @@ fn check_implicit_source(
 fn is_concrete_value(value: &S<Value>) -> bool {
     matches!(
         value.node,
-        Value::LitString(_) | Value::LitInt(_) | Value::LitBool(_)
+        Value::LitString(_) | Value::LitInt(_) | Value::LitFloat(_) | Value::LitBool(_)
     )
 }
 
@@ -1251,7 +1271,7 @@ endpoint = Endpoint {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("not allowed by @source"));
+        assert_eq!(errors[0].code, DiagnosticCode::SourcePathNotAllowed);
     }
 
     #[test]
@@ -1275,7 +1295,7 @@ endpoint = Endpoint {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("not allowed by @source"));
+        assert_eq!(errors[0].code, DiagnosticCode::SourcePathNotAllowed);
     }
 
     #[test]
@@ -1296,9 +1316,10 @@ cmd = Cmd {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0]
-            .message
-            .contains("Mandatory field cannot depend on optional source"));
+        assert_eq!(
+            errors[0].code,
+            DiagnosticCode::OptionalSourceForMandatoryField
+        );
     }
 
     #[test]
@@ -1318,9 +1339,10 @@ cmd = Cmd {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0]
-            .message
-            .contains("Mandatory field cannot depend on optional source"));
+        assert_eq!(
+            errors[0].code,
+            DiagnosticCode::OptionalSourceForMandatoryField
+        );
     }
 
     #[test]
@@ -1471,7 +1493,7 @@ cmd = Cmd {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("Ambiguous source"));
+        assert_eq!(errors[0].code, DiagnosticCode::AmbiguousSource);
         assert!(errors[0].message.contains("fields"));
         assert!(errors[0].message.contains("auth"));
     }
@@ -1496,7 +1518,7 @@ cmd = Cmd {
 "#,
         );
         assert!(!errors.is_empty());
-        assert!(errors[0].message.contains("Ambiguous source"));
+        assert_eq!(errors[0].code, DiagnosticCode::AmbiguousSource);
         assert!(errors[0].message.contains("fields"));
         assert!(errors[0].message.contains("auth"));
     }
@@ -1711,6 +1733,85 @@ ev = Event {
             "Expected 'No source found for field name', got: {:?}",
             errors.iter().map(|e| &e.message).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_explicit_source_on_single_ref_valid() {
+        let errors = validate_source_src(
+            r#"
+meta Tag = {name String}
+meta Event = {
+    fields {...}
+    @source [fields]
+    tag &Tag
+}
+t = Tag {name String}
+ev = Event {
+    fields {name String}
+    tag t
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_explicit_source_on_single_ref_missing() {
+        let errors = validate_source_src(
+            r#"
+meta Tag = {name String}
+meta Event = {
+    fields {...}
+    @source [fields]
+    tag &Tag
+}
+t = Tag {name String}
+ev = Event {
+    fields {x Int}
+    tag t
+}
+"#,
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("No source found for field 'name'")),
+            "{:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_ref_list_without_own_source_stays_exempt() {
+        // No @source on the reference-list field itself: the design-level
+        // exemption applies even inside a parent @source context.
+        let errors = validate_source_src(
+            r#"
+meta Tag = {name String}
+meta Query = {
+    params {...}
+    tags []&Tag
+    @source [params]
+    result {...}
+}
+meta Wrapper = {
+    auth {...}
+    @source [auth]
+    query Query
+}
+t = Tag {name String}
+q = Query {
+    params {userId Uuid}
+    tags [t]
+    result {userId Uuid = params.userId}
+}
+w = Wrapper {
+    auth {userId Uuid}
+    query q
+}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]

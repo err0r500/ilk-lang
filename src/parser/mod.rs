@@ -4,7 +4,7 @@ pub mod types;
 pub mod values;
 
 use crate::ast::Comment;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, DiagnosticCode};
 use std::path::Path;
 
 pub use types::type_expr;
@@ -51,6 +51,7 @@ pub fn parse(src: &str, path: &Path) -> Result<crate::ast::File, Vec<Diagnostic>
             errs.into_iter()
                 .map(|e| {
                     Diagnostic::error(e.span().into_range(), e.to_string(), path.to_path_buf())
+                        .with_code(DiagnosticCode::Parse)
                 })
                 .collect()
         })

@@ -131,10 +131,6 @@ impl<'a> Formatter<'a> {
         self.write("import \"");
         self.write(&imp.path.node);
         self.write("\"");
-        if let Some(alias) = &imp.alias {
-            self.write(" as ");
-            self.write(&alias.node);
-        }
         self.writeln();
     }
 
@@ -502,6 +498,8 @@ impl<'a> Formatter<'a> {
                 self.write("\"");
             }
             Value::LitInt(n) => self.write(&n.to_string()),
+            // {:?} keeps a trailing ".0" so the output re-parses as a float
+            Value::LitFloat(n) => self.write(&format!("{:?}", n)),
             Value::LitBool(b) => self.write(if *b { "true" } else { "false" }),
             Value::BindingRef(s) => self.write(s),
             Value::Struct(fields) => self.format_instance_struct(fields),
@@ -696,6 +694,65 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_format_representative_file() {
+        let src = r#"// header
+import "./base.ilk"
+meta Status = Pending | Active
+meta Event = {...} & {id! Uuid, ts Int}
+@doc "A board"
+meta Board = {
+@constraint count(events) > 0
+events []-Event
+status Status
+}
+ev = Event {id Uuid, ts Int}
+@main
+@doc "main board"
+board = Board {
+    events [ev & {ts Int}]
+    status Pending
+}
+"#;
+        insta::assert_snapshot!(roundtrip(src));
+    }
+
+    #[test]
+    fn test_format_idempotent_on_examples() {
+        // parse → format must reach a fixed point: formatting the formatted
+        // output again yields the same text.
+        fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    collect(&path, out);
+                } else if path.extension().is_some_and(|e| e == "ilk") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut files = Vec::new();
+        collect(std::path::Path::new("examples"), &mut files);
+        files.sort();
+        assert!(!files.is_empty());
+        for path in files {
+            let src = std::fs::read_to_string(&path).unwrap();
+            let parsed = parser::parse(&src, &path)
+                .unwrap_or_else(|e| panic!("{} does not parse: {:?}", path.display(), e));
+            let once = format(&parsed, &src);
+            let reparsed = parser::parse(&once, &path).unwrap_or_else(|e| {
+                panic!("formatted {} does not re-parse: {:?}", path.display(), e)
+            });
+            let twice = format(&reparsed, &once);
+            assert_eq!(
+                once,
+                twice,
+                "formatting {} is not idempotent",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
     fn test_format_simple_type() {
         let src = "meta Foo = String\n";
         let out = roundtrip(src);
@@ -735,15 +792,17 @@ mod tests {
     }
 
     #[test]
-    fn test_import() {
-        let src = "import \"./base.ilk\"\n";
+    fn test_format_float_roundtrips() {
+        // ".0" must survive so the output re-parses as a float, not an int
+        let src = "foo = Foo {a 1.0}\n";
         let out = roundtrip(src);
         assert_eq!(out, src);
+        assert_eq!(roundtrip("bar = Bar {b 2.75}\n"), "bar = Bar {b 2.75}\n");
     }
 
     #[test]
-    fn test_import_with_alias() {
-        let src = "import \"./base.ilk\" as base\n";
+    fn test_import() {
+        let src = "import \"./base.ilk\"\n";
         let out = roundtrip(src);
         assert_eq!(out, src);
     }

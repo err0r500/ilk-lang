@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, DiagnosticCode};
 use crate::span::{Span, S};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -64,11 +64,14 @@ pub fn resolve_with_imports(
         if let Item::MetaDecl(decl) = &item.node {
             let name = &decl.name.node;
             if env.metas.contains_key(name) {
-                errors.push(Diagnostic::error(
-                    decl.name.span.clone(),
-                    format!("Duplicate meta: {}", name),
-                    path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        decl.name.span.clone(),
+                        format!("Duplicate meta: {}", name),
+                        path,
+                    )
+                    .with_code(DiagnosticCode::DuplicateMeta),
+                );
             } else {
                 env.metas
                     .insert(name.clone(), S::new(decl.clone(), item.span.clone()));
@@ -102,11 +105,14 @@ pub fn resolve_with_imports(
         if let Item::Instance(inst) = &item.node {
             let name = &inst.name.node;
             if env.instances.contains_key(name) {
-                errors.push(Diagnostic::error(
-                    inst.name.span.clone(),
-                    format!("Duplicate instance: {}", name),
-                    path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        inst.name.span.clone(),
+                        format!("Duplicate instance: {}", name),
+                        path,
+                    )
+                    .with_code(DiagnosticCode::DuplicateInstance),
+                );
             } else {
                 env.instances
                     .insert(name.clone(), S::new(inst.clone(), item.span.clone()));
@@ -117,11 +123,10 @@ pub fn resolve_with_imports(
             for ann in &inst.annotations {
                 if matches!(ann.node, Annotation::Main) {
                     if env.main_instance.is_some() {
-                        errors.push(Diagnostic::error(
-                            ann.span.clone(),
-                            "Multiple @main annotations",
-                            path,
-                        ));
+                        errors.push(
+                            Diagnostic::error(ann.span.clone(), "Multiple @main annotations", path)
+                                .with_code(DiagnosticCode::MultipleMain),
+                        );
                     } else {
                         env.main_instance = Some(name.clone());
                     }
@@ -142,11 +147,14 @@ pub fn resolve_with_imports(
         if let Item::Instance(inst) = &item.node {
             let type_name = &inst.type_name.node;
             if !env.metas.contains_key(type_name) && !is_base_type(type_name) {
-                errors.push(Diagnostic::error(
-                    inst.type_name.span.clone(),
-                    format!("Unknown type: {}", type_name),
-                    path,
-                ));
+                errors.push(
+                    Diagnostic::error(
+                        inst.type_name.span.clone(),
+                        format!("Unknown type: {}", type_name),
+                        path,
+                    )
+                    .with_code(DiagnosticCode::UnknownType),
+                );
             }
         }
     }
@@ -161,98 +169,94 @@ fn is_base_type(name: &str) -> bool {
     BaseType::from_name(name).is_some()
 }
 
-fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Vec<(String, Span)>) {
+/// Pre-order walk over a type expression tree. `f` is called on every node and
+/// returns whether to descend into that node's children.
+fn walk_type_expr(ty: &S<TypeExpr>, f: &mut impl FnMut(&S<TypeExpr>) -> bool) {
+    if !f(ty) {
+        return;
+    }
     match &ty.node {
+        TypeExpr::Concrete(inner) | TypeExpr::List(_, inner) => walk_type_expr(inner, f),
         TypeExpr::Union(variants) => {
+            for v in variants {
+                walk_type_expr(v, f);
+            }
+        }
+        TypeExpr::Intersection(left, right) => {
+            walk_type_expr(left, f);
+            walk_type_expr(right, f);
+        }
+        TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
+            for field in fields {
+                walk_type_expr(&field.node.ty, f);
+            }
+        }
+        TypeExpr::Struct(StructKind::Anonymous(types)) => {
+            for ty in types.iter().flatten() {
+                walk_type_expr(ty, f);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_implicit_union_variants(ty: &S<TypeExpr>, env: &TypeEnv, out: &mut Vec<(String, Span)>) {
+    walk_type_expr(ty, &mut |node| {
+        if let TypeExpr::Union(variants) = &node.node {
             for v in variants {
                 if let TypeExpr::Named(name) = &v.node {
                     if !env.metas.contains_key(name) && !is_base_type(name) {
                         out.push((name.clone(), v.span.clone()));
                     }
                 }
-                collect_implicit_union_variants(v, env, out);
             }
         }
-        TypeExpr::Concrete(inner) => collect_implicit_union_variants(inner, env, out),
-        TypeExpr::List(_, inner) => collect_implicit_union_variants(inner, env, out),
-        TypeExpr::Intersection(left, right) => {
-            collect_implicit_union_variants(left, env, out);
-            collect_implicit_union_variants(right, env, out);
-        }
-        TypeExpr::Struct(kind) => match kind {
-            StructKind::Closed(fields) | StructKind::Open(fields) => {
-                for field in fields {
-                    collect_implicit_union_variants(&field.node.ty, env, out);
-                }
-            }
-            StructKind::Anonymous(types) => {
-                for ty in types.iter().flatten() {
-                    collect_implicit_union_variants(ty, env, out);
-                }
-            }
-        },
-        _ => {}
-    }
+        true
+    });
 }
 
 fn check_meta_refs(ty: &S<TypeExpr>, env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
-    match &ty.node {
-        TypeExpr::Named(name) => {
-            if !env.metas.contains_key(name) {
-                errors.push(Diagnostic::error(
-                    ty.span.clone(),
-                    format!("Unknown type: {}", name),
-                    path,
-                ));
+    walk_type_expr(ty, &mut |node| {
+        match &node.node {
+            TypeExpr::Named(name) if !env.metas.contains_key(name) => {
+                errors.push(
+                    Diagnostic::error(node.span.clone(), format!("Unknown type: {}", name), path)
+                        .with_code(DiagnosticCode::UnknownType),
+                );
             }
+            TypeExpr::Reference(name) if !env.metas.contains_key(name) => {
+                errors.push(
+                    Diagnostic::error(
+                        node.span.clone(),
+                        format!("Unknown meta in reference: {}", name),
+                        path,
+                    )
+                    .with_code(DiagnosticCode::UnknownMetaInReference),
+                );
+            }
+            _ => {}
         }
-        TypeExpr::Reference(name) => {
-            if !env.metas.contains_key(name) {
-                errors.push(Diagnostic::error(
-                    ty.span.clone(),
-                    format!("Unknown meta in reference: {}", name),
-                    path,
-                ));
-            }
-        }
-        TypeExpr::Concrete(inner) => check_meta_refs(inner, env, path, errors),
-        TypeExpr::List(_, inner) => check_meta_refs(inner, env, path, errors),
-        TypeExpr::Union(variants) => {
-            for v in variants {
-                check_meta_refs(v, env, path, errors);
-            }
-        }
-        TypeExpr::Intersection(left, right) => {
-            check_meta_refs(left, env, path, errors);
-            check_meta_refs(right, env, path, errors);
-        }
-        TypeExpr::Struct(kind) => match kind {
-            StructKind::Closed(fields) | StructKind::Open(fields) => {
-                for field in fields {
-                    check_meta_refs(&field.node.ty, env, path, errors);
-                }
-            }
-            StructKind::Anonymous(types) => {
-                for ty in types.iter().flatten() {
-                    check_meta_refs(ty, env, path, errors);
-                }
-            }
-        },
-        _ => {}
-    }
+        true
+    });
 }
 
 fn check_cycles(env: &TypeEnv, path: &Path, errors: &mut Vec<Diagnostic>) {
     let mut visited = HashSet::new();
     let mut in_stack = HashSet::new();
 
-    for name in env.metas.keys() {
-        if !visited.contains(name) {
+    // Sorted so the DFS entry points — and thus the reported cycle edge — are
+    // deterministic across runs.
+    let mut names: Vec<&String> = env.metas.keys().collect();
+    names.sort();
+    for name in names {
+        if !visited.contains(name.as_str()) {
             check_cycles_dfs(name, env, path, &mut visited, &mut in_stack, errors);
         }
     }
 }
 
+/// Returns true when a cycle was reported somewhere below `name`, so callers
+/// stop exploring and a single cycle yields a single diagnostic.
 fn check_cycles_dfs(
     name: &str,
     env: &TypeEnv,
@@ -260,63 +264,55 @@ fn check_cycles_dfs(
     visited: &mut HashSet<String>,
     in_stack: &mut HashSet<String>,
     errors: &mut Vec<Diagnostic>,
-) {
+) -> bool {
     visited.insert(name.to_string());
     in_stack.insert(name.to_string());
 
+    let mut reported = false;
     if let Some(decl) = env.metas.get(name) {
         let deps = collect_direct_deps(&decl.node.body);
         for dep in deps {
             if in_stack.contains(&dep) {
-                errors.push(Diagnostic::error(
-                    decl.node.name.span.clone(),
-                    format!("Cyclic reference: {} -> {}", name, dep),
-                    path,
-                ));
-            } else if !visited.contains(&dep) {
-                check_cycles_dfs(&dep, env, path, visited, in_stack, errors);
+                errors.push(
+                    Diagnostic::error(
+                        decl.node.name.span.clone(),
+                        format!("Cyclic reference: {} -> {}", name, dep),
+                        path,
+                    )
+                    .with_code(DiagnosticCode::CyclicReference),
+                );
+                reported = true;
+                break;
+            } else if !visited.contains(&dep)
+                && check_cycles_dfs(&dep, env, path, visited, in_stack, errors)
+            {
+                reported = true;
+                break;
             }
         }
     }
 
     in_stack.remove(name);
+    reported
 }
 
 fn collect_direct_deps(ty: &S<TypeExpr>) -> Vec<String> {
     let mut deps = Vec::new();
-    collect_deps_inner(&ty.node, &mut deps);
+    walk_type_expr(ty, &mut |node| match &node.node {
+        TypeExpr::Named(name) | TypeExpr::Reference(name) => {
+            deps.push(name.clone());
+            true
+        }
+        // A list is not a direct containment: `meta A = []A` is well-founded
+        // because the empty list terminates the recursion. Any cycle running
+        // through a list element is therefore not an error, and cycles among
+        // the element types themselves are found when DFS starts from them.
+        TypeExpr::List(_, _) => false,
+        _ => true,
+    });
+    deps.sort();
+    deps.dedup();
     deps
-}
-
-fn collect_deps_inner(ty: &TypeExpr, deps: &mut Vec<String>) {
-    match ty {
-        TypeExpr::Named(name) => deps.push(name.clone()),
-        TypeExpr::Reference(name) => deps.push(name.clone()),
-        TypeExpr::Concrete(inner) => collect_deps_inner(&inner.node, deps),
-        TypeExpr::List(_, inner) => collect_deps_inner(&inner.node, deps),
-        TypeExpr::Union(variants) => {
-            for v in variants {
-                collect_deps_inner(&v.node, deps);
-            }
-        }
-        TypeExpr::Intersection(left, right) => {
-            collect_deps_inner(&left.node, deps);
-            collect_deps_inner(&right.node, deps);
-        }
-        TypeExpr::Struct(kind) => match kind {
-            StructKind::Closed(fields) | StructKind::Open(fields) => {
-                for field in fields {
-                    collect_deps_inner(&field.node.ty.node, deps);
-                }
-            }
-            StructKind::Anonymous(types) => {
-                for ty in types.iter().flatten() {
-                    collect_deps_inner(&ty.node, deps);
-                }
-            }
-        },
-        _ => {}
-    }
 }
 
 #[cfg(test)]
@@ -359,26 +355,52 @@ mod tests {
     #[test]
     fn test_cycles() {
         let (_env, errs) = resolve_str("meta A = B\nmeta B = A");
-        assert!(errs.iter().any(|e| e.message.contains("Cyclic")));
+        assert!(errs
+            .iter()
+            .any(|e| e.code == DiagnosticCode::CyclicReference));
+    }
+
+    #[test]
+    fn test_cycle_reported_once() {
+        // Two paths into the same cycle must not duplicate the diagnostic
+        let (_env, errs) = resolve_str("meta A = B | B\nmeta B = A");
+        let cyclic = errs
+            .iter()
+            .filter(|e| e.code == DiagnosticCode::CyclicReference)
+            .count();
+        assert_eq!(cyclic, 1, "{:?}", errs);
+    }
+
+    #[test]
+    fn test_list_breaks_cycle() {
+        // []A is well-founded: the empty list terminates the recursion
+        let (_env, errs) = resolve_str("meta A = []A");
+        assert!(errs.is_empty(), "{:?}", errs);
+    }
+
+    #[test]
+    fn test_list_of_recursive_struct_ok() {
+        let (_env, errs) = resolve_str("meta Node = {children []Node}");
+        assert!(errs.is_empty(), "{:?}", errs);
     }
 
     #[test]
     fn test_multiple_main() {
         let (_env, errs) =
             resolve_str("meta A = {}\nmeta B = {}\n@main\na = A {}\n@main\nb = B {}");
-        assert!(errs.iter().any(|e| e.message.contains("Multiple @main")));
+        assert!(errs.iter().any(|e| e.code == DiagnosticCode::MultipleMain));
     }
 
     #[test]
     fn test_unknown_type() {
         let (_env, errs) = resolve_str("meta A = Unknown");
-        assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
+        assert!(errs.iter().any(|e| e.code == DiagnosticCode::UnknownType));
     }
 
     #[test]
     fn test_unknown_instance_type() {
         let (_env, errs) = resolve_str("foo = Unknown {x Int}");
-        assert!(errs.iter().any(|e| e.message.contains("Unknown type")));
+        assert!(errs.iter().any(|e| e.code == DiagnosticCode::UnknownType));
     }
 
     #[test]

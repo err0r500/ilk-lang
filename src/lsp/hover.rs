@@ -281,6 +281,7 @@ fn value_to_type_string(val: &Value) -> String {
         Value::TypeRef(name) => name.clone(),
         Value::LitString(_) => "String".to_string(),
         Value::LitInt(_) => "Int".to_string(),
+        Value::LitFloat(_) => "Float".to_string(),
         Value::LitBool(_) => "Bool".to_string(),
         Value::BindingRef(name) => format!("&{}", name),
         Value::Struct(_) => "{...}".to_string(),

@@ -1,0 +1,22 @@
+---
+source: src/emit_schema.rs
+expression: "schema_for(\"meta Item = {sku Concrete<String>, qty Int}\\n\\\n             meta Cart = {items []Item, note Concrete<String>}\\n\\\n             apple = Item {sku \\\"apple\\\", qty Int}\\n\\\n             pear = Item {sku \\\"pear\\\", qty Int}\\n\\\n             @main\\ncart = Cart {items [apple, pear], note \\\"demo\\\"}\\n\")"
+---
+{
+  "cart": {
+    "$type": "Cart",
+    "items": [
+      {
+        "$type": "Item",
+        "qty": "Int",
+        "sku": "apple"
+      },
+      {
+        "$type": "Item",
+        "qty": "Int",
+        "sku": "pear"
+      }
+    ],
+    "note": "demo"
+  }
+}

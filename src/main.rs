@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use ilk::error::Diagnostic;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -120,7 +120,14 @@ fn main() {
             pretty,
             output,
         } => {
-            run_watch(&file, cli.json, emit, json_schema, pretty, output.as_ref());
+            run_watch(
+                &file,
+                cli.json,
+                emit,
+                json_schema,
+                pretty,
+                output.as_deref(),
+            );
         }
         Commands::Parse { file } => {
             run_parse(&file, cli.json);
@@ -146,7 +153,7 @@ fn main() {
     }
 }
 
-fn run_format(file: &PathBuf) {
+fn run_format(file: &Path) {
     let src = std::fs::read_to_string(file).expect("Failed to read file");
 
     match ilk::parser::parse(&src, file) {
@@ -161,7 +168,7 @@ fn run_format(file: &PathBuf) {
     }
 }
 
-fn run_check(file: &PathBuf, json: bool) {
+fn run_check(file: &Path, json: bool) {
     match ilk::validate_file(file) {
         Ok(()) => {
             if json {
@@ -183,12 +190,12 @@ fn run_check(file: &PathBuf, json: bool) {
 }
 
 fn run_watch(
-    file: &PathBuf,
+    file: &Path,
     json: bool,
     emit: bool,
     json_schema: bool,
     pretty: bool,
-    output: Option<&PathBuf>,
+    output: Option<&Path>,
 ) {
     // Status banners are only for plain watch; when emitting to stdout, stdout
     // must stay clean (machine-read JSON). Writing to a file keeps stdout free.
@@ -257,12 +264,12 @@ fn run_watch(
 }
 
 fn run_validation(
-    file: &PathBuf,
+    file: &Path,
     json: bool,
     emit: bool,
     json_schema: bool,
     pretty: bool,
-    out_file: Option<&PathBuf>,
+    out_file: Option<&Path>,
 ) {
     let canonical = match file.canonicalize() {
         Ok(p) => p,
@@ -321,7 +328,7 @@ fn run_validation(
     }
 }
 
-fn run_parse(file: &PathBuf, json: bool) {
+fn run_parse(file: &Path, json: bool) {
     let src = std::fs::read_to_string(file).expect("Failed to read file");
 
     match ilk::parser::parse(&src, file) {
@@ -350,7 +357,7 @@ fn run_parse(file: &PathBuf, json: bool) {
     }
 }
 
-fn run_json(file: &PathBuf, pretty: bool) {
+fn run_json(file: &Path, pretty: bool) {
     let src = std::fs::read_to_string(file).expect("Failed to read file");
 
     match ilk::parse(&src, file) {
@@ -369,7 +376,7 @@ fn run_json(file: &PathBuf, pretty: bool) {
     }
 }
 
-fn run_emit(file: &PathBuf, json_schema: bool, pretty: bool) {
+fn run_emit(file: &Path, json_schema: bool, pretty: bool) {
     let canonical = file.canonicalize().expect("Cannot resolve path");
     let mut compiler = ilk::Compiler::new();
 

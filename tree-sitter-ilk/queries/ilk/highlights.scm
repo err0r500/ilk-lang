@@ -38,7 +38,6 @@
 ; Keywords
 "meta" @keyword
 "import" @keyword
-"as" @keyword
 "Concrete" @keyword
 
 ; Operators
@@ -63,6 +62,7 @@
 ; Literals
 (string) @string
 (number) @number
+(float) @number
 (boolean) @boolean
 
 ; Punctuation

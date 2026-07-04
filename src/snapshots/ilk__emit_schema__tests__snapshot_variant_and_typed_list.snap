@@ -1,0 +1,16 @@
+---
+source: src/emit_schema.rs
+expression: "schema_for(\"meta Resp = {status Concrete<Int>}\\n\\\n             meta Api = {tags []String, resp Resp}\\n\\\n             @main\\napi = Api {tags []String, resp {status 200}}\\n\")"
+---
+{
+  "api": {
+    "$type": "Api",
+    "resp": {
+      "$type": "Resp",
+      "status": 200
+    },
+    "tags": [
+      "String"
+    ]
+  }
+}

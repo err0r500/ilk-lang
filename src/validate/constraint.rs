@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::Diagnostic;
+use crate::error::{Diagnostic, DiagnosticCode};
 use crate::span::S;
 use crate::validate::structural::ValidationContext;
 use std::collections::{HashMap, HashSet};
@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 enum EvalValue {
     Bool(bool),
     Int(i64),
+    Float(f64),
     String(String),
     List(Vec<EvalValue>),
     Set(HashSet<String>),
@@ -63,7 +64,7 @@ fn validate_instance_constraints(
     let type_fields = type_field_names(&meta_decl.body);
 
     for constraint in constraints {
-        let env = build_eval_env(ctx, inst);
+        let env = build_eval_env(inst);
         let fail_msg = format!("Constraint failed for instance '{}'", inst.name.node);
         report_constraint_result(
             eval_constraint(&constraint.node, &env, ctx),
@@ -100,7 +101,7 @@ fn validate_nested_constraints(
                 if !constraints.is_empty() {
                     for (i, elem) in elements.iter().enumerate() {
                         if let ListElement::Value(Value::Struct(fields)) = &elem.node {
-                            let env = build_env_from_fields(fields, ctx);
+                            let env = build_env_from_fields(fields);
 
                             for constraint in &constraints {
                                 let fail_msg = format!(
@@ -160,7 +161,7 @@ fn validate_nested_constraints(
                 let constraints = find_constraints_in_type(&meta_decl.node.body);
                 let type_fields = type_field_names(&meta_decl.node.body);
                 if !constraints.is_empty() {
-                    let env = build_env_from_fields(val_fields, ctx);
+                    let env = build_env_from_fields(val_fields);
 
                     for constraint in &constraints {
                         let fail_msg = format!(
@@ -193,14 +194,11 @@ fn validate_nested_constraints(
     }
 }
 
-fn build_env_from_fields(
-    fields: &[S<InstanceField>],
-    ctx: &ValidationContext,
-) -> HashMap<String, EvalValue> {
+fn build_env_from_fields(fields: &[S<InstanceField>]) -> HashMap<String, EvalValue> {
     let mut env = HashMap::new();
     for field in fields {
         let name = &field.node.name.node;
-        let value = value_to_eval_value(&field.node.value, ctx);
+        let value = value_to_eval_value(&field.node.value);
         env.insert(name.clone(), value);
     }
     env
@@ -249,13 +247,13 @@ fn type_field_names(ty: &S<TypeExpr>) -> HashSet<String> {
     names
 }
 
-fn build_eval_env(ctx: &ValidationContext, inst: &Instance) -> HashMap<String, EvalValue> {
+fn build_eval_env(inst: &Instance) -> HashMap<String, EvalValue> {
     let mut env = HashMap::new();
 
     if let Value::Struct(fields) = &inst.body.node {
         for field in fields {
             let name = &field.node.name.node;
-            let value = value_to_eval_value(&field.node.value, ctx);
+            let value = value_to_eval_value(&field.node.value);
             env.insert(name.clone(), value);
         }
     }
@@ -281,23 +279,24 @@ fn report_constraint_result(
         Ok(EvalValue::Bool(true)) => {}
         Ok(EvalValue::Bool(false)) => {
             // Constraint failed due to instance data → instance error
-            errors.push(Diagnostic::error(
-                instance_span.clone(),
-                fail_message,
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(instance_span.clone(), fail_message, ctx.path)
+                    .with_code(DiagnosticCode::ConstraintFailed),
+            );
         }
         Ok(_) => {
-            errors.push(Diagnostic::error(
-                constraint_span.clone(),
-                "Constraint must evaluate to boolean",
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    constraint_span.clone(),
+                    "Constraint must evaluate to boolean",
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::ConstraintNotBoolean),
+            );
         }
         Err(ConstraintError::Eval(msg)) => {
             // Check if this is an "Unknown variable" error for a field that exists in the type
-            let span = if msg.starts_with("Unknown variable: ") {
-                let var_name = &msg["Unknown variable: ".len()..];
+            let span = if let Some(var_name) = msg.strip_prefix("Unknown variable: ") {
                 if type_fields.contains(var_name) {
                     // Field declared in type but missing in instance → instance error
                     instance_span
@@ -308,11 +307,14 @@ fn report_constraint_result(
             } else {
                 instance_span
             };
-            errors.push(Diagnostic::error(
-                span.clone(),
-                format!("Constraint evaluation error: {}", msg),
-                ctx.path,
-            ));
+            errors.push(
+                Diagnostic::error(
+                    span.clone(),
+                    format!("Constraint evaluation error: {}", msg),
+                    ctx.path,
+                )
+                .with_code(DiagnosticCode::ConstraintEvalError),
+            );
         }
         Err(ConstraintError::Failed(trace)) => {
             // Constraint failed due to instance data → instance error
@@ -323,15 +325,19 @@ fn report_constraint_result(
                     msg.push_str(&format!("\n    {} = {}", name, value));
                 }
             }
-            errors.push(Diagnostic::error(instance_span.clone(), msg, ctx.path));
+            errors.push(
+                Diagnostic::error(instance_span.clone(), msg, ctx.path)
+                    .with_code(DiagnosticCode::ConstraintFailed),
+            );
         }
     }
 }
 
-fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
+fn value_to_eval_value(value: &S<Value>) -> EvalValue {
     match &value.node {
         Value::LitString(s) => EvalValue::String(s.clone()),
         Value::LitInt(n) => EvalValue::Int(*n),
+        Value::LitFloat(n) => EvalValue::Float(*n),
         Value::LitBool(b) => EvalValue::Bool(*b),
         Value::TypeRef(t) => EvalValue::String(t.clone()),
         Value::ListType(_, _) => EvalValue::List(vec![]),
@@ -340,7 +346,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
             let mut map = HashMap::new();
             for field in fields {
                 let name = &field.node.name.node;
-                let val = value_to_eval_value(&field.node.value, ctx);
+                let val = value_to_eval_value(&field.node.value);
                 map.insert(name.clone(), val);
             }
             EvalValue::Struct(map)
@@ -351,7 +357,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
                 .map(|e| match &e.node {
                     ListElement::Value(v) => {
                         let spanned = S::new(v.clone(), e.span.clone());
-                        value_to_eval_value(&spanned, ctx)
+                        value_to_eval_value(&spanned)
                     }
                     ListElement::BindingRef(name) => EvalValue::BindingRef(name.clone()),
                     ListElement::Refinement(name, _) => EvalValue::BindingRef(name.clone()),
@@ -359,7 +365,7 @@ fn value_to_eval_value(value: &S<Value>, ctx: &ValidationContext) -> EvalValue {
                 .collect();
             EvalValue::List(vals)
         }
-        Value::Variant(_, body) => value_to_eval_value(body, ctx),
+        Value::Variant(_, body) => value_to_eval_value(body),
         Value::Refinement(name, _) => EvalValue::BindingRef(name.clone()),
     }
 }
@@ -389,7 +395,7 @@ fn eval_constraint(
                     if let Some(inst) = ctx.get_instance(&name) {
                         if let Value::Struct(fields) = &inst.body.node {
                             if let Some(f) = fields.iter().find(|f| &f.node.name.node == field) {
-                                return Ok(value_to_eval_value(&f.node.value, ctx));
+                                return Ok(value_to_eval_value(&f.node.value));
                             }
                         }
                     }
@@ -407,71 +413,41 @@ fn eval_constraint(
 
         ConstraintExpr::All(col_expr, var, body) => {
             let col_val = eval_constraint(&col_expr.node, env, ctx)?;
-
-            match col_val {
-                EvalValue::List(ref items) => {
-                    for item in items {
-                        let mut inner_env = env.clone();
-                        inner_env.insert(var.clone(), item.clone());
-                        match eval_constraint(&body.node, &inner_env, ctx) {
-                            Ok(EvalValue::Bool(false)) => {
-                                let trace = FailureTrace::new()
-                                    .with_binding(var, eval_value_to_string(item));
-                                return Err(ConstraintError::Failed(trace));
-                            }
-                            Ok(EvalValue::Bool(true)) => continue,
-                            Ok(_) => {
-                                return Err(ConstraintError::Eval(
-                                    "all body must be boolean".to_string(),
-                                ))
-                            }
-                            Err(ConstraintError::Failed(inner_trace)) => {
-                                let trace = FailureTrace::new()
-                                    .with_binding(var, eval_value_to_string(item))
-                                    .merge(inner_trace);
-                                return Err(ConstraintError::Failed(trace));
-                            }
-                            Err(e) => return Err(e),
-                        }
-                    }
-                    Ok(EvalValue::Bool(true))
+            let items: Vec<EvalValue> = match col_val {
+                EvalValue::List(items) => items,
+                EvalValue::Set(items) => items.into_iter().map(EvalValue::String).collect(),
+                _ => {
+                    return Err(ConstraintError::Eval(
+                        "all collection must be a list or set".to_string(),
+                    ))
                 }
-                EvalValue::Set(ref items) => {
-                    let col_str = eval_value_to_string(&col_val);
-                    for item in items {
-                        let mut inner_env = env.clone();
-                        inner_env.insert(var.clone(), EvalValue::String(item.clone()));
+            };
 
-                        match eval_constraint(&body.node, &inner_env, ctx) {
-                            Ok(EvalValue::Bool(false)) => {
-                                let trace =
-                                    FailureTrace::new().with_binding(var, format!("\"{}\"", item));
-                                return Err(ConstraintError::Failed(trace));
-                            }
-                            Ok(EvalValue::Bool(true)) => continue,
-                            Ok(_) => {
-                                return Err(ConstraintError::Eval(
-                                    "all body must be boolean".to_string(),
-                                ))
-                            }
-                            Err(ConstraintError::Failed(inner_trace)) => {
-                                let trace = FailureTrace::new()
-                                    .with_binding(
-                                        format!("iterating over {}", col_str),
-                                        format!("failed at \"{}\"", item),
-                                    )
-                                    .merge(inner_trace);
-                                return Err(ConstraintError::Failed(trace));
-                            }
-                            Err(e) => return Err(e),
-                        }
+            for item in &items {
+                let mut inner_env = env.clone();
+                inner_env.insert(var.clone(), item.clone());
+                match eval_constraint(&body.node, &inner_env, ctx) {
+                    Ok(EvalValue::Bool(true)) => continue,
+                    Ok(EvalValue::Bool(false)) => {
+                        let trace =
+                            FailureTrace::new().with_binding(var, eval_value_to_string(item));
+                        return Err(ConstraintError::Failed(trace));
                     }
-                    Ok(EvalValue::Bool(true))
+                    Ok(_) => {
+                        return Err(ConstraintError::Eval(
+                            "all body must be boolean".to_string(),
+                        ))
+                    }
+                    Err(ConstraintError::Failed(inner_trace)) => {
+                        let trace = FailureTrace::new()
+                            .with_binding(var, eval_value_to_string(item))
+                            .merge(inner_trace);
+                        return Err(ConstraintError::Failed(trace));
+                    }
+                    Err(e) => return Err(e),
                 }
-                _ => Err(ConstraintError::Eval(
-                    "all collection must be a list or set".to_string(),
-                )),
             }
+            Ok(EvalValue::Bool(true))
         }
 
         ConstraintExpr::Exists(col_expr, var, body) => {
@@ -688,6 +664,7 @@ fn eval_constraint(
                 "struct" => matches!(val, EvalValue::Struct(_) | EvalValue::BindingRef(_)),
                 "bool" => matches!(val, EvalValue::Bool(_)),
                 "int" => matches!(val, EvalValue::Int(_)),
+                "float" => matches!(val, EvalValue::Float(_)),
                 "string" => matches!(val, EvalValue::String(_)),
                 _ => {
                     return Err(ConstraintError::Eval(format!(
@@ -716,22 +693,36 @@ fn eval_int_cmp(
     op: &str,
     env: &HashMap<String, EvalValue>,
     ctx: &ValidationContext,
-    cmp: impl Fn(i64, i64) -> bool,
+    cmp: impl Fn(f64, f64) -> bool,
 ) -> Result<EvalValue, ConstraintError> {
     let l = eval_constraint(&left.node, env, ctx)?;
     let r = eval_constraint(&right.node, env, ctx)?;
-    match (&l, &r) {
-        (EvalValue::Int(a), EvalValue::Int(b)) => {
-            if cmp(*a, *b) {
+    let pair = match (&l, &r) {
+        (EvalValue::Int(a), EvalValue::Int(b)) => Some((*a as f64, *b as f64)),
+        (EvalValue::Float(a), EvalValue::Float(b)) => Some((*a, *b)),
+        (EvalValue::Int(a), EvalValue::Float(b)) => Some((*a as f64, *b)),
+        (EvalValue::Float(a), EvalValue::Int(b)) => Some((*a, *b as f64)),
+        _ => None,
+    };
+    match pair {
+        Some((a, b)) => {
+            if cmp(a, b) {
                 Ok(EvalValue::Bool(true))
             } else {
-                let trace =
-                    FailureTrace::new().with_binding(format!("{} {} {}", a, op, b), "false");
+                let trace = FailureTrace::new().with_binding(
+                    format!(
+                        "{} {} {}",
+                        eval_value_to_string(&l),
+                        op,
+                        eval_value_to_string(&r)
+                    ),
+                    "false",
+                );
                 Err(ConstraintError::Failed(trace))
             }
         }
-        _ => Err(ConstraintError::Eval(format!(
-            "{} requires integer operands",
+        None => Err(ConstraintError::Eval(format!(
+            "{} requires numeric operands",
             op
         ))),
     }
@@ -744,6 +735,7 @@ fn type_kind(type_name: &str, ctx: &ValidationContext) -> &'static str {
             TypeExpr::Struct(_) | TypeExpr::Intersection(_, _) => "struct",
             TypeExpr::Base(BaseType::Bool) | TypeExpr::LitBool(_) => "bool",
             TypeExpr::Base(BaseType::Int) | TypeExpr::LitInt(_) => "int",
+            TypeExpr::Base(BaseType::Float) => "float",
             TypeExpr::Base(BaseType::String) | TypeExpr::LitString(_) => "string",
             TypeExpr::Named(inner) => type_kind(inner, ctx),
             _ => "unknown",
@@ -778,6 +770,7 @@ fn eval_value_to_string(val: &EvalValue) -> String {
     match val {
         EvalValue::Bool(b) => b.to_string(),
         EvalValue::Int(n) => n.to_string(),
+        EvalValue::Float(n) => format!("{:?}", n),
         EvalValue::String(s) => s.clone(),
         EvalValue::BindingRef(name) => name.clone(),
         EvalValue::List(items) => format!(
@@ -806,8 +799,26 @@ fn eval_values_equal(a: &EvalValue, b: &EvalValue) -> bool {
     match (a, b) {
         (EvalValue::Bool(x), EvalValue::Bool(y)) => x == y,
         (EvalValue::Int(x), EvalValue::Int(y)) => x == y,
+        (EvalValue::Float(x), EvalValue::Float(y)) => x == y,
+        (EvalValue::Int(x), EvalValue::Float(y)) | (EvalValue::Float(y), EvalValue::Int(x)) => {
+            *x as f64 == *y
+        }
         (EvalValue::String(x), EvalValue::String(y)) => x == y,
         (EvalValue::BindingRef(x), EvalValue::BindingRef(y)) => x == y,
+        (EvalValue::List(xs), EvalValue::List(ys)) => {
+            xs.len() == ys.len()
+                && xs
+                    .iter()
+                    .zip(ys.iter())
+                    .all(|(x, y)| eval_values_equal(x, y))
+        }
+        (EvalValue::Set(xs), EvalValue::Set(ys)) => xs == ys,
+        (EvalValue::Struct(xs), EvalValue::Struct(ys)) => {
+            xs.len() == ys.len()
+                && xs
+                    .iter()
+                    .all(|(k, x)| ys.get(k).is_some_and(|y| eval_values_equal(x, y)))
+        }
         _ => false,
     }
 }
@@ -882,6 +893,79 @@ foo = Foo {items []}
 "#,
         );
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_float_comparison() {
+        let errors = validate_constraints_src(
+            r#"
+meta Foo = {
+  @constraint x > 1
+  x Concrete<Float>
+}
+foo = Foo {x 1.5}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_float_comparison_fail() {
+        let errors = validate_constraints_src(
+            r#"
+meta Foo = {
+  @constraint x > 2
+  x Concrete<Float>
+}
+foo = Foo {x 1.5}
+"#,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_deep_equality_structs() {
+        let errors = validate_constraints_src(
+            r#"
+meta Foo = {
+  @constraint a == b
+  a {...}
+  b {...}
+}
+foo = Foo {a {x 1, y "s"}, b {y "s", x 1}}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_deep_equality_structs_fail() {
+        let errors = validate_constraints_src(
+            r#"
+meta Foo = {
+  @constraint a == b
+  a {...}
+  b {...}
+}
+foo = Foo {a {x 1}, b {x 2}}
+"#,
+        );
+        assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_deep_equality_lists() {
+        let errors = validate_constraints_src(
+            r#"
+meta Foo = {
+  @constraint a == b
+  a []Int
+  b []Int
+}
+foo = Foo {a [1, 2], b [1, 2]}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
     }
 
     #[test]

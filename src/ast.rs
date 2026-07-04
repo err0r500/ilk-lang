@@ -182,6 +182,7 @@ pub enum Value {
     TypeRef(String),                           // String, Int, etc.
     LitString(String),                         // "hello"
     LitInt(i64),                               // 42
+    LitFloat(f64),                             // 3.14
     LitBool(bool),                             // true/false
     BindingRef(String),                        // someBinding
     Struct(Vec<S<InstanceField>>),             // {x Int, y String}
@@ -189,6 +190,24 @@ pub enum Value {
     ListType(Cardinality, Box<S<Value>>),      // []String, [3]Foo — typed-list declaration
     Variant(String, Box<S<Value>>),            // VariantName body
     Refinement(String, Vec<S<InstanceField>>), // binding & {fields}
+}
+
+impl Value {
+    /// Best-effort type name of a value as used in data-flow checks: the
+    /// `TypeRef` name, a literal's base-type name, or `[]<elem>` for typed-list
+    /// declarations (cardinality is ignored — only the element type governs
+    /// data-flow compatibility).
+    pub fn type_name(&self) -> Option<String> {
+        match self {
+            Value::TypeRef(t) => Some(t.clone()),
+            Value::LitString(_) => Some("String".to_string()),
+            Value::LitInt(_) => Some("Int".to_string()),
+            Value::LitFloat(_) => Some("Float".to_string()),
+            Value::LitBool(_) => Some("Bool".to_string()),
+            Value::ListType(_, elem) => Some(format!("[]{}", elem.node.type_name()?)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -217,10 +236,17 @@ pub struct Instance {
     pub doc: Option<String>,
 }
 
+impl Instance {
+    pub fn is_main(&self) -> bool {
+        self.annotations
+            .iter()
+            .any(|a| matches!(a.node, Annotation::Main))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Import {
     pub path: S<String>,
-    pub alias: Option<S<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

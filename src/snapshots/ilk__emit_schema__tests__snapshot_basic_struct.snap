@@ -1,0 +1,12 @@
+---
+source: src/emit_schema.rs
+expression: "schema_for(\"meta T = {id! Uuid, name String, active Bool}\\n@main\\nm = T {id Uuid, name String, active Bool}\\n\")"
+---
+{
+  "m": {
+    "$type": "T",
+    "active": "Bool",
+    "id": "Uuid",
+    "name": "String"
+  }
+}

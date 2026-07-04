@@ -1,0 +1,76 @@
+---
+source: src/emit_jsonschema.rs
+expression: "schema_for(\"meta Status = \\\"open\\\" | \\\"closed\\\"\\n\\\n             meta Item = {sku Concrete<String>, qty Int}\\n\\\n             meta Cart = {\\n\\\n                 id! Uuid\\n\\\n                 status! Status\\n\\\n                 items []Item\\n\\\n                 fields {...}\\n\\\n                 @source [fields]\\n\\\n                 total! Int\\n\\\n             }\\n\\\n             apple = Item {sku \\\"apple\\\", qty Int}\\n\\\n             @main\\ncart = Cart {\\n\\\n                 id Uuid\\n\\\n                 status Status\\n\\\n                 items [apple & {qty Int}]\\n\\\n                 fields {a Int, b Int}\\n\\\n                 total Int = compute(fields.a, fields.b)\\n\\\n             }\\n\")"
+---
+{
+  "$defs": {
+    "Status": {
+      "enum": [
+        "open",
+        "closed"
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "_type": "Cart",
+  "additionalProperties": false,
+  "properties": {
+    "fields": {
+      "properties": {
+        "a": {
+          "type": "integer"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "_type": "Item",
+        "additionalProperties": false,
+        "properties": {
+          "qty": {
+            "type": "integer"
+          },
+          "sku": {
+            "const": "apple"
+          }
+        },
+        "required": [
+          "sku",
+          "qty"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "$ref": "#/$defs/Status"
+    },
+    "total": {
+      "type": "integer",
+      "x-computed-from": [
+        "fields.a",
+        "fields.b"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "status",
+    "items",
+    "fields",
+    "total"
+  ],
+  "type": "object"
+}

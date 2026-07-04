@@ -1,0 +1,37 @@
+---
+source: src/formatter.rs
+expression: roundtrip(src)
+---
+// header
+import "./base.ilk"
+
+
+meta Status = Pending | Active
+
+
+meta Event = {...} & {
+    id! Uuid
+    ts Int
+}
+
+
+@doc "A board"
+meta Board = {
+    @constraint count(events) > 0
+    events []-Event
+    status Status
+}
+
+
+ev = Event {
+    id Uuid
+    ts Int
+}
+
+
+@main
+@doc "main board"
+board = Board {
+    events [ev & {ts Int}]
+    status Pending
+}

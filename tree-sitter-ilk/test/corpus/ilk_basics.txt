@@ -166,3 +166,31 @@ x = Event {
           value: (list_type_value
             (cardinality (number) (number))
             (type_ref (base_type))))))))
+
+================================================================================
+Float literal values (instances)
+================================================================================
+
+x = Metric {
+  ratio 2.75
+  offset -0.5
+  count 3
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (instance
+    name: (identifier)
+    type: (identifier)
+    value: (struct_value
+      (value_field_list
+        (value_field
+          name: (identifier)
+          value: (literal_value (float)))
+        (value_field
+          name: (identifier)
+          value: (literal_value (float)))
+        (value_field
+          name: (identifier)
+          value: (literal_value (number)))))))

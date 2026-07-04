@@ -8,7 +8,7 @@ use serde_json::{json, Map, Value as JsonValue};
 pub fn emit_schema(file: &File, env: &TypeEnv) -> JsonValue {
     let mut out = Map::new();
     for inst in file.instances() {
-        if !is_main(inst) {
+        if !inst.is_main() {
             continue;
         }
         out.insert(inst.name.node.clone(), emit_instance(inst, env));
@@ -17,12 +17,6 @@ pub fn emit_schema(file: &File, env: &TypeEnv) -> JsonValue {
 }
 
 // --- Instance emission ---
-
-fn is_main(inst: &Instance) -> bool {
-    inst.annotations
-        .iter()
-        .any(|a| matches!(a.node, Annotation::Main))
-}
 
 fn emit_instance(inst: &Instance, env: &TypeEnv) -> JsonValue {
     emit_value(&inst.body.node, Some(&inst.type_name.node), env)
@@ -36,6 +30,7 @@ fn emit_value(value: &Value, type_name: Option<&str>, env: &TypeEnv) -> JsonValu
         Value::ListType(_card, elem) => json!([emit_value(&elem.node, type_name, env)]),
         Value::LitString(s) => json!(s),
         Value::LitInt(n) => json!(n),
+        Value::LitFloat(n) => json!(n),
         Value::LitBool(b) => json!(b),
         Value::BindingRef(name) => emit_binding_ref(name, env),
         Value::Struct(fields) => emit_struct(fields, type_name, env),
@@ -134,7 +129,7 @@ fn find_field_type(ty: &TypeExpr, field_name: &str, env: &TypeEnv) -> Option<Str
             fields
                 .iter()
                 .find(|f| f.node.name.node == field_name)
-                .and_then(|f| extract_type_name(&f.node.ty.node, env))
+                .and_then(|f| extract_type_name(&f.node.ty.node))
         }
         TypeExpr::Intersection(left, right) => find_field_type(&left.node, field_name, env)
             .or_else(|| find_field_type(&right.node, field_name, env)),
@@ -142,13 +137,68 @@ fn find_field_type(ty: &TypeExpr, field_name: &str, env: &TypeEnv) -> Option<Str
     }
 }
 
-fn extract_type_name(ty: &TypeExpr, env: &TypeEnv) -> Option<String> {
+fn extract_type_name(ty: &TypeExpr) -> Option<String> {
     match ty {
+        TypeExpr::Base(BaseType::Wildcard) => None,
+        TypeExpr::Base(base) => Some(base.name().to_string()),
         TypeExpr::Named(name) => Some(name.clone()),
         TypeExpr::RefinableRef(name) => Some(name.clone()),
         TypeExpr::Reference(name) => Some(name.clone()),
-        TypeExpr::List(_, inner) => extract_type_name(&inner.node, env),
-        TypeExpr::Concrete(inner) => extract_type_name(&inner.node, env),
+        TypeExpr::List(_, inner) => extract_type_name(&inner.node),
+        TypeExpr::Concrete(inner) => extract_type_name(&inner.node),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn schema_for(src: &str) -> JsonValue {
+        let path = Path::new("test.ilk");
+        let mut compiler = crate::Compiler::new();
+        compiler.load(path, src).expect("load");
+        compiler.validate(path).expect("validate");
+        let file = compiler.get_file(path).unwrap();
+        let env = compiler.get_env(path).unwrap();
+        emit_schema(file, env)
+    }
+
+    #[test]
+    fn snapshot_basic_struct() {
+        insta::assert_json_snapshot!(schema_for(
+            "meta T = {id! Uuid, name String, active Bool}\n@main\nm = T {id Uuid, name String, active Bool}\n"
+        ));
+    }
+
+    #[test]
+    fn snapshot_binding_refs_and_lists() {
+        insta::assert_json_snapshot!(schema_for(
+            "meta Item = {sku Concrete<String>, qty Int}\n\
+             meta Cart = {items []Item, note Concrete<String>}\n\
+             apple = Item {sku \"apple\", qty Int}\n\
+             pear = Item {sku \"pear\", qty Int}\n\
+             @main\ncart = Cart {items [apple, pear], note \"demo\"}\n"
+        ));
+    }
+
+    #[test]
+    fn snapshot_refinement_merges_overrides() {
+        insta::assert_json_snapshot!(schema_for(
+            "meta Event = {...} & {kind Concrete<String>, ts Int}\n\
+             meta Board = {events []-Event}\n\
+             base = Event {kind \"base\", ts Int}\n\
+             @main\nboard = Board {events [base & {kind \"refined\"}]}\n"
+        ));
+    }
+
+    #[test]
+    fn snapshot_variant_and_typed_list() {
+        insta::assert_json_snapshot!(schema_for(
+            "meta Resp = {status Concrete<Int>}\n\
+             meta Api = {tags []String, resp Resp}\n\
+             @main\napi = Api {tags []String, resp {status 200}}\n"
+        ));
     }
 }

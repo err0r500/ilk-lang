@@ -46,14 +46,14 @@ Unified AST handles both type declarations and instances (merged from old ilk + 
 - `ConstraintExpr` - boolean exprs, field access, collection ops
 
 **Instance-Level** (runtime):
-- `Value` - TypeRef, literals, Struct, List, ListType (typed list `[]T`), Variant, BindingRef, Refinement (`binding & {…}`)
+- `Value` - TypeRef, literals (string/int/float/bool), Struct, List, ListType (typed list `[]T`), Variant, BindingRef, Refinement (`binding & {…}`)
 - `InstanceField` - field + origin tracking (Generated/Mapped/Computed)
 - `ListElement` - Value, BindingRef, Refinement
 
 **Top-Level**:
 - `MetaDecl` - meta X = TypeExpr
 - `Instance` - x = Type Value
-- `Import` - import "path" [as alias]
+- `Import` - import "path"
 - `File` - collection with helper iterators
 
 ### parser/
@@ -76,7 +76,7 @@ Phases:
 1. Collect metas (error on dups)
 2. Collect instances (track @main, error on dups/multiple @main)
 3. Validate type refs exist
-4. Check cycles (DFS with visited/in_stack)
+4. Check cycles (DFS with visited/in_stack; lists break cycles — `[]T` is well-founded — and each cycle is reported once)
 
 ### validate/structural.rs
 
@@ -99,7 +99,7 @@ Validates @source annotation paths:
 
 ### validate/constraint.rs
 
-`EvalValue` - runtime during eval: Bool, Int, String, List, Set, Struct, BindingRef
+`EvalValue` - runtime during eval: Bool, Int, Float, String, List, Set, Struct, BindingRef
 
 Constraint ops:
 - Boolean: true, false, &&, ||, !
@@ -143,7 +143,7 @@ refinements, threading the declared field type via `resolve_field_type`):
 | Resolve | Unknown type | Fail |
 | Validate | Type mismatch | Accumulate |
 
-All errors become `Diagnostic { span, message, severity, path }` → rendered via `ariadne`.
+All errors become `Diagnostic { span, message, severity, code, path }` → rendered via `ariadne`. `code` is a stable `DiagnosticCode` enum; tests assert on it instead of message text.
 
 ## Extending
 

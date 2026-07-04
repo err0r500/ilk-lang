@@ -47,6 +47,8 @@ module.exports = grammar({
 
         number: ($) => /-?[0-9]+/,
 
+        float: ($) => /-?[0-9]+\.[0-9]+/,
+
         boolean: ($) => choice("true", "false"),
 
         // ===================
@@ -269,13 +271,8 @@ module.exports = grammar({
 
         doc_annotation: ($) => seq("@doc", $.string),
 
-        // import "path" [as alias]
-        import_stmt: ($) =>
-            seq(
-                "import",
-                field("path", $.string),
-                optional(seq("as", field("alias", $.identifier))),
-            ),
+        // import "path" — aliases are not supported (flat namespace)
+        import_stmt: ($) => seq("import", field("path", $.string)),
 
         // ===================
         // Values (instance-level)
@@ -298,7 +295,7 @@ module.exports = grammar({
 
         type_ref: ($) => $.base_type,
 
-        literal_value: ($) => choice($.string, $.number, $.boolean),
+        literal_value: ($) => choice($.string, $.float, $.number, $.boolean),
 
         binding_ref: ($) => $.identifier,
 

@@ -1,0 +1,64 @@
+---
+source: src/lib.rs
+expression: "rendered.join(\"\\n\\n\")"
+---
+--- "meta A = {x Int}\nmeta A = {y Int}"
+DuplicateMeta: Duplicate meta: A
+
+--- "meta A = {}\nmeta B = {}\n@main\na = A {}\n@main\nb = B {}"
+MultipleMain: Multiple @main annotations
+
+--- "meta A = Unknown"
+UnknownType: Unknown type: Unknown
+
+--- "meta A = &Unknown"
+UnknownMetaInReference: Unknown meta in reference: Unknown
+
+--- "meta A = B\nmeta B = A"
+CyclicReference: Cyclic reference: B -> A
+
+--- "meta Foo = {x Int}\nfoo = Foo {x String}"
+TypeMismatch: Type mismatch: expected Int, got String
+
+--- "meta Foo = {x Concrete<Int>}\nfoo = Foo {x Int}"
+ConcreteRequiresLiteral: Concrete<Int> requires a literal value, got type reference Int
+
+--- "meta Foo = {x \"a\"}\nfoo = Foo {x \"b\"}"
+LiteralMismatch: Literal mismatch: expected "a", got "b"
+
+--- "meta Foo = {x String}\nfoo = Foo {x \"lit\"}"
+LiteralForOpenType: Cannot use literal for open String type - use Concrete<String>
+
+--- "meta Foo = {x Int}\nfoo = Foo {x Int, y Int}"
+ExtraField: Extra field not in schema: y
+
+--- "meta Foo = {x! Int}\nfoo = Foo {}"
+MissingRequiredField: Missing required field: x
+
+--- "meta Foo = {x Int}\nfoo = Foo {x Int, x Int}"
+DuplicateField: Duplicate field: x
+
+--- "meta Status = Pending | Active\nmeta P = {s! Status}\np = P {s \"other\"}"
+UnionMismatch: Value doesn't match any union variant
+
+--- "meta I = {x Int}\nmeta F = {items [3]I}\ni = I {x Int}\nf = F {items [i]}"
+ListCardinalityMismatch: List cardinality mismatch: got 1 elements, expected Exact(3)
+
+--- "meta E = {...}\nmeta C = {emits []E}\ne = E {id String}\nc = C {emits [e & {id \"x\"}]}"
+NotRefinable: Cannot use concrete value for open type field 'id' - type is not refinable (use -E)
+
+--- "meta E = {id String}\nmeta C = {fields {...}\n@source [fields]\nemits E}\nc = C {fields {a Int}\nemits {id String = other.id}}"
+SourcePathNotAllowed: Source path 'other.id' not allowed by @source
+
+--- "meta E = {id String}\nmeta C = {fields {...}\n@source [fields]\nemits E}\nother = E {id String}\nc = C {fields {x Int}\nemits other}"
+NoSourceFound: No source found for field 'id'
+
+--- "meta Foo = {\n@constraint x > 10\nx Int\n}\nfoo = Foo {x 5}"
+LiteralForOpenType: Cannot use literal for open Int type - use Concrete<Int>
+ConstraintFailed: Constraint failed for instance 'foo'
+  where:
+    5 > 10 = false
+
+--- "meta Foo = {\n@constraint y > 0\nx Int\n}\nfoo = Foo {x 1}"
+LiteralForOpenType: Cannot use literal for open Int type - use Concrete<Int>
+ConstraintEvalError: Constraint evaluation error: Unknown variable: y

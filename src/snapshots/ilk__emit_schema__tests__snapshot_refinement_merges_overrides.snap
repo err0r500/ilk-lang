@@ -1,0 +1,16 @@
+---
+source: src/emit_schema.rs
+expression: "schema_for(\"meta Event = {...} & {kind Concrete<String>, ts Int}\\n\\\n             meta Board = {events []-Event}\\n\\\n             base = Event {kind \\\"base\\\", ts Int}\\n\\\n             @main\\nboard = Board {events [base & {kind \\\"refined\\\"}]}\\n\")"
+---
+{
+  "board": {
+    "$type": "Board",
+    "events": [
+      {
+        "$type": "Event",
+        "kind": "refined",
+        "ts": "Int"
+      }
+    ]
+  }
+}

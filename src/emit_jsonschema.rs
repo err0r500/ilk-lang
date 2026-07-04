@@ -27,7 +27,7 @@ pub fn emit_json_schema(file: &File, env: &TypeEnv) -> JsonValue {
         defs: Map::new(),
     };
 
-    let mains: Vec<&Instance> = file.instances().filter(|i| is_main(i)).collect();
+    let mains: Vec<&Instance> = file.instances().filter(|i| i.is_main()).collect();
 
     let mut out = match mains.as_slice() {
         // Single @main → its schema sits at the document root.
@@ -58,12 +58,6 @@ pub fn emit_json_schema(file: &File, env: &TypeEnv) -> JsonValue {
     JsonValue::Object(doc)
 }
 
-fn is_main(inst: &Instance) -> bool {
-    inst.annotations
-        .iter()
-        .any(|a| matches!(a.node, Annotation::Main))
-}
-
 // --- Instance / value emission ---
 
 impl<'a> Ctx<'a> {
@@ -76,6 +70,7 @@ impl<'a> Ctx<'a> {
             Value::TypeRef(name) => self.type_ref_schema(name),
             Value::LitString(s) => json!({ "const": s }),
             Value::LitInt(n) => json!({ "const": n }),
+            Value::LitFloat(n) => json!({ "const": n }),
             Value::LitBool(b) => json!({ "const": b }),
             Value::BindingRef(name) => self.binding_ref_schema(name),
             Value::Struct(fields) => self.struct_schema(fields, type_name),
@@ -205,6 +200,11 @@ impl<'a> Ctx<'a> {
                     let mut field_schema =
                         self.value_schema(&f.node.value.node, field_type.as_deref());
                     annotate_origin(&mut field_schema, &f.node.origin);
+                    keep_type_alongside_const(
+                        &mut field_schema,
+                        field_type.as_deref(),
+                        props.get(field_name.as_str()),
+                    );
                     props.insert(field_name.clone(), field_schema);
                 }
             }
@@ -323,14 +323,49 @@ impl<'a> Ctx<'a> {
 
 // --- Free helpers ---
 
-/// Attach origin-derived JSON Schema annotations (`x-generated`, …) to a
-/// field's property schema. No-op for origins without an annotation.
+/// Attach origin-derived JSON Schema annotations (`x-generated`,
+/// `x-computed-from`) to a field's property schema. No-op for origins without
+/// an annotation.
 fn annotate_origin(schema: &mut JsonValue, origin: &FieldOrigin) {
     if let JsonValue::Object(map) = schema {
-        if matches!(origin, FieldOrigin::Generated) {
-            map.insert("x-generated".to_string(), json!(true));
+        match origin {
+            FieldOrigin::Generated => {
+                map.insert("x-generated".to_string(), json!(true));
+            }
+            FieldOrigin::Computed(paths) => {
+                let sources: Vec<String> = paths.iter().map(|p| p.join(".")).collect();
+                map.insert("x-computed-from".to_string(), json!(sources));
+            }
+            FieldOrigin::None | FieldOrigin::Mapped(_) => {}
         }
-        // Future: FieldOrigin::Computed(paths) => "x-computed-from".
+    }
+}
+
+/// A literal refinement override lowers to a bare `{"const": …}`, which would
+/// drop the field's type from the schema. Re-attach `type`/`format`, taking
+/// them from the declared field type when it resolves to a base type, else
+/// from the base instance's property schema being overridden.
+fn keep_type_alongside_const(
+    schema: &mut JsonValue,
+    declared_type: Option<&str>,
+    base_prop: Option<&JsonValue>,
+) {
+    let JsonValue::Object(map) = schema else {
+        return;
+    };
+    if !map.contains_key("const") || map.contains_key("type") {
+        return;
+    }
+    let type_info = declared_type
+        .and_then(BaseType::from_name)
+        .map(|bt| base_type_schema(&bt))
+        .or_else(|| base_prop.cloned());
+    if let Some(JsonValue::Object(info)) = type_info {
+        for key in ["type", "format"] {
+            if let Some(v) = info.get(key) {
+                map.insert(key.to_string(), v.clone());
+            }
+        }
     }
 }
 
@@ -419,6 +454,32 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_full_document() {
+        // One representative document exercising $defs, refs, lists,
+        // refinements, enums, and origin annotations end to end.
+        insta::assert_json_snapshot!(schema_for(
+            "meta Status = \"open\" | \"closed\"\n\
+             meta Item = {sku Concrete<String>, qty Int}\n\
+             meta Cart = {\n\
+                 id! Uuid\n\
+                 status! Status\n\
+                 items []Item\n\
+                 fields {...}\n\
+                 @source [fields]\n\
+                 total! Int\n\
+             }\n\
+             apple = Item {sku \"apple\", qty Int}\n\
+             @main\ncart = Cart {\n\
+                 id Uuid\n\
+                 status Status\n\
+                 items [apple & {qty Int}]\n\
+                 fields {a Int, b Int}\n\
+                 total Int = compute(fields.a, fields.b)\n\
+             }\n"
+        ));
+    }
+
+    #[test]
     fn base_type_leaves_and_root_header() {
         let s = schema_for(
             "meta T = {id Uuid, n String, c Int, f Float, b Bool}\n@main\nm = T {id Uuid, n String, c Int, f Float, b Bool}\n",
@@ -498,6 +559,49 @@ mod tests {
         let s = schema_for("meta T = {a! String, g! String}\n@main\nx = T {a String, g String*}\n");
         assert_eq!(s["properties"]["g"]["x-generated"], json!(true));
         assert!(s["properties"]["a"].get("x-generated").is_none());
+    }
+
+    #[test]
+    fn computed_field_marked_with_sources() {
+        let s = schema_for(
+            "meta T = {fields {...}, total! Int}\n@main\nx = T {fields {a Int, b Int}, total Int = compute(fields.a, fields.b)}\n",
+        );
+        assert_eq!(
+            s["properties"]["total"]["x-computed-from"],
+            json!(["fields.a", "fields.b"])
+        );
+    }
+
+    #[test]
+    fn refinement_const_keeps_declared_type() {
+        // A literal override in a refinement must keep the field's type, not
+        // collapse to a bare const.
+        let s = schema_for(
+            "meta Event = {...} & {id Concrete<String>, n Concrete<Int>}\n\
+             meta Board = {events []-Event}\n\
+             ev = Event {id \"placeholder\", n 0}\n\
+             @main\nboard = Board {events [ev & {id \"fixed\", n 42}]}\n",
+        );
+        let item = &s["properties"]["events"]["items"];
+        assert_eq!(item["properties"]["id"]["const"], json!("fixed"));
+        assert_eq!(item["properties"]["id"]["type"], json!("string"));
+        assert_eq!(item["properties"]["n"]["const"], json!(42));
+        assert_eq!(item["properties"]["n"]["type"], json!("integer"));
+    }
+
+    #[test]
+    fn refinement_const_keeps_base_property_type() {
+        // When the declared type isn't a resolvable base type, fall back to
+        // the type info of the overridden base property (here `id String`).
+        let s = schema_for(
+            "meta Event = {...}\n\
+             meta Board = {events []-Event}\n\
+             ev = Event {id String}\n\
+             @main\nboard = Board {events [ev & {id \"fixed\"}]}\n",
+        );
+        let item = &s["properties"]["events"]["items"];
+        assert_eq!(item["properties"]["id"]["const"], json!("fixed"));
+        assert_eq!(item["properties"]["id"]["type"], json!("string"));
     }
 
     #[test]

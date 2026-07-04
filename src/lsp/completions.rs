@@ -307,3 +307,62 @@ fn type_expr_to_string(ty: &TypeExpr) -> String {
         TypeExpr::RefinableRef(r) => format!("-{}", r),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mirrors the LSP flow: the compiler holds the last good parse
+    /// (`valid_src`) while completion runs against the current, possibly
+    /// unparseable buffer (`dirty_src`).
+    fn complete_dirty(
+        valid_src: &str,
+        dirty_src: &str,
+        line: u32,
+        character: u32,
+    ) -> Vec<CompletionItem> {
+        let path = Path::new("test.ilk");
+        let mut compiler = Compiler::new();
+        compiler.load(path, valid_src).expect("valid src loads");
+        complete(&compiler, path, dirty_src, Position { line, character })
+    }
+
+    fn complete_at(src: &str, line: u32, character: u32) -> Vec<CompletionItem> {
+        complete_dirty(src, src, line, character)
+    }
+
+    fn labels(items: &[CompletionItem]) -> Vec<&str> {
+        items.iter().map(|i| i.label.as_str()).collect()
+    }
+
+    #[test]
+    fn test_top_level_offers_meta_keyword_and_types() {
+        let src = "meta Foo = {x Int}\n\n";
+        let items = complete_at(src, 2, 0);
+        let labels = labels(&items);
+        assert!(labels.contains(&"meta"), "{:?}", labels);
+        assert!(labels.contains(&"@main"), "{:?}", labels);
+        assert!(labels.contains(&"Foo"), "{:?}", labels);
+    }
+
+    #[test]
+    fn test_after_equals_offers_base_and_user_types() {
+        let valid = "meta Foo = {x Int}\n";
+        let dirty = "meta Foo = {x Int}\nmeta Bar =";
+        let items = complete_dirty(valid, dirty, 1, 10);
+        let labels = labels(&items);
+        assert!(labels.contains(&"String"), "{:?}", labels);
+        assert!(labels.contains(&"Foo"), "{:?}", labels);
+        assert!(labels.contains(&"{...}"), "{:?}", labels);
+    }
+
+    #[test]
+    fn test_in_struct_offers_declared_fields() {
+        let valid = "meta Foo = {name String, age Int}\n";
+        let dirty = "meta Foo = {name String, age Int}\nfoo = Foo {";
+        let items = complete_dirty(valid, dirty, 1, 11);
+        let labels = labels(&items);
+        assert!(labels.contains(&"name"), "{:?}", labels);
+        assert!(labels.contains(&"age"), "{:?}", labels);
+    }
+}

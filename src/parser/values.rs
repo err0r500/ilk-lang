@@ -22,6 +22,17 @@ fn lit_int_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra
         .map_with(|v, e| Spanned::from_simple(v, e.span()))
 }
 
+fn lit_float_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
+    just('-')
+        .or_not()
+        .then(text::int(10))
+        .then(just('.'))
+        .then(text::digits(10))
+        .to_slice()
+        .map(|s: &str| Value::LitFloat(s.parse().expect("valid float literal from parser")))
+        .map_with(|v, e| Spanned::from_simple(v, e.span()))
+}
+
 fn lit_bool_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>> + Clone {
     choice((just("true").to(true), just("false").to(false)))
         .map(Value::LitBool)
@@ -107,6 +118,7 @@ fn refinement_value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserEx
     recursive(|refinement_val| {
         let simple_value = choice((
             type_ref_value(),
+            lit_float_value(),
             lit_int_value(),
             lit_string_value(),
             lit_bool_value(),
@@ -259,6 +271,7 @@ pub fn value<'a>() -> impl Parser<'a, ParserInput<'a>, S<Value>, ParserExtra<'a>
         choice((
             lit_bool_value(),
             lit_string_value(),
+            lit_float_value(),
             lit_int_value(),
             type_ref_value(),
             instance_struct(value.clone()),
@@ -311,6 +324,21 @@ mod tests {
     #[test]
     fn test_lit_int_zero() {
         assert_eq!(parse_value("0").node, Value::LitInt(0));
+    }
+
+    #[test]
+    fn test_lit_float() {
+        assert_eq!(parse_value("2.75").node, Value::LitFloat(2.75));
+    }
+
+    #[test]
+    fn test_lit_float_negative() {
+        assert_eq!(parse_value("-0.5").node, Value::LitFloat(-0.5));
+    }
+
+    #[test]
+    fn test_lit_float_trailing_zero() {
+        assert_eq!(parse_value("1.0").node, Value::LitFloat(1.0));
     }
 
     #[test]
@@ -593,27 +621,18 @@ mod tests {
 
     #[test]
     fn test_list_type_bounds() {
-        assert_eq!(
-            matches!(
-                parse_value("[3]Int").node,
-                Value::ListType(Cardinality::Exact(3), _)
-            ),
-            true
-        );
-        assert_eq!(
-            matches!(
-                parse_value("[1..]Int").node,
-                Value::ListType(Cardinality::AtLeast(1), _)
-            ),
-            true
-        );
-        assert_eq!(
-            matches!(
-                parse_value("[2..5]Int").node,
-                Value::ListType(Cardinality::Range(2, 5), _)
-            ),
-            true
-        );
+        assert!(matches!(
+            parse_value("[3]Int").node,
+            Value::ListType(Cardinality::Exact(3), _)
+        ));
+        assert!(matches!(
+            parse_value("[1..]Int").node,
+            Value::ListType(Cardinality::AtLeast(1), _)
+        ));
+        assert!(matches!(
+            parse_value("[2..5]Int").node,
+            Value::ListType(Cardinality::Range(2, 5), _)
+        ));
     }
 
     #[test]

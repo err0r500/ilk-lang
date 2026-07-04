@@ -82,7 +82,16 @@ fn import<'a>() -> impl Parser<'a, ParserInput<'a>, S<Item>, ParserExtra<'a>> + 
                 .ignore_then(ident())
                 .or_not(),
         )
-        .map(|(path, alias)| Item::Import(Import { path, alias }))
+        .validate(|(path, alias), _e, emitter| {
+            if let Some(alias) = alias {
+                emitter.emit(Rich::custom(
+                    alias.span.into(),
+                    "import aliases are not supported; imported names share a flat namespace",
+                ));
+            }
+            path
+        })
+        .map(|path| Item::Import(Import { path }))
         .map_with(|i, e| Spanned::from_simple(i, e.span()))
 }
 
@@ -113,8 +122,14 @@ mod tests {
         file().parse(s).into_result().unwrap()
     }
 
-    fn parse_file_err(s: &str) {
-        assert!(file().parse(s).into_result().is_err());
+    /// Parse expecting failure; returns the joined error messages so tests
+    /// can assert which error was raised.
+    fn parse_file_err(s: &str) -> String {
+        let errs = file().parse(s).into_result().unwrap_err();
+        errs.iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     // === Meta declarations ===
@@ -262,15 +277,20 @@ mod tests {
         let f = parse_file("import \"./base.ilk\"");
         let imp = f.imports().next().unwrap();
         assert_eq!(imp.path.node, "./base.ilk");
-        assert!(imp.alias.is_none());
     }
 
     #[test]
-    fn test_import_with_alias() {
-        let f = parse_file("import \"./base.ilk\" as base");
-        let imp = f.imports().next().unwrap();
-        assert_eq!(imp.path.node, "./base.ilk");
-        assert_eq!(imp.alias.as_ref().unwrap().node, "base");
+    fn test_import_alias_rejected() {
+        let errs = file()
+            .parse("import \"./base.ilk\" as base")
+            .into_result()
+            .unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.to_string().contains("import aliases are not supported")),
+            "{:?}",
+            errs
+        );
     }
 
     #[test]
@@ -434,16 +454,24 @@ board = Board {
     #[test]
     fn test_reject_bare_number() {
         // A bare number is not a valid item
-        parse_file_err("42");
+        let msg = parse_file_err("42");
+        assert!(msg.contains("found '4'"), "{}", msg);
     }
 
     #[test]
     fn test_reject_type_without_body() {
-        parse_file_err("meta Foo =");
+        let msg = parse_file_err("meta Foo =");
+        assert!(msg.contains("found end of input"), "{}", msg);
     }
 
     #[test]
     fn test_reject_instance_without_type() {
-        parse_file_err("foo = {x Int}");
+        // instance bodies require a type name before the struct
+        let msg = parse_file_err("foo = {x Int}");
+        assert!(
+            msg.contains("found '{'") && msg.contains("identifier"),
+            "{}",
+            msg
+        );
     }
 }
