@@ -20,16 +20,16 @@
 //   R3 preconditions are reachable: each Given event of a state-change
 //      slice is produced by a slice that precedes it in `flows`      (Board)
 //   R4 commands are triggered: each ChangeSlice is entered from a
-//      ViewSlice in `flows`, or declares an `entryScreen`              (Board)
-//   R5 outputs are consumed: each read model is shown to an actor or
-//      used as an automation `todo` list; each event is read by some
-//      slice or declares `unconsumed "terminal" | "audit"`             (Board)
+//      ViewSlice in `flows`, or is declared in `entryPoints`           (Board)
+//   R5 outputs are consumed: each read model declares the `actor` it
+//      serves (a person, or an automation's system actor); each event
+//      is read by some slice or is declared in `unconsumedEvents`      (ViewSlice, Board)
 //   R6 required events are enforced: for each event in `requires`, a
 //      scenario where it is absent ends in a rejection                 (slices)
-//   R7 invariants are tested: each declared invariant is `violates`-d
-//      by at least one rejecting scenario                              (slices)
-//   R8 lifecycles close: each stream (Tag) is closed by an event
-//      (`closes`) or listed in the board's `openEndedStreams`          (Board)
+//   R7 invariants are tested: each invariant names the rejecting
+//      scenarios that violate it (`violatedBy`)                        (slices)
+//   R8 lifecycles close: each stream (Tag) is declared in the board's
+//      `closedStreams` (with the events that end it) or `openEndedStreams` (Board)
 //
 // `description` fields are free text, typed Concrete<String>: they don't take
 // part in data-flow checks (@source). Use them to state intent in one line,
@@ -54,13 +54,6 @@ meta TaggedEvent = {
     // we expect tags to be derived from event fields
     @source [fields]
     tags []&Tag
-
-    @doc "R8: the streams this event ends (terminal) or compensates. Must be among its tags."
-    @constraint !isPresent(closes) || all(closes, t => t in tags)
-    closes []&Tag
-
-    @doc "R5 escape hatch: why no slice reads this event."
-    unconsumed "terminal" | "audit"
 }
 
 
@@ -122,6 +115,13 @@ meta HttpEndpoint = {
 meta Error = {error Concrete<String>}
 
 
+@doc "A business rule a command enforces, with the names of the rejecting scenarios that demonstrate it (R7)."
+meta Invariant = {
+    rule! Concrete<String>
+    violatedBy! [1..]Concrete<String>
+}
+
+
 @doc "Write-side vertical slice: an actor calls an endpoint, which feeds a command, which emits events."
 @doc "`requires` lists the events that must exist for the command to succeed (R6); `invariants` the business rules it enforces (R7)."
 @doc "`scenarios` are Given (past events) / When (command input) / Then (emitted events or Error) specifications."
@@ -131,33 +131,27 @@ meta ChangeSlice = {
     endpoint! HttpEndpoint
     actor Actor
 
-    @doc "R4 escape hatch: the screen this command is issued from when no ViewSlice feeds it (landing page, static form)."
-    entryScreen Concrete<String>
-
     @source [endpoint.params, endpoint.body, endpoint.auth]
     command! Command
 
     @doc "R6: required events must be read by the command"
     @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
     @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
+    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
     requires! []&TaggedEvent
 
-    @doc "R7: each invariant is violated by at least one rejecting scenario"
-    @constraint all(invariants, i => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && isPresent(s.violates) && s.violates == i))
-    invariants! []Concrete<String>
+    @doc "R7: each invariant is violated by the rejecting scenarios it names"
+    @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
+    invariants! []Invariant
 
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
     @constraint !isPresent(scenarios) || all(scenarios, s => all(keys(s.when), k => k in keys(command.fields)))
     @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
-    @doc "R7: a scenario can only cite a declared invariant"
-    @constraint !isPresent(scenarios) || all(scenarios, s => !isPresent(s.violates) || s.violates in invariants)
-    scenarios []ChangeScenario
+    scenarios! []ChangeScenario
 }
 
 
 @doc "Given past events, when the command runs with this input, then these events are emitted (or this error is returned)."
-@doc "`violates` names the invariant a rejecting scenario demonstrates."
 meta ChangeScenario = {
     name! Concrete<String>
     description Concrete<String>
@@ -165,7 +159,6 @@ meta ChangeScenario = {
     given! []-TaggedEvent
     when! {...}
     then! []-TaggedEvent | Error
-    violates Concrete<String>
 }
 
 
@@ -184,12 +177,12 @@ meta ReadModel = {...}
 
 
 @doc "Read-side vertical slice: events are projected into a read model, served through an endpoint."
-@doc "A view with an `actor` is shown on a screen; one without must be some automation's `todo` list (R5)."
+@doc "R5: `actor` is who reads it: a person (a screen), or an automation's system actor (a todo list)."
 meta ViewSlice = {
     name! Concrete<String>
     description Concrete<String>
     endpoint! HttpEndpoint
-    actor Actor
+    actor! Actor
     image Concrete<String>
 
     @source [endpoint.params, endpoint.body, endpoint.auth]
@@ -230,19 +223,17 @@ meta AutomationSlice = {
     @doc "R6: required events must be read by the command"
     @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
     @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
+    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
     requires! []&TaggedEvent
 
-    @doc "R7: each invariant is violated by at least one rejecting scenario"
-    @constraint all(invariants, i => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && isPresent(s.violates) && s.violates == i))
-    invariants! []Concrete<String>
+    @doc "R7: each invariant is violated by the rejecting scenarios it names"
+    @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
+    invariants! []Invariant
 
     @constraint !isPresent(scenarios) || all(scenarios, s => s.when == trigger)
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
     @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
-    @doc "R7: a scenario can only cite a declared invariant"
-    @constraint !isPresent(scenarios) || all(scenarios, s => !isPresent(s.violates) || s.violates in invariants)
-    scenarios []AutomationScenario
+    scenarios! []AutomationScenario
 }
 
 
@@ -254,7 +245,6 @@ meta AutomationScenario = {
     given! []-TaggedEvent
     when! -TaggedEvent
     then! []-TaggedEvent | Error
-    violates Concrete<String>
 }
 
 
@@ -275,19 +265,17 @@ meta TranslationSlice = {
     @doc "R6: required events must be read by the command"
     @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
     @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
+    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
     requires! []&TaggedEvent
 
-    @doc "R7: each invariant is violated by at least one rejecting scenario"
-    @constraint all(invariants, i => isPresent(scenarios) && exists(scenarios, s => isType(s.then, Error) && isPresent(s.violates) && s.violates == i))
-    invariants! []Concrete<String>
+    @doc "R7: each invariant is violated by the rejecting scenarios it names"
+    @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
+    invariants! []Invariant
 
     @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
     @constraint !isPresent(scenarios) || all(scenarios, s => all(keys(s.when), k => k in keys(message)))
     @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
-    @doc "R7: a scenario can only cite a declared invariant"
-    @constraint !isPresent(scenarios) || all(scenarios, s => !isPresent(s.violates) || s.violates in invariants)
-    scenarios []ChangeScenario
+    scenarios! []ChangeScenario
 }
 
 
@@ -318,6 +306,28 @@ meta Context = {
 }
 
 
+@doc "R4 escape hatch: a command issued from a screen that has no read model (landing page, static form)."
+meta EntryPoint = {
+    command! &ChangeSlice
+    screen! Concrete<String>
+}
+
+
+@doc "R5 escape hatch: an event no slice reads, and why."
+meta UnconsumedEvent = {
+    event! &TaggedEvent
+    reason! "terminal" | "audit"
+}
+
+
+@doc "R8: a stream (tag) and the events that end (terminal) or compensate it. Each of them must carry the tag."
+meta StreamEnd = {
+    stream! &Tag
+    @constraint all(closedBy, e => stream in e.tags)
+    closedBy! [1..]&TaggedEvent
+}
+
+
 @doc "The whole event model: the @main entry point. Checks the model-wide rules over every declared slice and event."
 meta Board = {
     name Concrete<String>
@@ -325,18 +335,20 @@ meta Board = {
     contexts []Context
 
     @doc "R3: each Given event of a state-change slice is produced by a slice that precedes it in flows"
-    @constraint all(instances(Slice), s => isType(s, ViewSlice) || !isPresent(s.scenarios) || all(s.scenarios, sc => all(sc.given, e => exists(instances(Slice), p => !isType(p, ViewSlice) && e in p.command.emits && s in reachable(flows, p)))))
+    @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.scenarios, sc => all(sc.given, e => exists(instances(Slice), p => !(p in instances(ViewSlice)) && e in p.command.emits && s in reachable(flows, p)))))
     @doc "R3: each automation trigger is produced by a slice that precedes the automation in flows"
-    @constraint all(instances(AutomationSlice), a => exists(instances(Slice), p => !isType(p, ViewSlice) && a.trigger in p.command.emits && a in reachable(flows, p)))
-    @doc "R4: each command is entered from a view in flows, or declares an entryScreen"
-    @constraint all(instances(ChangeSlice), c => isPresent(c.entryScreen) || exists(flows, t => isType(t.from, ViewSlice) && c in t.to))
-    @doc "R5: each read model is shown to an actor or used as an automation todo list"
-    @constraint all(instances(ViewSlice), v => isPresent(v.actor) || exists(instances(AutomationSlice), a => isPresent(a.todo) && a.todo == v))
-    @doc "R5: each event is read by some slice, or declares why not (unconsumed)"
-    @constraint all(instances(TaggedEvent), e => isPresent(e.unconsumed) || exists(instances(Slice), s => (isType(s, ViewSlice) && exists(s.query, q => e in q.eventTypes)) || (!isType(s, ViewSlice) && exists(s.command.query, q => e in q.eventTypes)) || (isType(s, AutomationSlice) && s.trigger == e)))
+    @constraint all(instances(AutomationSlice), a => exists(instances(Slice), p => !(p in instances(ViewSlice)) && a.trigger in p.command.emits && a in reachable(flows, p)))
+    @doc "R4: each command is entered from a view in flows, or declared in entryPoints"
+    @constraint all(instances(ChangeSlice), c => exists(entryPoints, x => x.command == c) || exists(flows, t => t.from in instances(ViewSlice) && c in t.to))
+    @doc "R5: each event is read by some slice, or declared in unconsumedEvents"
+    @constraint all(instances(TaggedEvent), e => exists(unconsumedEvents, u => u.event == e) || exists(instances(Slice), s => (s in instances(ViewSlice) && exists(s.query, q => e in q.eventTypes)) || (!(s in instances(ViewSlice)) && exists(s.command.query, q => e in q.eventTypes)) || (s in instances(AutomationSlice) && s.trigger == e)))
     flows! []Transition
 
-    @doc "R8: each stream is closed by an event, or declared open-ended here"
-    @constraint all(instances(Tag), t => t in openEndedStreams || exists(instances(TaggedEvent), e => isPresent(e.closes) && t in e.closes))
+    entryPoints! []EntryPoint
+    unconsumedEvents! []UnconsumedEvent
+
+    @doc "R8: each stream is closed by some events, or declared open-ended"
+    @constraint all(instances(Tag), t => t in openEndedStreams || exists(closedStreams, x => x.stream == t))
+    closedStreams! []StreamEnd
     openEndedStreams! []&Tag
 }

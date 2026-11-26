@@ -291,15 +291,6 @@ impl<'a> Formatter<'a> {
                 self.write(field_name);
                 self.write(")");
             }
-            ConstraintExpr::IsPresentField(obj, field) => {
-                self.write("isPresent(");
-                self.format_constraint_expr(obj);
-                if !field.is_empty() {
-                    self.write(".");
-                    self.write(field);
-                }
-                self.write(")");
-            }
             ConstraintExpr::Instances(type_name) => {
                 self.write("instances(");
                 self.write(type_name);

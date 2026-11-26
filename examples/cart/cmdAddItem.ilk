@@ -13,8 +13,6 @@ A cart holds at most 3 items, and out-of-stock products can't be added."
 
     actor userActor
 
-    entryScreen "product page"
-
     endpoint {
         method POST
         path "/carts/{cartId}/items"
@@ -74,8 +72,14 @@ A cart holds at most 3 items, and out-of-stock products can't be added."
     requires []
 
     invariants [
-        "a cart holds at most 3 items"
-        "only products in stock can be added"
+        {
+            rule "a cart holds at most 3 items"
+            violatedBy ["Err: max 3 items per cart"]
+        }
+        {
+            rule "only products in stock can be added"
+            violatedBy ["Err: can't add item if empty inventory"]
+        }
     ]
 
     scenarios [
@@ -119,7 +123,6 @@ A cart holds at most 3 items, and out-of-stock products can't be added."
             ]
             when {}
             then {error "can't add more than 3 items"}
-            violates "a cart holds at most 3 items"
         }
         {
             name "Err: can't add item if empty inventory"
@@ -132,7 +135,6 @@ A cart holds at most 3 items, and out-of-stock products can't be added."
             ]
             when {}
             then {error "product out of stock"}
-            violates "only products in stock can be added"
         }
     ]
 }

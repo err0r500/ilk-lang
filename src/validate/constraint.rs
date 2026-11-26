@@ -686,16 +686,15 @@ fn eval_constraint(
                         Err(ConstraintError::Failed(trace))
                     }
                 }
-                (_, EvalValue::List(items)) => {
-                    if items.iter().any(|item| eval_values_equal(item, &e)) {
+                (EvalValue::BindingRef(key), EvalValue::List(items)) => {
+                    let found = items
+                        .iter()
+                        .any(|item| matches!(item, EvalValue::BindingRef(k) if k == key));
+                    if found {
                         Ok(EvalValue::Bool(true))
                     } else {
                         let trace = FailureTrace::new().with_binding(
-                            format!(
-                                "{} in {}",
-                                eval_value_to_string(&e),
-                                eval_value_to_string(&s)
-                            ),
+                            format!("{} in {}", key, eval_value_to_string(&s)),
                             "false",
                         );
                         Err(ConstraintError::Failed(trace))
@@ -709,17 +708,6 @@ fn eval_constraint(
 
         ConstraintExpr::IsType(inner, type_name) => {
             let val = eval_constraint(&inner.node, env, ctx)?;
-            // A reference to a binding is discriminated by the binding's meta:
-            // `isType(s, ViewSlice)` holds for a binding declared `ViewSlice`, or
-            // for any variant when the named meta is a union.
-            if let EvalValue::BindingRef(name) = &val {
-                if ctx.env.get_meta(type_name).is_some() {
-                    let matches = ctx.get_instance(name).is_some_and(|inst| {
-                        meta_is_or_variant_of(&inst.type_name.node, type_name, ctx)
-                    });
-                    return Ok(EvalValue::Bool(matches));
-                }
-            }
             let kind = type_kind(type_name, ctx);
             let matches = match kind {
                 "list" => matches!(val, EvalValue::List(_)),
@@ -740,23 +728,6 @@ fn eval_constraint(
 
         ConstraintExpr::IsPresent(field_name) => {
             Ok(EvalValue::Bool(env.contains_key(field_name.as_str())))
-        }
-
-        ConstraintExpr::IsPresentField(obj, field) => {
-            if field.is_empty() {
-                return Err(ConstraintError::Eval(
-                    "isPresent expects a field name or a field path (x.field)".to_string(),
-                ));
-            }
-            let present = match eval_constraint(&obj.node, env, ctx)? {
-                EvalValue::Struct(map) => map.contains_key(field),
-                EvalValue::BindingRef(name) => ctx.get_instance(&name).is_some_and(|inst| {
-                    matches!(&inst.body.node, Value::Struct(fields)
-                        if fields.iter().any(|f| &f.node.name.node == field))
-                }),
-                _ => false,
-            };
-            Ok(EvalValue::Bool(present))
         }
 
         ConstraintExpr::Instances(type_name) => {
@@ -1073,28 +1044,6 @@ t = T {xs [a1, a2], probe b1}
     }
 
     #[test]
-    fn test_string_in_list() {
-        ok(r#"
-meta T = {
-  @constraint all(cited, c => c in names)
-  names []Concrete<String>
-  cited []Concrete<String>
-}
-t = T {names ["x", "y"], cited ["y"]}
-"#);
-        fails(
-            r#"
-meta T = {
-  @constraint all(cited, c => c in names)
-  names []Concrete<String>
-  cited []Concrete<String>
-}
-t = T {names ["x"], cited ["z"]}
-"#,
-        );
-    }
-
-    #[test]
     fn test_instances_includes_union_variants() {
         ok(&format!(
             "{}{}",
@@ -1105,49 +1054,6 @@ meta T = {
   x Int
 }
 t = T {x Int}
-"#
-        ));
-    }
-
-    #[test]
-    fn test_is_type_discriminates_binding_refs() {
-        ok(&format!(
-            "{}{}",
-            GRAPH_BASE,
-            r#"
-meta T = {
-  @constraint all(xs, x => isType(x, A) == !isType(x, B) && isType(x, Node))
-  xs []&Node
-}
-t = T {xs [a1, b1]}
-"#
-        ));
-        fails(&format!(
-            "{}{}",
-            GRAPH_BASE,
-            r#"
-meta T = {
-  @constraint all(xs, x => isType(x, A))
-  xs []&Node
-}
-t = T {xs [a1, b1]}
-"#
-        ));
-    }
-
-    #[test]
-    fn test_is_present_on_field_path() {
-        ok(&format!(
-            "{}{}",
-            GRAPH_BASE,
-            r#"
-meta T = {
-  @constraint isPresent(first.note) && !isPresent(second.note) && isPresent(inline.y)
-  first &A
-  second &A
-  inline {...}
-}
-t = T {first a1, second a2, inline {y Int}}
 "#
         ));
     }

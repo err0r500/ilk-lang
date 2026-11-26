@@ -195,18 +195,9 @@ fn constraint_expr<'a>(
                 .map(|e| ConstraintExpr::Keys(Box::new(e)))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("isPresent(")
-                .ignore_then(expr.clone())
+                .ignore_then(ident())
                 .then_ignore(just(')'))
-                .map(|inner: S<ConstraintExpr>| match inner.node {
-                    ConstraintExpr::Var(name) => ConstraintExpr::IsPresent(name),
-                    ConstraintExpr::FieldAccess(obj, field) => {
-                        ConstraintExpr::IsPresentField(obj, field)
-                    }
-                    other => ConstraintExpr::IsPresentField(
-                        Box::new(S::new(other, inner.span.clone())),
-                        String::new(),
-                    ),
-                })
+                .map(|name| ConstraintExpr::IsPresent(name.node))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("instances(")
                 .ignore_then(ident())

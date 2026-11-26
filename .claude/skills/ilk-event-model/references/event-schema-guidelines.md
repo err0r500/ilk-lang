@@ -61,7 +61,7 @@ anything else in the model.
 | Measurements, rates | `Float` | `Int` |
 | External codes (ISBN, email, SKU code) | `String` | |
 | Closed sets (status, reason code) | `String` + `@doc "one of: A, B, C"` on the field | encoding the state machine in one event |
-| Collections | typed lists `lines []{ sku Uuid, qty Int }` | `String` blobs |
+| Collections | typed lists `lines []{ sku Uuid, qty Int }` (copied whole by name) | `String` blobs |
 
 ## Tags (consistency boundaries)
 
@@ -74,11 +74,11 @@ anything else in the model.
 14. **Use few tags, on purpose.** One per entity that bounds a rule. Over-tagging
     makes nothing more consistent. It only adds noise.
 14b. **Each tag is a stream with a lifecycle (R8).** Mark the event that ends it
-    with `closes [tag]` (`BookReturned` closes the loan, `CartSubmitted` the cart),
-    or list the tag in the board's `openEndedStreams` (a member, a product).
+    in the board's `closedStreams` (`{stream loanIdTag, closedBy [bookReturned]}`),
+    or list the tag in `openEndedStreams` (a member, a product).
 14c. **An event nobody reads (R5)** is either a missing view/automation, or a
-    deliberate `unconsumed "terminal"` (end of a lifecycle, kept for history) or
-    `unconsumed "audit"` (kept for compliance).
+    deliberate entry in the board's `unconsumedEvents` with reason `"terminal"`
+    (end of a lifecycle, kept for history) or `"audit"` (kept for compliance).
 
 ## Evolution
 

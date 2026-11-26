@@ -52,5 +52,16 @@ board = Board {
         {from syncPrices, to [changedPrices]}
     ]
 
+    // explicit exceptions to the well-formedness rules
+    entryPoints [{command addItem, screen "product page"}]
+
+    unconsumedEvents [{
+        // read by the open-carts view, which is still work in progress
+        event cartSubmitted
+        reason "terminal"
+    }]
+
+    closedStreams [{stream cartIdTag, closedBy [cartSubmitted]}, {stream cartTag, closedBy [cartSubmitted]}]
+
     openEndedStreams [shopperIdTag, productIdTag]
 }

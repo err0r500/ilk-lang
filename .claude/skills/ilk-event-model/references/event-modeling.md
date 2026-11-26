@@ -72,8 +72,11 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 - `endpoint`: how the view is requested. The path template vars must be in `params`.
 - `query`: which events feed the projection, filtered by tags. A tag can be
   bound to the request (`memberIdTag & {memberId Uuid = endpoint.auth.userId}`).
-- `readModel`: the shape returned (`{...}` is open). Use list-typed fields for
-  collections: `loans []{ loanId Uuid, dueDate Date }`.
+- `readModel`: the shape returned (`{...}` is open). Write collections as a list
+  holding one struct: `loans [{ loanId Uuid, dueDate Date }]`. Each of its fields
+  must be an attribute of a queried event (R1).
+- `actor`: required, the one who reads it (R5): a person, or the system actor of
+  the automation that uses it as a todo list.
 - `scenarios`: `given` events → `query` input → `expect` state. Use `@doc`
   on expected derived values to state the formula (`@doc "sum(items, i => i.price * i.quantity)"`).
 
@@ -85,12 +88,16 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 - `flows`: the **graph of possible journeys**, as transitions
   `{from slice, to [slices]}`. It may branch (a cart view leads to add, remove or
   clear), merge, and loop (view cart → add item → view cart). Typical edges:
-  - view → command: the user acts from that screen (R4 needs one per command, or `entryScreen`)
+  - view → command: the user acts from that screen (R4 needs one per command, or a board `entryPoints` entry)
   - command → view: the user sees the result
   - command → automation: the automation's trigger is emitted by that command (R3)
   - translation → anything that needs the external facts it records
   - a self-loop when the same thing may happen again (duplicate webhook)
-- `openEndedStreams`: tags whose stream never ends (R8), e.g. a member or a product.
+- Explicit exceptions (all required, `[]` when there are none):
+  - `entryPoints`: commands issued from a screen with no read model (R4)
+  - `unconsumedEvents`: events no slice reads, with a reason, `"terminal"` or `"audit"` (R5)
+  - `closedStreams`: each stream (tag) with the events that end it (R8)
+  - `openEndedStreams`: tags whose stream never ends (R8), e.g. a member or a product
 
 "Earlier" means reachable in `flows`. R3 checks that every `given` event of a
 state-change slice, and every automation trigger, is produced by some slice

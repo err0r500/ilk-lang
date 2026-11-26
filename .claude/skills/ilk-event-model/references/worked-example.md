@@ -47,7 +47,7 @@ Things the rules forced into the model:
 - **R2** lets `ReturnBook` emit `bookId` without asking the client for it: it's an
   attribute of the `BookBorrowed` event the command reads.
 - **R6** added the `Err: unknown …` scenarios, and **R8** the `loanIdTag` stream that
-  `BookReturned` closes.
+  `BookReturned` closes (declared in the board's `closedStreams`).
 - The `recordFinePayment → recordFinePayment` self-loop says duplicates can arrive. That's
   what lets the "duplicate notification" scenario's `FinePaid` precondition be reachable.
 
@@ -136,8 +136,6 @@ bookReturned = TaggedEvent {
     }
 
     tags [bookIdTag, memberIdTag, loanIdTag]
-
-    closes [loanIdTag]
 }
 
 fineIssued = TaggedEvent {
@@ -204,6 +202,8 @@ importCatalog = TranslationSlice {
     requires []
 
     invariants []
+
+    scenarios []
 }
 ```
 
@@ -222,8 +222,6 @@ A book can only be lent to one member at a time, and a member can have at most 3
 Loans last 21 days."
 
     actor memberActor
-
-    entryScreen "book details page"
 
     endpoint {
         method POST
@@ -267,8 +265,14 @@ Loans last 21 days."
     requires [bookAddedToCatalog]
 
     invariants [
-        "a book is lent to one member at a time"
-        "a member has at most 3 books at once"
+        {
+            rule "a book is lent to one member at a time"
+            violatedBy ["Err: book already on loan"]
+        }
+        {
+            rule "a member has at most 3 books at once"
+            violatedBy ["Err: member already has 3 books"]
+        }
     ]
 
     scenarios [
@@ -296,7 +300,6 @@ Loans last 21 days."
             ]
             when {bookId "b1", memberId "m1"}
             then {error "book not available"}
-            violates "a book is lent to one member at a time"
         }
         {
             name "Err: member already has 3 books"
@@ -308,7 +311,6 @@ Loans last 21 days."
             ]
             when {bookId "b4", memberId "m1"}
             then {error "loan limit reached"}
-            violates "a member has at most 3 books at once"
         }
         {
             name "Err: unknown book"
@@ -361,7 +363,10 @@ returnBook = ChangeSlice {
 
     requires [bookBorrowed]
 
-    invariants ["only the borrower can return a book"]
+    invariants [{
+        rule "only the borrower can return a book"
+        violatedBy ["Err: someone else's loan"]
+    }]
 
     scenarios [
         {
@@ -384,7 +389,6 @@ returnBook = ChangeSlice {
             given [bookBorrowed & {fields {loanId "l1", memberId "m2"}}]
             when {loanId "l1", memberId "m1"}
             then {error "not your loan"}
-            violates "only the borrower can return a book"
         }
         {
             name "Err: unknown loan"
@@ -425,11 +429,11 @@ viewMyLoans = ViewSlice {
     ]
 
     readModel {                 // R1: every field is an attribute of BookBorrowed
-        loans []{
+        loans [{
             loanId Uuid
             bookId Uuid
             dueDate Date
-        }
+        }]
     }
 
     scenarios [
@@ -610,6 +614,13 @@ board = Board {
         {from recordFinePayment, to [recordFinePayment]}
     ]
 
+    // explicit exceptions to the well-formedness rules
+    entryPoints [{command borrowBook, screen "book details page"}]
+
+    unconsumedEvents []
+
+    closedStreams [{stream loanIdTag, closedBy [bookReturned]}]
+
     openEndedStreams [bookIdTag, memberIdTag]
 }
 ```
@@ -618,5 +629,5 @@ board = Board {
 
 - Files: types, tags, actors, events, transImportCatalog, cmdBorrowBook, cmdReturnBook, viewMyLoans, autoIssueLateFine, transFinePaid, main. `ilk check main.ilk` passes.
 - Assumptions: member = authenticated user; books come from a cataloguing system; `BookReturned` records `daysOverdue` so the fine can be computed from the trigger alone.
-- Declared exceptions: `entryScreen` on BorrowBook (book details page); open-ended streams: book, member.
+- Declared exceptions: BorrowBook is an entry point (book details page); open-ended streams: book, member.
 - Open questions: loan renewal? Do unpaid fines block borrowing?

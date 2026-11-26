@@ -32,4 +32,6 @@ syncPrices = TranslationSlice {
     requires []
 
     invariants []
+
+    scenarios []
 }

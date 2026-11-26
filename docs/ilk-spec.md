@@ -915,9 +915,6 @@ of the listed sources, validation fails (`Ambiguous source`) and an explicit
 
 **On a list declaration** — each element's fields are checked against the sources.
 
-**On a typed list of structs** (`items []{ sku Uuid, qty Int }`) — if no source has a
-field of the same name, each element field is checked against the sources on its own.
-
 **On a plain struct field** — the field's own struct element is checked directly: every
 sub-field of that struct must be traceable to the named sources.
 
@@ -1228,9 +1225,8 @@ A minimal expression language for `@constraint` predicates.
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
-| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list). When `expr` is a **reference to a binding**, the binding's meta must be `TypeName` or one of its union variants |
-| `isPresent(x.field)` | True if `field` is present on `x` (a struct value or a referenced binding) |
-| `instances(TypeName)` | All bindings whose meta is `TypeName` or one of its union variants, whether or not they are referenced. Lets a constraint say "every event…" without relying on a hand-maintained list |
+| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list). |
+| `instances(TypeName)` | All bindings whose meta is `TypeName` or one of its union variants, whether or not they are referenced. Lets a constraint say "every event…" without relying on a hand-maintained list. `x in instances(ViewSlice)` also tells which variant a reference points to |
 | `reachable(graph, node)` | Every node reachable from `node` in one or more steps. `graph` is a list of entries with a `from` node and a `to` list of nodes. Cycles are fine; `node` is in the result only if a cycle leads back to it |
 
 ### Operators
@@ -1241,7 +1237,7 @@ A minimal expression language for `@constraint` predicates.
 | `\|\|` | Logical or |
 | `!` | Logical not |
 | `==`, `!=` | Equality, inequality. Structs and lists compare deeply (lists are order-sensitive) |
-| `in` | Membership: a key in a set (`k in keys(s)`) or any value in a list (`e in emits`, `"x" in names`) |
+| `in` | Set membership (`x in set`), or a binding reference in a list (`e in emits`) |
 | `<`, `<=`, `>`, `>=` | Numeric comparison (Int and Float operands may be mixed) |
 
 Examples:
@@ -1260,17 +1256,17 @@ when the constraint fails, together with the `where:` bindings:
 
 ```ilk
 meta ChangeSlice = {
-    @doc "R7: each invariant is violated by at least one rejecting scenario"
-    @constraint all(invariants, i => exists(scenarios, s => isPresent(s.violates) && s.violates == i))
-    invariants! []Concrete<String>
+    @doc "R6: each required event has a scenario where it is absent and the command is rejected"
+    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
+    requires! []&TaggedEvent
     ...
 }
 ```
 
 ```
-Error: Constraint failed for instance 'removeItem': R7: each invariant is violated by at least one rejecting scenario
+Error: Constraint failed for instance 'clearCart': R6: each required event has a scenario where it is absent and the command is rejected
   where:
-    i = an item can only be removed from its own cart
+    r = cartCreated
 ```
 
 User-defined predicates are not currently supported.

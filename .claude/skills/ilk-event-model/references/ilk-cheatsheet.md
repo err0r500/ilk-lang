@@ -69,8 +69,10 @@ HTTP methods are bare identifiers: `method POST`.
 - Scenarios: every `given` event ∈ some `query[].eventTypes`.
 - `readModel` ← `@source [query.eventTypes.fields]` (R1): every field is an attribute of a
   queried event (by name, `= query.eventTypes.fields.x`), or derived with
-  `= compute(query.eventTypes.fields.a, ...)` plus an `@doc` giving the formula. Typed lists
-  of structs (`loans []{loanId Uuid, dueDate Date}`) are checked element by element.
+  `= compute(query.eventTypes.fields.a, ...)` plus an `@doc` giving the formula. Write
+  collections as a list holding one struct, `loans [{loanId Uuid, dueDate Date}]`: its
+  fields are then checked one by one. (`loans []{...}` would need a `loans` field on an event.)
+- `actor` is required (R5).
 
 **AutomationSlice**
 - `command.fields` ← `@source [trigger.fields]`: every field comes from the trigger event
@@ -109,15 +111,16 @@ HTTP methods are bare identifiers: `method POST`.
 | R1 read-model fields are sourced | ViewSlice `readModel` | `= compute(...)` with `@doc` |
 | R2 emitted attributes have an origin | Command `emits` | `Type*` generator (ids, clocks, policy values) with `@doc` |
 | R3 preconditions are reachable: each `given` event and automation trigger is emitted by a slice that can precede it in `flows` | Board | add the producing slice and the edge |
-| R4 commands are triggered: entered from a ViewSlice in `flows` | Board | `entryScreen "landing page"` on the ChangeSlice |
-| R5 read models are consumed (shown to an actor, or an automation's `todo`) | Board | — |
-| R5 events are consumed (read by a query or a trigger) | Board | `unconsumed "terminal"` / `unconsumed "audit"` on the event |
+| R4 commands are triggered: entered from a ViewSlice in `flows` | Board | `entryPoints [{command addItem, screen "product page"}]` |
+| R5 read models are consumed: `actor` is required | ViewSlice | — (use the automation's system actor for a todo list) |
+| R5 events are consumed (read by a query or a trigger) | Board | `unconsumedEvents [{event cartSubmitted, reason "terminal"}]` (or `"audit"`) |
 | R6 each `requires` event has a rejecting scenario where it's absent; it must also be queried | slice | `requires []` when nothing is required |
-| R7 each `invariants` entry is `violates`-d by a rejecting scenario | slice | `invariants []` |
-| R8 each stream (Tag) is closed by an event's `closes` | Board | list it in `openEndedStreams` |
+| R7 each invariant `{rule, violatedBy [scenario names]}` names existing rejecting scenarios | slice | `invariants []` |
+| R8 each stream (Tag) is in `closedStreams` (its closing events must carry the tag) | Board | list it in `openEndedStreams` |
 
-`requires`, `invariants` (state-change slices) and `flows`, `openEndedStreams` (Board) are
-**required**, so writing `[]` is itself an explicit statement.
+`requires`, `invariants`, `scenarios` (state-change slices) and `flows`, `entryPoints`,
+`unconsumedEvents`, `closedStreams`, `openEndedStreams` (Board) are **required**, so
+writing `[]` is itself an explicit statement.
 
 ## Compiler errors → likely fix
 

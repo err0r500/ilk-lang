@@ -200,7 +200,7 @@ Graph and presence built-ins in constraints
 ================================================================================
 
 meta T = {
-    @constraint all(instances(Node), n => isType(n, A) || isPresent(n.note) || n in reachable(edges, start))
+    @constraint all(instances(Node), n => isType(n, A) || isPresent(note) || n in reachable(edges, start))
     edges []Edge
 }
 
@@ -224,10 +224,7 @@ meta T = {
                       (identifier))
                     (identifier))
                   (constraint_call
-                    (constraint_field_access
-                      (constraint_var
-                        (identifier))
-                      (identifier))))
+                    (identifier)))
                 (constraint_comparison
                   (constraint_var
                     (identifier))

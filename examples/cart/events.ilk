@@ -73,10 +73,6 @@ cartSubmitted = TaggedEvent {
         cartTag & {cart Uuid = fields.cartId}
     ]
 
-    closes [cartIdTag, cartTag]
-
-    // read by the open-carts view, which is still work in progress
-    unconsumed "terminal"
 }
 
 

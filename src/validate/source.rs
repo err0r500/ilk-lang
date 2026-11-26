@@ -559,20 +559,6 @@ fn validate_refinement_field(
 
             let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
 
-            // A typed list of structs (`items []{ sku Uuid, qty Int }`) with no
-            // source of the same name is checked element-wise: each of its
-            // fields must be sourced on its own.
-            if !found {
-                if let Value::ListType(_, elem) = &field.node.value.node {
-                    if let Value::Struct(elem_fields) = &elem.node {
-                        for f in elem_fields {
-                            validate_refinement_field(ctx, f, sources, parent_fields, None, errors);
-                        }
-                        return;
-                    }
-                }
-            }
-
             if !found && !is_concrete_value(&field.node.value) {
                 errors.push(
                     Diagnostic::error(
@@ -1030,20 +1016,6 @@ registered = Ev { type "Registered", fields {cartId Uuid, shopperId Uuid} }
             collective("v = View { reads [created], model {owner Uuid = reads.fields.nope} }");
         assert_eq!(errors.len(), 1, "{:?}", errors);
         assert_eq!(errors[0].code, DiagnosticCode::SourcePathNotFound);
-    }
-
-    #[test]
-    fn test_typed_struct_list_checked_elementwise() {
-        let ok = collective(
-            "v = View { reads [created, added], model {items []{cartId Uuid, price Int}} }",
-        );
-        assert!(ok.is_empty(), "{:?}", ok);
-        // a same-named list field is matched as a whole
-        let whole = collective("v = View { reads [added], model {lines []{sku Uuid, qty Int}} }");
-        assert!(whole.is_empty(), "{:?}", whole);
-        let bad = collective("v = View { reads [added], model {items []{cartId Uuid, nope Int}} }");
-        assert_eq!(bad.len(), 1, "{:?}", bad);
-        assert_eq!(bad[0].code, DiagnosticCode::NoSourceFound);
     }
 
     #[test]

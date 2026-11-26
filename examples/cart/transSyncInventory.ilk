@@ -30,4 +30,6 @@ syncInventory = TranslationSlice {
     requires []
 
     invariants []
+
+    scenarios []
 }

@@ -50,7 +50,7 @@ Pull out the following and write it down in your reply or a scratch file:
 - **Business rules**: split them into *requires* (an event that must exist:
   "the book must be in the catalog") and *invariants* (a rule over history:
   "at most 3 books"). Each becomes at least one `Err:` scenario
-  (R6/R7), and invariant scenarios carry `violates "<invariant>"`
+  (R6/R7); each invariant names the rejecting scenarios that violate it (`violatedBy`)
 - **Identifiers**: the entities that consistency decisions depend on; these become tags
 - **Open questions / assumptions**: anything the spec doesn't settle
 
@@ -135,7 +135,7 @@ matches, adding an explicit `= path` mapping, or adding the missing query item.
 - [ ] Every command has an `OK:` scenario. (R6/R7 already guarantee an `Err:` per required event and invariant, if you declared them all.)
 - [ ] Every TranslationSlice has a duplicate-message scenario (`then []`).
 - [ ] Every sentence of the spec is quoted in at least one slice `description`. A sentence quoted nowhere is either an unmodelled requirement or an open question.
-- [ ] Every escape hatch you used (`entryScreen`, `unconsumed`, `openEndedStreams`, a `Type*` generator) is a real decision. Mention each in the report.
+- [ ] Every escape hatch you used (the board's `entryPoints`, `unconsumedEvents`, `openEndedStreams`, or a `Type*` generator) is a real decision. Mention each in the report.
 - [ ] Every event is emitted by some slice. An event nobody emits is a missing slice, usually a translation from another system.
 - [ ] Event schemas pass the checklist at the end of `references/event-schema-guidelines.md`.
 - [ ] Optionally normalize layout with `ilk format file.ilk > tmp && mv tmp file.ilk` (it prints to stdout).

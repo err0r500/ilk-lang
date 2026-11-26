@@ -42,7 +42,10 @@ removeItem = ChangeSlice {
 
     requires [itemAdded]
 
-    invariants ["an item can only be removed from its own cart"]
+    invariants [{
+        rule "an item can only be removed from its own cart"
+        violatedBy ["Err: wrong cart"]
+    }]
 
     scenarios [
         {
@@ -72,7 +75,6 @@ removeItem = ChangeSlice {
             ]
             when {cartId "abc", itemId "item1"}
             then {error "the item doesn't belong to this cart"}
-            violates "an item can only be removed from its own cart"
         }
         {
             name "Err: item was never added"
