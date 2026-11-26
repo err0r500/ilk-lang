@@ -339,12 +339,16 @@ meta Board = {
 
     @doc "R3: each Given event of a state-change slice is produced by a slice that precedes it in flows"
     @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.scenarios, sc => all(sc.given, e => exists(instances(Slice), p => !(p in instances(ViewSlice)) && e in p.command.emits && s in reachable(flows, p)))))
+
     @doc "R3: each automation trigger is produced by a slice that precedes the automation in flows"
     @constraint all(instances(AutomationSlice), a => exists(instances(Slice), p => !(p in instances(ViewSlice)) && a.trigger in p.command.emits && a in reachable(flows, p)))
+
     @doc "R3b: each required attribute is emitted on every path from every start to the slice that requires it"
     @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.requires, f => all(starts, st => (!(st in instances(ViewSlice)) && exists(st.command.emits, ev => f in keys(ev.fields))) || (st != s && !(s in reachable(flows, st, n => !(n in instances(ViewSlice)) && exists(n.command.emits, ev => f in keys(ev.fields))))))))
+
     @doc "R4: each command is entered from a view in flows, or is a start"
     @constraint all(instances(ChangeSlice), c => c in starts || exists(flows, t => t.from in instances(ViewSlice) && c in t.to))
+
     @doc "R5: each event is read by some slice, or declared in unconsumedEvents"
     @constraint all(instances(TaggedEvent), e => exists(unconsumedEvents, u => u.event == e) || exists(instances(Slice), s => (s in instances(ViewSlice) && exists(s.query, q => e in q.eventTypes)) || (!(s in instances(ViewSlice)) && exists(s.command.query, q => e in q.eventTypes)) || (s in instances(AutomationSlice) && s.trigger == e)))
     flows! []Transition
@@ -355,6 +359,7 @@ meta Board = {
 
     @doc "R8: each stream is closed by some events, or declared open-ended"
     @constraint all(instances(Tag), t => t in openEndedStreams || exists(closedStreams, x => x.stream == t))
+
     closedStreams! []StreamEnd
     openEndedStreams! []&Tag
 }
