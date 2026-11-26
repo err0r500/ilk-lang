@@ -615,7 +615,8 @@ board = Board {
     ]
 
     // explicit exceptions to the well-formedness rules
-    entryPoints [{command borrowBook, screen "book details page"}]
+    // the timeline begins with books entering the catalog
+    starts [importCatalog]
 
     unconsumedEvents []
 
@@ -629,5 +630,5 @@ board = Board {
 
 - Files: types, tags, actors, events, transImportCatalog, cmdBorrowBook, cmdReturnBook, viewMyLoans, autoIssueLateFine, transFinePaid, main. `ilk check main.ilk` passes.
 - Assumptions: member = authenticated user; books come from a cataloguing system; `BookReturned` records `daysOverdue` so the fine can be computed from the trigger alone.
-- Declared exceptions: BorrowBook is an entry point (book details page); open-ended streams: book, member.
+- Starts: the timeline begins with ImportCatalog (so R3b can prove every borrowed book is in the catalog). Open-ended streams: book, member.
 - Open questions: loan renewal? Do unpaid fines block borrowing?

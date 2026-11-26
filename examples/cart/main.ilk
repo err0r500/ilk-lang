@@ -53,7 +53,9 @@ board = Board {
     ]
 
     // explicit exceptions to the well-formedness rules
-    entryPoints [{command addItem, screen "product page"}]
+    // journeys begin on a product page (adding an item opens the cart),
+    // or with a message from the warehouse or the catalog
+    starts [addItem, syncInventory, syncPrices]
 
     unconsumedEvents [{
         // read by the open-carts view, which is still work in progress

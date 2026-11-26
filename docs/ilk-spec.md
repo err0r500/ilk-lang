@@ -1228,6 +1228,7 @@ A minimal expression language for `@constraint` predicates.
 | `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list). |
 | `instances(TypeName)` | All bindings whose meta is `TypeName` or one of its union variants, whether or not they are referenced. Lets a constraint say "every event…" without relying on a hand-maintained list. `x in instances(ViewSlice)` also tells which variant a reference points to |
 | `reachable(graph, node)` | Every node reachable from `node` in one or more steps. `graph` is a list of entries with a `from` node and a `to` list of nodes. Cycles are fine; `node` is in the result only if a cycle leads back to it |
+| `reachable(graph, node, n => stop)` | Same, but the walk doesn't continue through nodes where `stop` holds (they are still reached). `!(b in reachable(g, a, n => n in guards))` means *every* path from `a` to `b` passes through a guard |
 
 ### Operators
 

@@ -111,14 +111,15 @@ HTTP methods are bare identifiers: `method POST`.
 | R1 read-model fields are sourced | ViewSlice `readModel` | `= compute(...)` with `@doc` |
 | R2 emitted attributes have an origin | Command `emits` | `Type*` generator (ids, clocks, policy values) with `@doc` |
 | R3 preconditions are reachable: each `given` event and automation trigger is emitted by a slice that can precede it in `flows` | Board | add the producing slice and the edge |
-| R4 commands are triggered: entered from a ViewSlice in `flows` | Board | `entryPoints [{command addItem, screen "product page"}]` |
+| R3b each `requires` event is produced on **every** path from every start (`starts`) to the slice | Board | change the flow (route through the producer) or the start points |
+| R4 commands are triggered: entered from a ViewSlice in `flows` | Board | list the command in `starts` (issued from a static page) |
 | R5 read models are consumed: `actor` is required | ViewSlice | — (use the automation's system actor for a todo list) |
 | R5 events are consumed (read by a query or a trigger) | Board | `unconsumedEvents [{event cartSubmitted, reason "terminal"}]` (or `"audit"`) |
 | R6 each `requires` event has a rejecting scenario where it's absent; it must also be queried | slice | `requires []` when nothing is required |
 | R7 each invariant `{rule, violatedBy [scenario names]}` names existing rejecting scenarios | slice | `invariants []` |
 | R8 each stream (Tag) is in `closedStreams` (its closing events must carry the tag) | Board | list it in `openEndedStreams` |
 
-`requires`, `invariants`, `scenarios` (state-change slices) and `flows`, `entryPoints`,
+`requires`, `invariants`, `scenarios` (state-change slices) and `flows`, `starts`,
 `unconsumedEvents`, `closedStreams`, `openEndedStreams` (Board) are **required**, so
 writing `[]` is itself an explicit statement.
 

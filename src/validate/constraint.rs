@@ -755,7 +755,7 @@ fn eval_constraint(
             ))
         }
 
-        ConstraintExpr::Reachable(graph_expr, node_expr) => {
+        ConstraintExpr::Reachable(graph_expr, node_expr, stop) => {
             let graph = eval_constraint(&graph_expr.node, env, ctx)?;
             let start = eval_constraint(&node_expr.node, env, ctx)?;
             let EvalValue::List(edges) = graph else {
@@ -778,7 +778,24 @@ fn eval_constraint(
                     }
                 }
             }
-            // breadth-first walk, one or more edges away from `start`
+            // Does the walk stop at `node`? A failed check counts as "no".
+            let stops_at = |node: &EvalValue| -> Result<bool, ConstraintError> {
+                let Some((var, body)) = stop else {
+                    return Ok(false);
+                };
+                let mut inner_env = env.clone();
+                inner_env.insert(var.clone(), node.clone());
+                match eval_constraint(&body.node, &inner_env, ctx) {
+                    Ok(EvalValue::Bool(b)) => Ok(b),
+                    Err(ConstraintError::Failed(_)) => Ok(false),
+                    Ok(_) => Err(ConstraintError::Eval(
+                        "reachable: stop condition must be boolean".to_string(),
+                    )),
+                    Err(e) => Err(e),
+                }
+            };
+            // walk one or more edges away from `start`; stop nodes are reached,
+            // but the walk doesn't continue through them
             let mut reached: Vec<EvalValue> = Vec::new();
             let mut frontier = vec![start];
             while let Some(node) = frontier.pop() {
@@ -789,7 +806,9 @@ fn eval_constraint(
                     for to in tos {
                         if !reached.iter().any(|r| eval_values_equal(r, to)) {
                             reached.push(to.clone());
-                            frontier.push(to.clone());
+                            if !stops_at(to)? {
+                                frontier.push(to.clone());
+                            }
                         }
                     }
                 }
@@ -1077,6 +1096,36 @@ t = T {
   edges [{from a1, to [a2]}, {from a2, to [b1, a1]}]
   nodes [a1, a2, b1]
   start a1
+  sink b1
+}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_reachable_with_stop_condition() {
+        // a1 -> a2 -> b1 and a1 -> b1: stopping at a2 still reaches b1 directly;
+        // with only the a1 -> a2 -> b1 path, stopping at a2 cuts b1 off.
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta Edge = {from! &Node, to! []&Node}
+meta T = {
+  @constraint sink in reachable(direct, start, n => n == cut)
+  @constraint !(sink in reachable(chain, start, n => n == cut))
+  @constraint cut in reachable(chain, start, n => n == cut)
+  direct []Edge
+  chain []Edge
+  start &Node
+  cut &Node
+  sink &Node
+}
+t = T {
+  direct [{from a1, to [a2, b1]}, {from a2, to [b1]}]
+  chain [{from a1, to [a2]}, {from a2, to [b1]}]
+  start a1
+  cut a2
   sink b1
 }
 "#

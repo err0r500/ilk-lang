@@ -72,7 +72,8 @@ loop. Group slices into **chapters** (themes) inside **contexts** (bounded
 contexts); grouping carries no order. Details are in `references/event-modeling.md`.
 
 For each state-change slice, also decide:
-- `requires`: events that must exist for the command to succeed (the book must be in the catalog)
+- `requires`: events that must exist for the command to succeed (the book must be in the catalog,
+  the shopper must be logged in). R3b checks they are produced on every path that leads there.
 - `invariants`: the business rules it enforces, in one short sentence each
 
 ### 3. Write the files, in this order
@@ -135,7 +136,8 @@ matches, adding an explicit `= path` mapping, or adding the missing query item.
 - [ ] Every command has an `OK:` scenario. (R6/R7 already guarantee an `Err:` per required event and invariant, if you declared them all.)
 - [ ] Every TranslationSlice has a duplicate-message scenario (`then []`).
 - [ ] Every sentence of the spec is quoted in at least one slice `description`. A sentence quoted nowhere is either an unmodelled requirement or an open question.
-- [ ] Every escape hatch you used (the board's `entryPoints`, `unconsumedEvents`, `openEndedStreams`, or a `Type*` generator) is a real decision. Mention each in the report.
+- [ ] `starts` lists every way into the system (anonymous pages included), not only the happy path.
+- [ ] Every escape hatch you used (the board's `unconsumedEvents`, `openEndedStreams`, or a `Type*` generator) is a real decision. Mention each in the report.
 - [ ] Every event is emitted by some slice. An event nobody emits is a missing slice, usually a translation from another system.
 - [ ] Event schemas pass the checklist at the end of `references/event-schema-guidelines.md`.
 - [ ] Optionally normalize layout with `ilk format file.ilk > tmp && mv tmp file.ilk` (it prints to stdout).

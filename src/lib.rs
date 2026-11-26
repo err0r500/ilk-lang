@@ -299,6 +299,23 @@ mod tests {
     }
 
     #[test]
+    fn test_required_event_must_hold_on_every_path() {
+        // Anonymous entry: browseCatalog -> addToCart -> sendCartConfirmationEmail
+        // never passes through logIn, which the email automation requires.
+        let errors = validate_file(Path::new("tests/fixtures/login-email/anonymous.ilk"))
+            .expect_err("the anonymous path must be reported");
+        assert!(
+            errors.iter().any(|e| e.message.contains("R3b")
+                && e.message.contains("s = sendCartConfirmationEmail")
+                && e.message.contains("st = browseCatalog")),
+            "{:?}",
+            errors
+        );
+        let result = validate_file(Path::new("tests/fixtures/login-email/login-first.ilk"));
+        assert!(result.is_ok(), "Validation failed: {:?}", result.err());
+    }
+
+    #[test]
     fn snapshot_diagnostic_messages() {
         // One bad snippet per diagnostic family. The codes are asserted in the
         // per-validator tests; this snapshot pins the rendered wording so a

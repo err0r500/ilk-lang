@@ -88,20 +88,25 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 - `flows`: the **graph of possible journeys**, as transitions
   `{from slice, to [slices]}`. It may branch (a cart view leads to add, remove or
   clear), merge, and loop (view cart → add item → view cart). Typical edges:
-  - view → command: the user acts from that screen (R4 needs one per command, or a board `entryPoints` entry)
+  - view → command: the user acts from that screen (R4 needs one per command, unless the command is a start)
   - command → view: the user sees the result
   - command → automation: the automation's trigger is emitted by that command (R3)
   - translation → anything that needs the external facts it records
   - a self-loop when the same thing may happen again (duplicate webhook)
+- `starts`: where journeys can begin (a landing page, a command issued from a
+  static form, a message from another system). List **every** way in, e.g. both
+  `logIn` and an anonymous `browseCatalog`: R3b then checks that each required
+  event is produced on every path from every start. If a slice that needs the
+  login can be reached anonymously, the check fails and names the start.
 - Explicit exceptions (all required, `[]` when there are none):
-  - `entryPoints`: commands issued from a screen with no read model (R4)
   - `unconsumedEvents`: events no slice reads, with a reason, `"terminal"` or `"audit"` (R5)
   - `closedStreams`: each stream (tag) with the events that end it (R8)
   - `openEndedStreams`: tags whose stream never ends (R8), e.g. a member or a product
 
 "Earlier" means reachable in `flows`. R3 checks that every `given` event of a
 state-change slice, and every automation trigger, is produced by some slice
-that can come before it.
+that *can* come before it. R3b is stricter for `requires`: the producer must
+be on *every* path from every start.
 
 ## Scenario-writing rules
 

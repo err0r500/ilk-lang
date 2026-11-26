@@ -19,8 +19,12 @@
 //      or a generator `Type*`                                          (Command.emits @source)
 //   R3 preconditions are reachable: each Given event of a state-change
 //      slice is produced by a slice that precedes it in `flows`      (Board)
+//   R3b required events are guaranteed: on EVERY path from any of the
+//      board's `starts` to a slice, some slice produces each event in
+//      its `requires` (e.g. no anonymous path reaches a slice that
+//      needs the login)                                                (Board)
 //   R4 commands are triggered: each ChangeSlice is entered from a
-//      ViewSlice in `flows`, or is declared in `entryPoints`           (Board)
+//      ViewSlice in `flows`, or is one of the board's `starts`         (Board)
 //   R5 outputs are consumed: each read model declares the `actor` it
 //      serves (a person, or an automation's system actor); each event
 //      is read by some slice or is declared in `unconsumedEvents`      (ViewSlice, Board)
@@ -66,7 +70,7 @@ meta Actor = {
 
 @doc "One part of a query: the event types to load, filtered by tags. Every tag must be carried by every listed event type."
 meta QueryItem = {
-    @constraint all(tags, t => all(eventTypes, e => t in e.tags))
+    @constraint !isPresent(tags) || all(tags, t => all(eventTypes, e => t in e.tags))
     eventTypes! []&TaggedEvent
 
     tags []Tag
@@ -306,13 +310,6 @@ meta Context = {
 }
 
 
-@doc "R4 escape hatch: a command issued from a screen that has no read model (landing page, static form)."
-meta EntryPoint = {
-    command! &ChangeSlice
-    screen! Concrete<String>
-}
-
-
 @doc "R5 escape hatch: an event no slice reads, and why."
 meta UnconsumedEvent = {
     event! &TaggedEvent
@@ -338,13 +335,16 @@ meta Board = {
     @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.scenarios, sc => all(sc.given, e => exists(instances(Slice), p => !(p in instances(ViewSlice)) && e in p.command.emits && s in reachable(flows, p)))))
     @doc "R3: each automation trigger is produced by a slice that precedes the automation in flows"
     @constraint all(instances(AutomationSlice), a => exists(instances(Slice), p => !(p in instances(ViewSlice)) && a.trigger in p.command.emits && a in reachable(flows, p)))
-    @doc "R4: each command is entered from a view in flows, or declared in entryPoints"
-    @constraint all(instances(ChangeSlice), c => exists(entryPoints, x => x.command == c) || exists(flows, t => t.from in instances(ViewSlice) && c in t.to))
+    @doc "R3b: each required event is produced on every path from every start to the slice that requires it"
+    @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.requires, e => all(starts, st => (!(st in instances(ViewSlice)) && e in st.command.emits) || (st != s && !(s in reachable(flows, st, n => !(n in instances(ViewSlice)) && e in n.command.emits))))))
+    @doc "R4: each command is entered from a view in flows, or is a start"
+    @constraint all(instances(ChangeSlice), c => c in starts || exists(flows, t => t.from in instances(ViewSlice) && c in t.to))
     @doc "R5: each event is read by some slice, or declared in unconsumedEvents"
     @constraint all(instances(TaggedEvent), e => exists(unconsumedEvents, u => u.event == e) || exists(instances(Slice), s => (s in instances(ViewSlice) && exists(s.query, q => e in q.eventTypes)) || (!(s in instances(ViewSlice)) && exists(s.command.query, q => e in q.eventTypes)) || (s in instances(AutomationSlice) && s.trigger == e)))
     flows! []Transition
 
-    entryPoints! []EntryPoint
+    @doc "Where journeys can begin: a landing page, a command issued from a static form, a message from another system..."
+    starts! [1..]&Slice
     unconsumedEvents! []UnconsumedEvent
 
     @doc "R8: each stream is closed by some events, or declared open-ended"
