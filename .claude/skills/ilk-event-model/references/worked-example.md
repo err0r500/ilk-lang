@@ -16,7 +16,7 @@
 | Commands | BorrowBook · ReturnBook (implied by "currently have") · IssueLateFine (automatic) · ImportCatalog, RecordFinePayment (from other systems) |
 | Events | BookAddedToCatalog, BookBorrowed, BookReturned, FineIssued, FinePaid |
 | Views | MyLoans (my current books + due dates) |
-| Requires (R6) | BorrowBook: the book is in the catalog · ReturnBook: the loan exists · RecordFinePayment: the fine exists |
+| Requires (R3b, R6) | BorrowBook: `isbn` (only catalogued books have one) · ReturnBook: `dueDate` (to compute days overdue) · RecordFinePayment: the fine's `amount` |
 | Invariants (R7) | one loan per book · max 3 loans per member · only the borrower returns a book |
 | Policies | due = today + 21d · fine = 0.50 × days overdue, none if on time · a payment notification is applied once |
 | Streams (R8) | loan: closed by BookReturned · book, member: open-ended |
@@ -262,7 +262,8 @@ Loans last 21 days."
         emits [bookBorrowed]
     }
 
-    requires [bookAddedToCatalog]
+    // only catalogued books have an ISBN
+    requires ["isbn"]
 
     invariants [
         {
@@ -361,7 +362,8 @@ returnBook = ChangeSlice {
         emits [bookReturned]
     }
 
-    requires [bookBorrowed]
+    // needed to compute daysOverdue
+    requires ["dueDate"]
 
     invariants [{
         rule "only the borrower can return a book"
@@ -542,7 +544,8 @@ recordFinePayment = TranslationSlice {
         emits [finePaid]
     }
 
-    requires [fineIssued]
+    // the amount due, set when the fine was issued
+    requires ["amount"]
 
     invariants []
 

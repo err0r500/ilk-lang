@@ -40,7 +40,8 @@ removeItem = ChangeSlice {
         emits [itemRemoved]
     }
 
-    requires [itemAdded]
+    // the item must have been added: only ItemAdded carries its sku
+    requires ["sku"]
 
     invariants [{
         rule "an item can only be removed from its own cart"

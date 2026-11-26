@@ -36,7 +36,8 @@ clearCart = ChangeSlice {
         emits [cartCleared]
     }
 
-    requires [cartCreated]
+    // the cart's owner, recorded when the cart was created
+    requires ["shopperId"]
 
     invariants []
 

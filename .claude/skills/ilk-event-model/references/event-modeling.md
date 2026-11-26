@@ -96,8 +96,8 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 - `starts`: where journeys can begin (a landing page, a command issued from a
   static form, a message from another system). List **every** way in, e.g. both
   `logIn` and an anonymous `browseCatalog`: R3b then checks that each required
-  event is produced on every path from every start. If a slice that needs the
-  login can be reached anonymously, the check fails and names the start.
+  attribute is emitted on every path from every start. If a slice that requires
+  `userEmail` can be reached anonymously, the check fails and names the start.
 - Explicit exceptions (all required, `[]` when there are none):
   - `unconsumedEvents`: events no slice reads, with a reason, `"terminal"` or `"audit"` (R5)
   - `closedStreams`: each stream (tag) with the events that end it (R8)
@@ -105,8 +105,9 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 
 "Earlier" means reachable in `flows`. R3 checks that every `given` event of a
 state-change slice, and every automation trigger, is produced by some slice
-that *can* come before it. R3b is stricter for `requires`: the producer must
-be on *every* path from every start.
+that *can* come before it. R3b is stricter for `requires` (attribute names):
+some slice emitting an event that carries each attribute must be on *every*
+path from every start, whichever event or command that is.
 
 ## Scenario-writing rules
 

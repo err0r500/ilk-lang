@@ -1257,17 +1257,17 @@ when the constraint fails, together with the `where:` bindings:
 
 ```ilk
 meta ChangeSlice = {
-    @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
-    requires! []&TaggedEvent
+    @doc "R6: each required attribute has a scenario where no past event carries it and the command is rejected"
+    @constraint all(requires, f => exists(scenarios, s => isType(s.then, Error) && all(s.given, g => !(f in keys(g.fields)))))
+    requires! []Concrete<String>
     ...
 }
 ```
 
 ```
-Error: Constraint failed for instance 'clearCart': R6: each required event has a scenario where it is absent and the command is rejected
+Error: Constraint failed for instance 'removeItem': R6: each required attribute has a scenario where no past event carries it and the command is rejected
   where:
-    r = cartCreated
+    f = sku
 ```
 
 User-defined predicates are not currently supported.

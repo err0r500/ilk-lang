@@ -8,7 +8,7 @@ mailer = Actor {name "mailer"}
 
 userLoggedIn = TaggedEvent {
     type "UserLoggedIn"
-    fields {shopperId Uuid, email String}
+    fields {shopperId Uuid, userEmail String}
     tags [shopperIdTag]
 }
 itemAddedToCart = TaggedEvent {
@@ -18,16 +18,16 @@ itemAddedToCart = TaggedEvent {
 }
 cartConfirmationEmailSent = TaggedEvent {
     type "CartConfirmationEmailSent"
-    fields {cartId Uuid, email String}
+    fields {cartId Uuid, userEmail String}
     tags [cartIdTag]
 }
 
 logIn = ChangeSlice {
     name "LogIn"
     actor shopper
-    endpoint {method POST, path "/login", body {shopperId Uuid, email String}, responses []}
+    endpoint {method POST, path "/login", body {shopperId Uuid, userEmail String}, responses []}
     command {
-        fields {shopperId Uuid, email String}
+        fields {shopperId Uuid, userEmail String}
         query []
         emits [userLoggedIn]
     }
@@ -68,7 +68,7 @@ sendCartConfirmationEmail = AutomationSlice {
         query [{eventTypes [userLoggedIn], tags [shopperIdTag]}]
         emits [cartConfirmationEmailSent]
     }
-    requires [userLoggedIn]
+    requires ["userEmail"]
     invariants []
     scenarios [
         {name "OK", given [userLoggedIn], when itemAddedToCart, then [cartConfirmationEmailSent]}

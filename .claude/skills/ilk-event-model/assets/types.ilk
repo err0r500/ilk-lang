@@ -19,17 +19,17 @@
 //      or a generator `Type*`                                          (Command.emits @source)
 //   R3 preconditions are reachable: each Given event of a state-change
 //      slice is produced by a slice that precedes it in `flows`      (Board)
-//   R3b required events are guaranteed: on EVERY path from any of the
-//      board's `starts` to a slice, some slice produces each event in
-//      its `requires` (e.g. no anonymous path reaches a slice that
-//      needs the login)                                                (Board)
+//   R3b requirements are guaranteed: on EVERY path from any of the
+//      board's `starts` to a slice, some slice emits an event carrying
+//      each attribute in its `requires`, whichever event that is (e.g.
+//      no anonymous path reaches a slice that requires userEmail)     (Board)
 //   R4 commands are triggered: each ChangeSlice is entered from a
 //      ViewSlice in `flows`, or is one of the board's `starts`         (Board)
 //   R5 outputs are consumed: each read model declares the `actor` it
 //      serves (a person, or an automation's system actor); each event
 //      is read by some slice or is declared in `unconsumedEvents`      (ViewSlice, Board)
-//   R6 required events are enforced: for each event in `requires`, a
-//      scenario where it is absent ends in a rejection                 (slices)
+//   R6 requirements are enforced: for each attribute in `requires`, a
+//      scenario where no past event carries it ends in a rejection     (slices)
 //   R7 invariants are tested: each invariant names the rejecting
 //      scenarios that violate it (`violatedBy`)                        (slices)
 //   R8 lifecycles close: each stream (Tag) is declared in the board's
@@ -127,7 +127,7 @@ meta Invariant = {
 
 
 @doc "Write-side vertical slice: an actor calls an endpoint, which feeds a command, which emits events."
-@doc "`requires` lists the events that must exist for the command to succeed (R6); `invariants` the business rules it enforces (R7)."
+@doc "`requires` lists the attributes the command needs from past events, whichever event provides them (R3b, R6); `invariants` the business rules it enforces (R7)."
 @doc "`scenarios` are Given (past events) / When (command input) / Then (emitted events or Error) specifications."
 meta ChangeSlice = {
     name! Concrete<String>
@@ -138,11 +138,13 @@ meta ChangeSlice = {
     @source [endpoint.params, endpoint.body, endpoint.auth]
     command! Command
 
-    @doc "R6: required events must be read by the command"
-    @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
-    @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
-    requires! []&TaggedEvent
+    @doc "Attributes this slice needs from past events, whichever event provides them (R3b, R6)."
+    @doc "R6: a required attribute is one the command reads from past events"
+    @constraint all(requires, f => exists(command.query, q => exists(q.eventTypes, ev => f in keys(ev.fields))))
+    @doc "R6: each required attribute has a scenario where no past event carries it and the command is rejected"
+    @constraint all(requires, f => exists(scenarios, s => isType(s.then, Error) && all(s.given, g => !(f in keys(g.fields)))))
+    requires! []Concrete<String>
+
 
     @doc "R7: each invariant is violated by the rejecting scenarios it names"
     @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
@@ -224,11 +226,13 @@ meta AutomationSlice = {
     @source [trigger.fields]
     command! Command
 
-    @doc "R6: required events must be read by the command"
-    @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
-    @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
-    requires! []&TaggedEvent
+    @doc "Attributes this slice needs from past events, whichever event provides them (R3b, R6)."
+    @doc "R6: a required attribute is one the automation reads from its trigger or from past events"
+    @constraint all(requires, f => f in keys(trigger.fields) || exists(command.query, q => exists(q.eventTypes, ev => f in keys(ev.fields))))
+    @doc "R6: each required attribute not carried by the trigger has a scenario where no past event carries it and the command is rejected"
+    @constraint all(requires, f => f in keys(trigger.fields) || exists(scenarios, s => isType(s.then, Error) && all(s.given, g => !(f in keys(g.fields)))))
+    requires! []Concrete<String>
+
 
     @doc "R7: each invariant is violated by the rejecting scenarios it names"
     @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
@@ -266,11 +270,13 @@ meta TranslationSlice = {
     @source [message]
     command! Command
 
-    @doc "R6: required events must be read by the command"
-    @constraint all(requires, r => exists(command.query, q => r in q.eventTypes))
-    @doc "R6: each required event has a scenario where it is absent and the command is rejected"
-    @constraint all(requires, r => exists(scenarios, s => isType(s.then, Error) && !(r in s.given)))
-    requires! []&TaggedEvent
+    @doc "Attributes this slice needs from past events, whichever event provides them (R3b, R6)."
+    @doc "R6: a required attribute is one the command reads from past events"
+    @constraint all(requires, f => exists(command.query, q => exists(q.eventTypes, ev => f in keys(ev.fields))))
+    @doc "R6: each required attribute has a scenario where no past event carries it and the command is rejected"
+    @constraint all(requires, f => exists(scenarios, s => isType(s.then, Error) && all(s.given, g => !(f in keys(g.fields)))))
+    requires! []Concrete<String>
+
 
     @doc "R7: each invariant is violated by the rejecting scenarios it names"
     @constraint all(invariants, i => all(i.violatedBy, n => exists(scenarios, s => s.name == n && isType(s.then, Error))))
@@ -335,8 +341,8 @@ meta Board = {
     @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.scenarios, sc => all(sc.given, e => exists(instances(Slice), p => !(p in instances(ViewSlice)) && e in p.command.emits && s in reachable(flows, p)))))
     @doc "R3: each automation trigger is produced by a slice that precedes the automation in flows"
     @constraint all(instances(AutomationSlice), a => exists(instances(Slice), p => !(p in instances(ViewSlice)) && a.trigger in p.command.emits && a in reachable(flows, p)))
-    @doc "R3b: each required event is produced on every path from every start to the slice that requires it"
-    @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.requires, e => all(starts, st => (!(st in instances(ViewSlice)) && e in st.command.emits) || (st != s && !(s in reachable(flows, st, n => !(n in instances(ViewSlice)) && e in n.command.emits))))))
+    @doc "R3b: each required attribute is emitted on every path from every start to the slice that requires it"
+    @constraint all(instances(Slice), s => s in instances(ViewSlice) || all(s.requires, f => all(starts, st => (!(st in instances(ViewSlice)) && exists(st.command.emits, ev => f in keys(ev.fields))) || (st != s && !(s in reachable(flows, st, n => !(n in instances(ViewSlice)) && exists(n.command.emits, ev => f in keys(ev.fields))))))))
     @doc "R4: each command is entered from a view in flows, or is a start"
     @constraint all(instances(ChangeSlice), c => c in starts || exists(flows, t => t.from in instances(ViewSlice) && c in t.to))
     @doc "R5: each event is read by some slice, or declared in unconsumedEvents"

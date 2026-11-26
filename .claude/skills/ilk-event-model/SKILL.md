@@ -47,9 +47,9 @@ Pull out the following and write it down in your reply or a scratch file:
 - **Commands**: intents, phrased imperatively (`BorrowBook`)
 - **Events**: facts, in the past tense (`BookBorrowed`)
 - **Views / read models**: what someone needs to *see* to decide or act
-- **Business rules**: split them into *requires* (an event that must exist:
-  "the book must be in the catalog") and *invariants* (a rule over history:
-  "at most 3 books"). Each becomes at least one `Err:` scenario
+- **Business rules**: split them into *requires* (data the command needs from
+  the past: "the loan's due date", "the shopper's email") and *invariants* (a
+  rule over history: "at most 3 books"). Each becomes at least one `Err:` scenario
   (R6/R7); each invariant names the rejecting scenarios that violate it (`violatedBy`)
 - **Identifiers**: the entities that consistency decisions depend on; these become tags
 - **Open questions / assumptions**: anything the spec doesn't settle
@@ -72,8 +72,11 @@ loop. Group slices into **chapters** (themes) inside **contexts** (bounded
 contexts); grouping carries no order. Details are in `references/event-modeling.md`.
 
 For each state-change slice, also decide:
-- `requires`: events that must exist for the command to succeed (the book must be in the catalog,
-  the shopper must be logged in). R3b checks they are produced on every path that leads there.
+- `requires`: the **attributes** it needs from past events (`["dueDate"]`, `["userEmail"]`),
+  whichever event provides them. R3b checks that on every path from every start, some slice
+  emits an event carrying each of them; R6 wants a rejecting scenario where none is there.
+  To require that something happened, require an attribute only that event carries
+  (only catalogued books have an `isbn`).
 - `invariants`: the business rules it enforces, in one short sentence each
 
 ### 3. Write the files, in this order
