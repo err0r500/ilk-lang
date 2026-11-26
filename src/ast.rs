@@ -154,6 +154,9 @@ pub enum ConstraintExpr {
     Int(i64),
     IsType(Box<S<ConstraintExpr>>, String), // isType(expr, TypeName)
     IsPresent(String),                      // isPresent(fieldName)
+    IsPresentField(Box<S<ConstraintExpr>>, String), // isPresent(expr.field)
+    Instances(String),                      // instances(MetaName)
+    Reachable(Box<S<ConstraintExpr>>, Box<S<ConstraintExpr>>), // reachable(graph, node)
 }
 
 // ============= Instance-Level AST (formerly kli/ast.rs) =============

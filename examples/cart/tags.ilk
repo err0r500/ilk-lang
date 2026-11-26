@@ -10,7 +10,4 @@ shopperIdTag = Tag {shopperId Uuid}
 cartTag = Tag {cart Uuid}
 
 
-userNameTag = Tag {name String}
-
-
 productIdTag = Tag {sku Uuid}

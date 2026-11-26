@@ -33,6 +33,10 @@
 "count" @function.builtin
 "templateVars" @function.builtin
 "keys" @function.builtin
+"isPresent" @function.builtin
+"isType" @function.builtin
+"instances" @function.builtin
+"reachable" @function.builtin
 "compute" @function.builtin
 
 ; Keywords

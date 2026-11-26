@@ -253,11 +253,7 @@ mod tests {
 
     /// Work-in-progress examples that don't validate yet (also commented out of
     /// cart/main.ilk). They must still parse; remove entries as they are fixed.
-    const KNOWN_INVALID_EXAMPLES: &[&str] = &[
-        "examples/cart/viewChangedPrices.ilk",
-        "examples/cart/viewOpenCartsWithProducts.ilk",
-        "examples/cart/viewProductsInventories.ilk",
-    ];
+    const KNOWN_INVALID_EXAMPLES: &[&str] = &["examples/cart/viewOpenCartsWithProducts.ilk"];
 
     #[test]
     fn test_validate_all_examples() {

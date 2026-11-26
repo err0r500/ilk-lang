@@ -194,3 +194,49 @@ x = Metric {
         (value_field
           name: (identifier)
           value: (literal_value (number)))))))
+
+================================================================================
+Graph and presence built-ins in constraints
+================================================================================
+
+meta T = {
+    @constraint all(instances(Node), n => isType(n, A) || isPresent(n.note) || n in reachable(edges, start))
+    edges []Edge
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (meta_decl
+    (identifier)
+    (struct_type
+      (field_list
+        (field
+          (annotation
+            (constraint_call
+              (constraint_call
+                (identifier))
+              (identifier)
+              (constraint_or
+                (constraint_or
+                  (constraint_call
+                    (constraint_var
+                      (identifier))
+                    (identifier))
+                  (constraint_call
+                    (constraint_field_access
+                      (constraint_var
+                        (identifier))
+                      (identifier))))
+                (constraint_comparison
+                  (constraint_var
+                    (identifier))
+                  (constraint_call
+                    (constraint_var
+                      (identifier))
+                    (constraint_var
+                      (identifier)))))))
+          (identifier)
+          (list_type
+            (named_type
+              (identifier))))))))

@@ -195,9 +195,30 @@ fn constraint_expr<'a>(
                 .map(|e| ConstraintExpr::Keys(Box::new(e)))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("isPresent(")
+                .ignore_then(expr.clone())
+                .then_ignore(just(')'))
+                .map(|inner: S<ConstraintExpr>| match inner.node {
+                    ConstraintExpr::Var(name) => ConstraintExpr::IsPresent(name),
+                    ConstraintExpr::FieldAccess(obj, field) => {
+                        ConstraintExpr::IsPresentField(obj, field)
+                    }
+                    other => ConstraintExpr::IsPresentField(
+                        Box::new(S::new(other, inner.span.clone())),
+                        String::new(),
+                    ),
+                })
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("instances(")
                 .ignore_then(ident())
                 .then_ignore(just(')'))
-                .map(|name| ConstraintExpr::IsPresent(name.node))
+                .map(|name| ConstraintExpr::Instances(name.node))
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("reachable(")
+                .ignore_then(expr.clone())
+                .then_ignore(ws().then(just(',')).then(ws()))
+                .then(expr.clone())
+                .then_ignore(just(')'))
+                .map(|(graph, node)| ConstraintExpr::Reachable(Box::new(graph), Box::new(node)))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("isType(")
                 .ignore_then(expr.clone())

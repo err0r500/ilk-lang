@@ -43,11 +43,26 @@ fn value_kind(value: &Value) -> &'static str {
 pub struct ValidationContext<'a> {
     pub env: &'a TypeEnv,
     pub path: &'a Path,
+    /// While checking the provenance of a binding's own fields (e.g. an event in
+    /// `emits`), that binding cannot serve as its own source: `@source` paths
+    /// skip it. Prevents an event from "sourcing" an attribute from earlier
+    /// occurrences of itself.
+    pub exclude_source: Option<String>,
 }
 
 impl<'a> ValidationContext<'a> {
     pub fn new(env: &'a TypeEnv, path: &'a Path) -> Self {
-        Self { env, path }
+        Self {
+            env,
+            path,
+            exclude_source: None,
+        }
+    }
+
+    /// Same context, with `name` excluded from `@source` resolution.
+    pub fn excluding_source(mut self, name: &str) -> Self {
+        self.exclude_source = Some(name.to_string());
+        self
     }
 
     pub fn get_instance(&self, name: &str) -> Option<&Instance> {
@@ -893,6 +908,8 @@ fn refinement_value_matches_type(
             matches!(&inner.node, TypeExpr::Base(BaseType::Bool))
         }
         (Value::LitFloat(_), TypeExpr::Base(BaseType::Float)) => true,
+        // Monetary amounts are written as plain numbers: `price 10`, `price 9.99`
+        (Value::LitInt(_) | Value::LitFloat(_), TypeExpr::Base(BaseType::Money)) => true,
         (Value::LitFloat(_), TypeExpr::Concrete(inner)) => {
             matches!(&inner.node, TypeExpr::Base(BaseType::Float))
         }
@@ -937,13 +954,7 @@ fn refinement_value_matches_type(
         // Int literal doesn't match Uuid, Date, etc.
         (
             Value::LitInt(_),
-            TypeExpr::Base(
-                BaseType::Uuid
-                | BaseType::Date
-                | BaseType::Timestamp
-                | BaseType::Float
-                | BaseType::Money,
-            ),
+            TypeExpr::Base(BaseType::Uuid | BaseType::Date | BaseType::Timestamp | BaseType::Float),
         ) => false,
         (
             Value::LitString(_),
@@ -1279,6 +1290,28 @@ mod tests {
             "{:?}",
             errors
         );
+    }
+
+    #[test]
+    fn test_money_refinement_accepts_numbers() {
+        let errors = validate_src(
+            r#"
+meta Ev = {fields {...}}
+meta Scenario = {given []-Ev}
+paid = Ev {fields {amount Money}}
+s1 = Scenario {given [paid & {fields {amount 10}}, paid & {fields {amount 9.99}}]}
+"#,
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+        let errors = validate_src(
+            r#"
+meta Ev = {fields {...}}
+meta Scenario = {given []-Ev}
+paid = Ev {fields {amount Money}}
+s1 = Scenario {given [paid & {fields {amount "ten"}}]}
+"#,
+        );
+        assert!(!errors.is_empty());
     }
 
     // === Typed-list declarations in schema-style instances ===

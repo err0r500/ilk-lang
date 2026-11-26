@@ -46,7 +46,7 @@ const ilkLang = StreamLanguage.define({
         // Constraint keywords
         if (
             stream.match(
-                /\b(all|exists|unique|count|keys|templateVars|assoc|compute)\b/,
+                /\b(all|exists|unique|count|keys|templateVars|isPresent|isType|instances|reachable|assoc|compute)\b/,
             )
         ) {
             return "keyword";

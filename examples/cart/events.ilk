@@ -20,14 +20,14 @@ cartCreated = TaggedEvent {
 
 
 itemAdded = TaggedEvent {
-    type "itemAdded"
+    type "ItemAdded"
     description "A product was put in a cart, at the price shown at that moment."
 
     fields {
         cartId Uuid
         itemId Uuid
         sku Uuid
-        price Int
+        price Money
         quantity Int
     }
 
@@ -60,7 +60,7 @@ cartCleared = TaggedEvent {
 
 cartSubmitted = TaggedEvent {
     type "CartSubmitted"
-    description "The shopper submitted the cart for checkout."
+    description "The shopper submitted the cart for checkout. The cart can no longer change."
 
     fields {
         cartId Uuid
@@ -70,7 +70,13 @@ cartSubmitted = TaggedEvent {
     tags [
         cartIdTag
         shopperIdTag
+        cartTag & {cart Uuid = fields.cartId}
     ]
+
+    closes [cartIdTag, cartTag]
+
+    // read by the open-carts view, which is still work in progress
+    unconsumed "terminal"
 }
 
 
@@ -92,10 +98,10 @@ priceChanged = TaggedEvent {
     description "The catalog price of a product changed."
 
     fields {
-        productId Uuid
-        oldPrice Int
-        newPrice Int
+        sku Uuid
+        oldPrice Money
+        newPrice Money
     }
 
-    tags [productIdTag & {sku Uuid = fields.productId}]
+    tags [productIdTag]
 }

@@ -5,3 +5,15 @@ userActor = Actor {
     name "user"
     description "A shopper browsing the store"
 }
+
+
+warehouseErp = ExternalSystem {
+    name "warehouse ERP"
+    description "Owns stock levels; publishes every change"
+}
+
+
+productCatalog = ExternalSystem {
+    name "product catalog"
+    description "Owns product prices; publishes every change"
+}

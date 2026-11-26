@@ -6,6 +6,7 @@ import "./actors.ilk"
 
 viewProductsInventories = ViewSlice {
     name "ViewProductsInventories"
+    description "The shopper sees how many units of a product are in stock."
 
     actor userActor
 
@@ -13,8 +14,8 @@ viewProductsInventories = ViewSlice {
 
     endpoint {
         method GET
-        path "/inventories/products/{productId}"
-        params {productId Uuid}
+        path "/inventories/products/{sku}"
+        params {sku Uuid}
         responses []
     }
 
@@ -26,10 +27,8 @@ viewProductsInventories = ViewSlice {
     ]
 
     readModel {
-        products [{
-            productId Uuid
-            quantity Int
-        }]
+        sku Uuid
+        inventory Int
     }
 
     scenarios []

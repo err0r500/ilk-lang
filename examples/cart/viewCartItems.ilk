@@ -46,11 +46,12 @@ viewCartItems = ViewSlice {
         cartId Uuid
         items [{
             itemId Uuid
-            productId String
-            price Int
+            sku Uuid
+            price Money
             quantity Int
         }]
-        totalPrice Int
+        @doc "sum(items, i => i.price * i.quantity)"
+        totalPrice Money = compute(query.eventTypes.fields.price, query.eventTypes.fields.quantity)
     }
 
     scenarios [
@@ -82,7 +83,7 @@ viewCartItems = ViewSlice {
                 cartId "abc"
                 items [{
                     itemId "item-1"
-                    productId "prod-1"
+                    sku "prod-1"
                     price 10
                     quantity 2
                 }]
@@ -109,13 +110,13 @@ viewCartItems = ViewSlice {
                 items [
                     {
                         itemId "item-1"
-                        productId "prod-1"
+                        sku "prod-1"
                         price 999
                         quantity 1
                     }
                     {
                         itemId "item-2"
-                        productId "prod-2"
+                        sku "prod-2"
                         price 999
                         quantity 1
                     }

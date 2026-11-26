@@ -44,7 +44,7 @@
             "name": "keyword.operator.ilk"
         },
         "constraint-keyword": {
-            "match": "\\b(all|exists|unique|count|keys|templateVars|assoc|compute)\\b",
+            "match": "\\b(all|exists|unique|count|keys|templateVars|isPresent|isType|instances|reachable|assoc|compute)\\b",
             "name": "keyword.control.ilk"
         },
         "bracket": {

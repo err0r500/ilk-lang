@@ -35,4 +35,23 @@ clearCart = ChangeSlice {
 
         emits [cartCleared]
     }
+
+    requires [cartCreated]
+
+    invariants []
+
+    scenarios [
+        {
+            name "OK: clear a cart"
+            given [cartCreated & {fields {cartId "abc"}}]
+            when {cartId "abc"}
+            then [cartCleared]
+        }
+        {
+            name "Err: unknown cart"
+            given []
+            when {cartId "abc"}
+            then {error "cart not found"}
+        }
+    ]
 }
