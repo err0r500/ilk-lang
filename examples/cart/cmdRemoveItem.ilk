@@ -7,6 +7,8 @@ import "./actors.ilk"
 removeItem = ChangeSlice {
     name "RemoveItem"
 
+    description "The shopper removes one item from their cart. Removing an already removed item is a no-op."
+
     actor userActor
 
     endpoint {

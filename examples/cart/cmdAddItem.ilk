@@ -7,6 +7,10 @@ import "./actors.ilk"
 addItem = ChangeSlice {
     name "AddItem"
 
+    description "The shopper adds a product to their cart.
+The cart is opened automatically on the first item.
+A cart holds at most 3 items, and out-of-stock products can't be added."
+
     actor userActor
 
     endpoint {

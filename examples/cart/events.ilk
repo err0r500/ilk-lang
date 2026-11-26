@@ -4,6 +4,7 @@ import "./tags.ilk"
 
 cartCreated = TaggedEvent {
     type "CartCreated"
+    description "A shopper opened a new cart."
 
     fields {
         cartId Uuid
@@ -20,6 +21,7 @@ cartCreated = TaggedEvent {
 
 itemAdded = TaggedEvent {
     type "itemAdded"
+    description "A product was put in a cart, at the price shown at that moment."
 
     fields {
         cartId Uuid
@@ -35,6 +37,7 @@ itemAdded = TaggedEvent {
 
 itemRemoved = TaggedEvent {
     type "ItemRemoved"
+    description "An item was taken out of a cart."
 
     fields {
         cartId Uuid
@@ -47,6 +50,7 @@ itemRemoved = TaggedEvent {
 
 cartCleared = TaggedEvent {
     type "CartCleared"
+    description "All items of a cart were removed at once."
 
     fields {cartId Uuid}
 
@@ -56,6 +60,7 @@ cartCleared = TaggedEvent {
 
 cartSubmitted = TaggedEvent {
     type "CartSubmitted"
+    description "The shopper submitted the cart for checkout."
 
     fields {
         cartId Uuid
@@ -71,6 +76,7 @@ cartSubmitted = TaggedEvent {
 
 inventoryChanged = TaggedEvent {
     type "InventoryChanged"
+    description "The stock level of a product changed (from the warehouse)."
 
     fields {
         sku Uuid
@@ -83,6 +89,7 @@ inventoryChanged = TaggedEvent {
 
 priceChanged = TaggedEvent {
     type "PriceChanged"
+    description "The catalog price of a product changed."
 
     fields {
         productId Uuid

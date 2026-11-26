@@ -7,6 +7,8 @@ import "./actors.ilk"
 viewCartItems = ViewSlice {
     name "ViewCartItems"
 
+    description "The shopper sees the items in their cart and the total price."
+
     actor userActor
 
     image "./mockups/one_item_cart.png"

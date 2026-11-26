@@ -11,6 +11,7 @@ import "./viewCartItems.ilk"
 @main
 board = Board {
     name "Shopping Cart"
+    description "Event model of an e-commerce shopping cart"
     contexts [{
         name "Shopping"
         description "Shopping Cart Context"

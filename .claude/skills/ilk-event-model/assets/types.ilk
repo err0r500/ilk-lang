@@ -1,0 +1,186 @@
+// Event Modeling meta-model.
+//
+// A Board is made of Contexts (bounded contexts), each split into Chapters
+// (steps of a user journey), each holding a flow of vertical Slices:
+//   - ChangeSlice : endpoint -> command -> emitted events   (write side)
+//   - ViewSlice   : events -> read model -> endpoint        (read side)
+//
+// `description` fields are free text, typed Concrete<String>: they don't take
+// part in data-flow checks (@source). Use them to state intent in one line,
+// and/or to keep the original human spec the element was derived from.
+// Strings may span several lines but cannot contain escaped quotes.
+
+
+@doc "Consistency identifier attached to events, used to scope queries (Dynamic Consistency Boundary)."
+@doc "Either a single-field struct naming the id (cartIdTag = Tag {cartId Uuid}) or a fixed string."
+meta Tag = {_ String} | Concrete<String>
+
+
+@doc "A business fact that happened, stored forever. Named in the past tense (CartCreated)."
+@doc "`type` is the PascalCase event name, `fields` its payload, `tags` the ids it can be queried by."
+meta TaggedEvent = {
+    type! Concrete<String>
+    description Concrete<String>
+
+    fields {...}
+
+    // we expect tags to be derived from event fields
+    @source [fields]
+    tags []&Tag
+}
+
+
+@doc "A role (human or system) that triggers a command or consults a view."
+meta Actor = {
+    name Concrete<String>
+    description Concrete<String>
+}
+
+
+@doc "One part of a query: the event types to load, filtered by tags. Every tag must be carried by every listed event type."
+meta QueryItem = {
+    @constraint all(tags, t => all(eventTypes, e => t in e.tags))
+    eventTypes! []&TaggedEvent
+
+    tags []Tag
+}
+
+
+@doc "An intent to change the system. `fields` is the full input to the decision,"
+@doc "`query` the past events loaded to enforce business rules (the consistency boundary),"
+@doc "`emits` every event the command may produce (their fields must trace back to `fields`)."
+meta Command = {
+    fields! {...}
+
+    @source [fields]
+    query! []QueryItem
+
+    @source [fields]
+    emits! []TaggedEvent
+}
+
+
+@doc "One possible HTTP response of an endpoint."
+meta HttpResponse = {
+    @constraint status > 0 && status < 600
+    status! Concrete<Int>
+
+    body {...}
+}
+
+
+@doc "The HTTP entry point of a slice. `params` (path/query), `body` and `auth` are the data available downstream."
+meta HttpEndpoint = {
+    method! GET | POST | DELETE | PUT | PATCH
+
+    @constraint all(templateVars(path), v => v in keys(params))
+    path! Concrete<String>
+    params {...}
+    body {...}
+    auth {...}
+
+    responses! []HttpResponse
+}
+
+
+@doc "Expected outcome of a rejected command, as a short domain message."
+meta Error = {error Concrete<String>}
+
+
+@doc "Write-side vertical slice: an actor calls an endpoint, which feeds a command, which emits events."
+@doc "`scenarios` are Given (past events) / When (command input) / Then (emitted events or Error) specifications."
+meta ChangeSlice = {
+    name! Concrete<String>
+    description Concrete<String>
+    endpoint! HttpEndpoint
+    actor Actor
+
+    @source [endpoint.params, endpoint.body, endpoint.auth]
+    command! Command
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(keys(s.when), k => k in keys(command.fields)))
+    @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
+    scenarios []ChangeScenario
+}
+
+
+@doc "Given past events, when the command runs with this input, then these events are emitted (or this error is returned)."
+meta ChangeScenario = {
+    name! Concrete<String>
+    description Concrete<String>
+
+    given! []-TaggedEvent
+    when! {...}
+    then! []-TaggedEvent | Error
+}
+
+
+@doc "A bounded context: a part of the domain with its own language, holding chapters."
+meta Context = {
+    name Concrete<String>
+    description Concrete<String>
+    chapters []{...}
+}
+
+
+@doc "How one event type updates a read model (not used by the current examples)."
+meta ReadModelHandler = {
+    event! &TaggedEvent
+    action! "upsert" | "delete"
+
+    @source [event]
+    fields! {...}
+}
+
+
+@doc "Given past events, when the view is queried with this input, then the read model looks like `expect`."
+meta ViewScenario = {
+    name! Concrete<String>
+    description Concrete<String>
+    given! []-TaggedEvent
+    query! {...}
+    expect! {...}
+}
+
+
+@doc "Shape of the data a view returns. Not checked for provenance: every field must be derivable from the queried events."
+meta ReadModel = {...}
+
+
+@doc "Read-side vertical slice: events are projected into a read model, served through an endpoint."
+meta ViewSlice = {
+    name! Concrete<String>
+    description Concrete<String>
+    endpoint! HttpEndpoint
+    actor Actor
+    image Concrete<String>
+
+    @source [endpoint.params, endpoint.body, endpoint.auth]
+    query! []QueryItem
+
+    readModel! ReadModel
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(query, q => event in q.eventTypes)))
+    scenarios []ViewScenario
+}
+
+
+@doc "A vertical slice: either a command (write) or a view (read)."
+meta Slice = ChangeSlice | ViewSlice
+
+
+@doc "A step of a user journey inside a context; `flow` lists its slices in timeline order."
+meta Chapter = {
+    name Concrete<String>
+    description Concrete<String>
+    flow []Slice
+}
+
+
+@doc "The whole event model: the @main entry point."
+meta Board = {
+    name Concrete<String>
+    description Concrete<String>
+    contexts []Context
+}

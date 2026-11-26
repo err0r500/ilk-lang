@@ -1,4 +1,7 @@
 import "./types.ilk"
 
 
-userActor = Actor {name "user"}
+userActor = Actor {
+    name "user"
+    description "A shopper browsing the store"
+}

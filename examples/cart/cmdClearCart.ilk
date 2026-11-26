@@ -7,6 +7,8 @@ import "./actors.ilk"
 clearCart = ChangeSlice {
     name "ClearCart"
 
+    description "The shopper empties their cart in one go."
+
     actor userActor
 
     endpoint {
