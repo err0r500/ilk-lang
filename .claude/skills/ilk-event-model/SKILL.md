@@ -55,6 +55,8 @@ Order the events along the user journey. Then cut it into vertical slices:
 
 - **ChangeSlice**: UI/endpoint → command → event(s). One command per slice.
 - **ViewSlice**: event(s) → read model → endpoint. One read model per slice.
+- **AutomationSlice**: trigger event → command → event(s), with no human. One trigger per slice.
+- **TranslationSlice**: external system message → command → our event(s). One message type per slice.
 
 Group the slices into **chapters** (one journey step each) inside a **context**
 (a bounded context). Details and patterns are in `references/event-modeling.md`.
@@ -65,10 +67,12 @@ Group the slices into **chapters** (one journey step each) inside a **context**
 <model-dir>/
   types.ilk        # copy of assets/types.ilk, unchanged
   tags.ilk         # one Tag per consistency identifier
-  actors.ilk       # one Actor per role
+  actors.ilk       # one Actor per role + one ExternalSystem per outside system
   events.ilk       # every TaggedEvent
   cmd<Name>.ilk    # one ChangeSlice per file
   view<Name>.ilk   # one ViewSlice per file
+  auto<Name>.ilk   # one AutomationSlice per file
+  trans<Name>.ilk  # one TranslationSlice per file
   main.ilk         # imports + @main Board listing every slice in its flow
 ```
 
@@ -115,6 +119,7 @@ matches, adding an explicit `= path` mapping, or adding the missing query item.
 ### 5. Self-review (the compiler doesn't check these)
 
 - [ ] Every rule from step 1 has an `Err:` scenario, and every command has an `OK:` scenario.
+- [ ] Every TranslationSlice has a duplicate-message scenario (`then []`).
 - [ ] Every sentence of the spec is quoted in at least one slice `description`. A sentence quoted nowhere is either an unmodelled requirement or an open question.
 - [ ] Every `readModel` field can be derived from fields of the events in that view's `query`. ilk does **not** check read-model provenance, so trace each field by hand.
 - [ ] Every event is emitted by some command. An event nobody emits is either an external input (add a note) or a missing slice.
@@ -129,4 +134,4 @@ Keep the report short:
 - a slice table: chapter / slice / kind / command or read model / events
 - the assumptions you made
 - open questions for the spec author
-- anything the meta-model can't express yet (for example automations — see `references/event-modeling.md`)
+- events no slice emits, and slices you expect but that the spec doesn't describe

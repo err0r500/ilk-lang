@@ -13,9 +13,10 @@ going from UI or API down to storage.
 | "…is created / was approved / has been paid…" (anything later steps rely on) | Event | `TaggedEvent` in `events.ilk` |
 | "The user sees / lists / gets a dashboard of…" | View (read model) | `ViewSlice.readModel` |
 | "Only if / at most / must not / unless…" | Business rule | `Err:` scenario on the deciding command |
-| "When X happens, the system automatically…" | Automation | not in the meta-model yet: see below |
-| "We receive X from the payment provider / ERP…" | Translation (external input) | not in the meta-model yet: see below |
-| Roles ("member", "admin", "the warehouse") | Actor | `Actor` in `actors.ilk` |
+| "When X happens, the system automatically…" | Automation | `AutomationSlice` |
+| "We receive X from the payment provider / ERP…" | Translation (external input) | `TranslationSlice` |
+| Roles ("member", "admin", a background policy) | Actor | `Actor` in `actors.ilk` |
+| Other systems ("Stripe", "the warehouse ERP") | External system | `ExternalSystem` in `actors.ilk` |
 | Nouns that rules are scoped to ("per cart", "per member") | Consistency identifier | `Tag` in `tags.ilk` |
 
 ## Steps
@@ -30,7 +31,9 @@ going from UI or API down to storage.
    `ItemAdded` the first time). One event should be emitted by one command.
 4. **Attach views** wherever an actor needs information to decide what to do
    next. Each view lists exactly the events it reads.
-5. **Cut slices.** One command = one ChangeSlice. One read model = one ViewSlice.
+5. **Cut slices.** One human command = one ChangeSlice. One read model = one
+   ViewSlice. One (trigger event → command) = one AutomationSlice. One
+   inbound message type = one TranslationSlice.
 6. **Write scenarios** (Given/When/Then) for every slice:
    - Change: `given` = past events, `when` = command input, `then` = emitted events **or** `{error "..."}`.
    - View: `given` = past events, `query` = request input, `expect` = read-model state.
@@ -92,15 +95,42 @@ alternating command → view the way a user would actually move through them.
   scenario needs an event the command doesn't load, the **query** is
   incomplete. Don't drop the scenario.
 
-## Gaps in the current meta-model
+### AutomationSlice ("when X happens, the system automatically…")
 
-`assets/types.ilk` only knows `ChangeSlice` and `ViewSlice`. For these
-patterns:
+```
+trigger (&TaggedEvent) ──@source [trigger.fields]──▶ command.fields ──▶ emits[]
+```
 
-- **Automation** (event → processor → command, "when X then automatically Y")
-- **Translation** (external system → our event)
+- `trigger`: the single event type that wakes the processor. The command
+  input must come from that event's `fields` (by name, `= trigger.fields.x`,
+  `compute(trigger.fields.x)`, or `*`). So the trigger event must carry
+  everything the automation needs. This is a strong argument for capturing
+  decision-time facts in events (guideline 7).
+- `actor`: a system actor (`lendingPolicyActor`), not a human.
+- `command.query`: the history the processor checks before acting (avoid
+  duplicates, enforce policies).
+- `scenarios` use `AutomationScenario`: `given` (history, must be queried),
+  `when` = the trigger event, optionally refined
+  (`bookReturned & {fields {daysOverdue 4}}`), and `then` (emitted events, `[]`
+  for "nothing to do", or an error).
+- If the automation reacts to several event types, write one AutomationSlice
+  per trigger.
 
-model the command side as an ordinary `ChangeSlice` whose `actor` is a system
-actor (for example `Actor {name "system"}`). Then mention in your report that
-the trigger (a todo-list view plus a processor) isn't represented yet. Don't
-edit `types.ilk` unless the user asks for it.
+### TranslationSlice (messages coming from another system)
+
+```
+message ({...}) ──@source [message]──▶ command.fields ──▶ emits[] (our events)
+```
+
+- `from`: a reference to an `ExternalSystem` binding (declared in `actors.ilk`).
+- `channel`: free text saying how the message arrives (`"webhook POST /webhooks/payments"`).
+- `message`: the external payload **in the other system's vocabulary**. Map
+  it explicitly into our language in `command.fields`
+  (`paymentRef String = message.reference`). This mapping is the whole point
+  of the slice: external names must not leak into our events.
+- External delivery is at-least-once, so always add an idempotency scenario
+  (duplicate message → `then []`).
+- `scenarios` use `ChangeScenario`, but `when` keys are **message** keys.
+
+Use a TranslationSlice whenever the spec says "we receive / are notified /
+sync from X". Don't model it as a ChangeSlice with a fake endpoint.

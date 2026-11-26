@@ -5,16 +5,18 @@
 > Members can borrow books from the catalog. A book can only be lent to one
 > member at a time, and a member can have at most 3 books at once. Loans last
 > 21 days. Members can see the books they currently have and when each is due.
+> Books returned late are fined 0.50 per day overdue. Fines are paid online;
+> the payment provider notifies us of each payment.
 
 ## Step 1: Interpretation table
 
 | Kind | Items |
 |--|--|
-| Actors | member |
-| Commands | BorrowBook |
-| Events | BookAddedToCatalog (external to this spec), BookBorrowed, BookReturned |
+| Actors | member, lending policy (system) · external: payment provider |
+| Commands | BorrowBook · IssueLateFine (automatic, on BookReturned) · RecordFinePayment (from the provider's webhook) |
+| Events | BookAddedToCatalog (external to this spec), BookBorrowed, BookReturned, FineIssued, FinePaid |
 | Views | MyLoans (my current books + due dates) |
-| Rules | book must exist · one loan per book · max 3 loans per member · due = today + 21d |
+| Rules | book must exist · one loan per book · max 3 loans per member · due = today + 21d · fine = 0.50 × days overdue, none if on time · a payment notification is applied once |
 | Identifiers / tags | bookId (rule: one loan per book), memberId (rule: max 3 per member) |
 | Assumptions | the member is the authenticated user; `BookReturned` exists because "currently have" implies returns |
 | Open questions | Who adds books to the catalog? How does a return happen? Are late returns penalized? |
@@ -25,6 +27,8 @@
 |--|--|--|--|--|
 | Loans | BorrowBook | change | BookAddedToCatalog, BookBorrowed, BookReturned | BookBorrowed |
 | Loans | ViewMyLoans | view | BookBorrowed, BookReturned | loans list |
+| Fines | IssueLateFine | automation | trigger BookReturned · FineIssued | FineIssued |
+| Fines | RecordFinePayment | translation | message from payment provider · FineIssued, FinePaid | FinePaid |
 
 (A complete model would also have `ReturnBook` and `AddBookToCatalog`
 slices. They're left out here to keep the example short. The report must
@@ -50,6 +54,16 @@ import "./types.ilk"
 memberActor = Actor {
     name "member"
     description "A registered library user"
+}
+
+lendingPolicyActor = Actor {
+    name "lending policy"
+    description "Background processor applying library policies"
+}
+
+paymentProvider = ExternalSystem {
+    name "payment provider"
+    description "Third-party card payment service"
 }
 ```
 
@@ -97,12 +111,41 @@ bookReturned = TaggedEvent {
         bookId Uuid
         memberId Uuid
         returnedOn Date
+        daysOverdue Int
     }
 
     tags [
         bookIdTag
         memberIdTag
     ]
+}
+
+fineIssued = TaggedEvent {
+    type "FineIssued"
+    description "A member was charged a fine for returning a book late."
+
+    fields {
+        fineId Uuid
+        loanId Uuid
+        memberId Uuid
+        amount Money
+    }
+
+    tags [memberIdTag]
+}
+
+finePaid = TaggedEvent {
+    type "FinePaid"
+    description "The payment provider confirmed that a member paid a fine."
+
+    fields {
+        fineId Uuid
+        memberId Uuid
+        amount Money
+        paymentRef String
+    }
+
+    tags [memberIdTag]
 }
 ```
 
@@ -249,11 +292,125 @@ viewMyLoans = ViewSlice {
 }
 ```
 
+### autoIssueLateFine.ilk
+```ilk
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+issueLateFine = AutomationSlice {
+    name "IssueLateFine"
+    description "Spec: Books returned late are fined 0.50 per day overdue."
+
+    actor lendingPolicyActor
+
+    trigger bookReturned
+
+    command {
+        fields {
+            fineId Uuid*
+            loanId Uuid
+            memberId Uuid
+            daysOverdue Int
+            @doc "daysOverdue * 0.50"
+            amount Money = compute(trigger.fields.daysOverdue)
+        }
+
+        query [{
+            eventTypes [fineIssued]
+            tags [memberIdTag]
+        }]
+
+        emits [fineIssued]
+    }
+
+    scenarios [
+        {
+            name "OK: late return is fined"
+            given []
+            when bookReturned & {fields {loanId "l1", daysOverdue 4}}
+            then [fineIssued]
+        }
+        {
+            name "OK: on-time return is not fined"
+            given []
+            when bookReturned & {fields {daysOverdue 0}}
+            then []
+        }
+    ]
+}
+```
+
+### transFinePaid.ilk
+```ilk
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+recordFinePayment = TranslationSlice {
+    name "RecordFinePayment"
+    description "Spec: Fines are paid online; the payment provider notifies us of each payment."
+
+    from paymentProvider
+    channel "webhook POST /webhooks/payments"
+
+    message {
+        reference String
+        metadata {fineId Uuid, memberId Uuid}
+        amountPaid Money
+    }
+
+    command {
+        fields {
+            fineId Uuid = message.metadata.fineId
+            memberId Uuid = message.metadata.memberId
+            amount Money = message.amountPaid
+            paymentRef String = message.reference
+        }
+
+        query [{
+            eventTypes [fineIssued, finePaid]
+            tags [memberIdTag]
+        }]
+
+        emits [finePaid]
+    }
+
+    scenarios [
+        {
+            name "OK: payment for an open fine"
+            given [fineIssued & {fields {fineId "f1"}}]
+            when {reference "pay_123", amountPaid 2.0}
+            then [finePaid]
+        }
+        {
+            name "OK: duplicate notification is ignored"
+            given [
+                fineIssued & {fields {fineId "f1"}}
+                finePaid & {fields {fineId "f1"}}
+            ]
+            when {reference "pay_123"}
+            then []
+        }
+        {
+            name "Err: unknown fine"
+            given []
+            when {reference "pay_999"}
+            then {error "fine not found"}
+        }
+    ]
+}
+```
+
 ### main.ilk
 ```ilk
 import "./types.ilk"
 import "./cmdBorrowBook.ilk"
 import "./viewMyLoans.ilk"
+import "./autoIssueLateFine.ilk"
+import "./transFinePaid.ilk"
 
 @main
 board = Board {
@@ -262,18 +419,25 @@ board = Board {
     contexts [{
         name "Lending"
         description "Members borrow and return books"
-        chapters [{
-            name "Loans"
-            description "A member borrows a book and tracks it"
-            flow [borrowBook, viewMyLoans]
-        }]
+        chapters [
+            {
+                name "Loans"
+                description "A member borrows a book and tracks it"
+                flow [borrowBook, viewMyLoans]
+            }
+            {
+                name "Fines"
+                description "Late returns are fined and paid online"
+                flow [issueLateFine, recordFinePayment]
+            }
+        ]
     }]
 }
 ```
 
 ## Step 6: Report (shape)
 
-- Files: types, tags, actors, events, cmdBorrowBook, viewMyLoans, main. `ilk check main.ilk` passes.
+- Files: types, tags, actors, events, cmdBorrowBook, viewMyLoans, autoIssueLateFine, transFinePaid, main. `ilk check main.ilk` passes.
 - Missing slices: `AddBookToCatalog` (emits BookAddedToCatalog), `ReturnBook` (emits BookReturned).
-- Assumptions: member = authenticated user; returns exist.
+- Assumptions: member = authenticated user; returns exist; `BookReturned` carries `daysOverdue`, a decision-time fact recorded at return, so the fine can be computed from the trigger alone.
 - Open questions: penalties for late returns? Can a member renew a loan?

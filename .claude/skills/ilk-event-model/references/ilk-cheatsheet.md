@@ -39,9 +39,8 @@ Base types: `Bool Int Float String Uuid Date Timestamp Money`.
 String literals may span several lines, but there are **no escape sequences**
 (`\"` and `\n` are parse errors). Keep `"` out of descriptions.
 
-`description` (optional, `Concrete<String>`) exists on TaggedEvent, Actor,
-ChangeSlice, ViewSlice, ChangeScenario, ViewScenario, Context, Chapter, and
-Board. Concrete values are exempt from `@source`, so descriptions never
+`description` (optional, `Concrete<String>`) exists on every slice, scenario,
+event, Actor, ExternalSystem, Context, Chapter, and Board. Concrete values are exempt from `@source`, so descriptions never
 affect data-flow checks.
 HTTP methods are bare identifiers: `method POST`.
 
@@ -68,6 +67,17 @@ HTTP methods are bare identifiers: `method POST`.
 - Scenarios: every `given` event ∈ some `query[].eventTypes`.
 - `readModel` is **not** provenance-checked. Check it yourself.
 
+**AutomationSlice**
+- `command.fields` ← `@source [trigger.fields]`: every field comes from the trigger event
+  (by name, `= trigger.fields.x`, `compute(trigger.fields.x)`) or is generated.
+- Scenarios (`AutomationScenario`): `when` must be the trigger event (it may be refined);
+  `given` ∈ query; `then` ∈ emits, or Error.
+
+**TranslationSlice**
+- `from` must reference an `ExternalSystem` binding.
+- `command.fields` ← `@source [message]`; nested paths are allowed (`= message.metadata.fineId`).
+- Scenarios: `when` keys ∈ `keys(message)`; `given` ∈ query; `then` ∈ emits, or Error.
+
 **QueryItem**
 - Every tag in `tags` must appear in the `tags` of **every** event listed in `eventTypes`.
   So group events by the tags they share. Use several query items when they differ.
@@ -78,6 +88,10 @@ HTTP methods are bare identifiers: `method POST`.
 
 **Scenarios / refinements**
 - A refinement may only name fields that exist on the binding: `itemAdded & {fields {cartId "abc"}}`.
+- Refinements work in `given` and in an automation's `when`, but **not inside `then`**
+  (`then` is typed `[]-TaggedEvent | Error`, and refining inside that union fails with
+  `Refinement on non-named type`). List plain event names in `then`, and use the scenario
+  `description` to state the expected values.
 
 **Main**
 - Only one `@main` per file. Every slice must be imported into `main.ilk` before it can appear in a `flow`.
@@ -96,6 +110,8 @@ HTTP methods are bare identifiers: `method POST`.
 | `Constraint failed for inline QueryItem` | A query tag isn't on every event in that item | Split the query item, or tag the event |
 | `Constraint failed for instance 'slice'` | One of the scenario rules | Read `where:` → `event in [...] = false` means the given event isn't queried or the `then` event isn't emitted; `k in [...] = false` means the `when` key isn't a command field |
 | `Undefined reference` / unknown binding | Missing import or typo | Add the `import`, fix the name |
+| `Reference type mismatch: x is type A, expected B` | Wrong kind of binding (for example an `Actor` given as `from`) | Reference a binding of meta `B` |
+| `Refinement on non-named type` | `event & {...}` inside `then` | Use the plain event name in `then` |
 
 Constraint failures print a `where:` block with the bound variables, for example:
 

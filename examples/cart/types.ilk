@@ -4,6 +4,8 @@
 // (steps of a user journey), each holding a flow of vertical Slices:
 //   - ChangeSlice : endpoint -> command -> emitted events   (write side)
 //   - ViewSlice   : events -> read model -> endpoint        (read side)
+//   - AutomationSlice  : trigger event -> command -> emitted events   (no human)
+//   - TranslationSlice : external message -> command -> emitted events
 //
 // `description` fields are free text, typed Concrete<String>: they don't take
 // part in data-flow checks (@source). Use them to state intent in one line,
@@ -166,8 +168,67 @@ meta ViewSlice = {
 }
 
 
-@doc "A vertical slice: either a command (write) or a view (read)."
-meta Slice = ChangeSlice | ViewSlice
+@doc "A system outside this model that sends us messages (payment provider, ERP, partner API...)."
+meta ExternalSystem = {
+    name! Concrete<String>
+    description Concrete<String>
+}
+
+
+@doc "Automation slice: an event wakes a background processor, which issues a command without a human."
+@doc "Event Modeling pattern: event -> (todo list) -> processor -> command -> events."
+@doc "The command input must come from the triggering event's fields."
+meta AutomationSlice = {
+    name! Concrete<String>
+    description Concrete<String>
+    actor Actor
+
+    trigger! &TaggedEvent
+
+    @source [trigger.fields]
+    command! Command
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => s.when == trigger)
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
+    @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
+    scenarios []AutomationScenario
+}
+
+
+@doc "Given past events, when the trigger event occurs (optionally refined with values), then these events are emitted (or this error)."
+meta AutomationScenario = {
+    name! Concrete<String>
+    description Concrete<String>
+
+    given! []-TaggedEvent
+    when! -TaggedEvent
+    then! []-TaggedEvent | Error
+}
+
+
+@doc "Translation slice: a message from an external system is turned into our own events, through a command."
+@doc "Event Modeling pattern: external system -> translator -> command -> events. The command input must come from the message."
+meta TranslationSlice = {
+    name! Concrete<String>
+    description Concrete<String>
+
+    from! &ExternalSystem
+    @doc "How the message reaches us, e.g. 'webhook POST /webhooks/payments' or 'topic billing.invoices'."
+    channel Concrete<String>
+    message! {...}
+
+    @source [message]
+    command! Command
+
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(s.given, event => exists(command.query, q => event in q.eventTypes)))
+    @constraint !isPresent(scenarios) || all(scenarios, s => all(keys(s.when), k => k in keys(message)))
+    @constraint !isPresent(scenarios) || all(scenarios, s => isType(s.then, Error) || all(s.then, event => event in command.emits))
+    scenarios []ChangeScenario
+}
+
+
+@doc "A vertical slice: a command (write), a view (read), an automation (event-triggered command) or a translation (external message)."
+meta Slice = ChangeSlice | ViewSlice | AutomationSlice | TranslationSlice
 
 
 @doc "A step of a user journey inside a context; `flow` lists its slices in timeline order."
