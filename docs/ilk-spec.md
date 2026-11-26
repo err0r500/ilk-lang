@@ -573,7 +573,7 @@ userIdTag = Tag {userId String} // inline comment
 | `Uuid` | UUID value |
 | `Date` | Calendar date |
 | `Timestamp` | Point in time |
-| `Money` | Monetary amount |
+| `Money` | Monetary amount. Literal values are plain numbers (`10`, `9.99`) |
 
 `*` can be used as a field meta (any concrete meta or value is accepted) or in struct
 cardinality notation like `{_}` (shorthand for `{_ *}`).
@@ -878,6 +878,28 @@ body {...}
 
 Source paths are resolved from the enclosing meta root, not relative to the annotation's
 position.
+
+**Paths through lists and references:** a path segment that holds a binding reference
+is dereferenced, and a segment that holds a list fans out to every element. So
+`@source [query.eventTypes.fields]` means "the `fields` of any event referenced by any
+query item":
+
+```ilk
+meta View = {
+    reads []&Event
+    @source [reads.fields]    // any field of any read event
+    readModel {...}
+}
+```
+
+A source that crosses a list is **collective**. In implicit matching, collective sources
+are only consulted when no direct source has the field. This lets a command source its
+emitted attributes from its payload first, and from the events it read otherwise
+(`@source [fields, query.eventTypes.fields]`), without ambiguity errors.
+
+A binding is never a source for its own fields: when an event appears both in what a
+command reads and in what it emits, its attributes can't be sourced from earlier
+occurrences of itself.
 
 The validator resolves each field in an instance struct in priority order:
 
@@ -1203,7 +1225,10 @@ A minimal expression language for `@constraint` predicates.
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
-| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list) |
+| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list). |
+| `instances(TypeName)` | All bindings whose meta is `TypeName` or one of its union variants, whether or not they are referenced. Lets a constraint say "every event…" without relying on a hand-maintained list. `x in instances(ViewSlice)` also tells which variant a reference points to |
+| `reachable(graph, node)` | Every node reachable from `node` in one or more steps. `graph` is a list of entries with a `from` node and a `to` list of nodes. Cycles are fine; `node` is in the result only if a cycle leads back to it |
+| `reachable(graph, node, n => stop)` | Same, but the walk doesn't continue through nodes where `stop` holds (they are still reached). `!(b in reachable(g, a, n => n in guards))` means *every* path from `a` to `b` passes through a guard |
 
 ### Operators
 
@@ -1213,7 +1238,7 @@ A minimal expression language for `@constraint` predicates.
 | `\|\|` | Logical or |
 | `!` | Logical not |
 | `==`, `!=` | Equality, inequality. Structs and lists compare deeply (lists are order-sensitive) |
-| `in` | Set membership (`x in set`) |
+| `in` | Set membership (`x in set`), or a binding reference in a list (`e in emits`) |
 | `<`, `<=`, `>`, `>=` | Numeric comparison (Int and Float operands may be mixed) |
 
 Examples:
@@ -1222,6 +1247,27 @@ Examples:
 @constraint unique(eventTypes, e => e.name)
 @constraint count(eventTypes) >= 1
 @constraint count(tags) <= 5
+```
+
+A failed sub-check counts as `false` for `!` and `||`: `!(e in given)` is true when `e`
+is absent, and `a in xs || b` evaluates `b` when `a` is missing.
+
+**Labels:** a `@doc` written directly before an `@constraint` becomes its label, shown
+when the constraint fails, together with the `where:` bindings:
+
+```ilk
+meta ChangeSlice = {
+    @doc "R6: each required attribute has a scenario where no past event carries it and the command is rejected"
+    @constraint all(requires, f => exists(scenarios, s => isType(s.then, Error) && all(s.given, g => !(f in keys(g.fields)))))
+    requires! []Concrete<String>
+    ...
+}
+```
+
+```
+Error: Constraint failed for instance 'removeItem': R6: each required attribute has a scenario where no past event carries it and the command is rejected
+  where:
+    f = sku
 ```
 
 User-defined predicates are not currently supported.

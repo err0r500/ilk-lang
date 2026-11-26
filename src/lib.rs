@@ -253,11 +253,7 @@ mod tests {
 
     /// Work-in-progress examples that don't validate yet (also commented out of
     /// cart/main.ilk). They must still parse; remove entries as they are fixed.
-    const KNOWN_INVALID_EXAMPLES: &[&str] = &[
-        "examples/cart/viewChangedPrices.ilk",
-        "examples/cart/viewOpenCartsWithProducts.ilk",
-        "examples/cart/viewProductsInventories.ilk",
-    ];
+    const KNOWN_INVALID_EXAMPLES: &[&str] = &["examples/cart/viewOpenCartsWithProducts.ilk"];
 
     #[test]
     fn test_validate_all_examples() {
@@ -299,6 +295,28 @@ mod tests {
     #[test]
     fn test_validate_cart_with_imports() {
         let result = validate_file(Path::new("examples/cart/main.ilk"));
+        assert!(result.is_ok(), "Validation failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_required_event_must_hold_on_every_path() {
+        // Anonymous entry: browseCatalog -> addToCart -> sendCartConfirmationEmail
+        // never passes through a slice emitting userEmail, which the email needs.
+        let errors = validate_file(Path::new("tests/fixtures/login-email/anonymous.ilk"))
+            .expect_err("the anonymous path must be reported");
+        assert!(
+            errors.iter().any(|e| e.message.contains("R3b")
+                && e.message.contains("s = sendCartConfirmationEmail")
+                && e.message.contains("f = userEmail")
+                && e.message.contains("st = browseCatalog")),
+            "{:?}",
+            errors
+        );
+        // Fixed by making the login the only way in...
+        let result = validate_file(Path::new("tests/fixtures/login-email/login-first.ilk"));
+        assert!(result.is_ok(), "Validation failed: {:?}", result.err());
+        // ...or by having another slice provide the attribute on the anonymous path.
+        let result = validate_file(Path::new("tests/fixtures/login-email/email-at-add.ilk"));
         assert!(result.is_ok(), "Validation failed: {:?}", result.err());
     }
 

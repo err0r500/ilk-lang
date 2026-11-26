@@ -154,6 +154,14 @@ pub enum ConstraintExpr {
     Int(i64),
     IsType(Box<S<ConstraintExpr>>, String), // isType(expr, TypeName)
     IsPresent(String),                      // isPresent(fieldName)
+    Instances(String),                      // instances(MetaName)
+    /// reachable(graph, node) or reachable(graph, node, n => stop): nodes for which
+    /// `stop` holds are reached but not walked through.
+    Reachable(
+        Box<S<ConstraintExpr>>,
+        Box<S<ConstraintExpr>>,
+        Option<(String, Box<S<ConstraintExpr>>)>,
+    ),
 }
 
 // ============= Instance-Level AST (formerly kli/ast.rs) =============

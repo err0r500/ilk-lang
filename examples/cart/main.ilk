@@ -3,29 +3,67 @@ import "./cmdAddItem.ilk"
 import "./cmdClearCart.ilk"
 import "./cmdRemoveItem.ilk"
 import "./viewCartItems.ilk"
-// import "./viewChangedPrices.ilk"
-// import "./viewProductsInventories.ilk"
+import "./viewChangedPrices.ilk"
+import "./viewProductsInventories.ilk"
+import "./transSyncInventory.ilk"
+import "./transSyncPrices.ilk"
 // import "./viewOpenCartsWithProducts.ilk"
 
 
 @main
 board = Board {
     name "Shopping Cart"
+    description "Event model of an e-commerce shopping cart"
+
     contexts [{
         name "Shopping"
         description "Shopping Cart Context"
-        chapters [{
-            name "Cart Items"
-            description "Customer browses products and fills their cart"
-            flow [
-                addItem
-                removeItem
-                clearCart
-                viewCartItems
-                // viewChangedPrices
-                // viewOpenCartsWithProducts
-                // viewProductsInventories
-            ]
-        }]
+        chapters [
+            {
+                name "Cart Items"
+                description "Customer browses products and fills their cart"
+                slices [
+                    addItem
+                    removeItem
+                    clearCart
+                    viewCartItems
+                ]
+            }
+            {
+                name "Catalog"
+                description "Stock levels and prices come from other systems"
+                slices [
+                    syncInventory
+                    syncPrices
+                    viewProductsInventories
+                    changedPrices
+                ]
+            }
+        ]
     }]
+
+    // the graph of possible journeys: from a slice, which slices can come next
+    flows [
+        {from addItem, to [viewCartItems]}
+        {from viewCartItems, to [addItem, removeItem, clearCart]}
+        {from removeItem, to [viewCartItems]}
+        {from clearCart, to [viewCartItems]}
+        {from syncInventory, to [viewProductsInventories, addItem]}
+        {from syncPrices, to [changedPrices]}
+    ]
+
+    // explicit exceptions to the well-formedness rules
+    // journeys begin on a product page (adding an item opens the cart),
+    // or with a message from the warehouse or the catalog
+    starts [addItem, syncInventory, syncPrices]
+
+    unconsumedEvents [{
+        // read by the open-carts view, which is still work in progress
+        event cartSubmitted
+        reason "terminal"
+    }]
+
+    closedStreams [{stream cartIdTag, closedBy [cartSubmitted]}, {stream cartTag, closedBy [cartSubmitted]}]
+
+    openEndedStreams [shopperIdTag, productIdTag]
 }

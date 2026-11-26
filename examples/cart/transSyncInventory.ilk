@@ -1,0 +1,35 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+syncInventory = TranslationSlice {
+    name "SyncInventory"
+    description "The warehouse ERP publishes every stock change; we record it as InventoryChanged."
+
+    from warehouseErp
+    channel "topic warehouse.stock-levels"
+
+    message {
+        sku Uuid
+        stockLevel Int
+    }
+
+    command {
+        fields {
+            sku Uuid
+            inventory Int = message.stockLevel
+        }
+
+        query []
+
+        emits [inventoryChanged]
+    }
+
+    requires []
+
+    invariants []
+
+    scenarios []
+}

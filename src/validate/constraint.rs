@@ -65,10 +65,13 @@ fn validate_instance_constraints(
 
     for constraint in constraints {
         let env = build_eval_env(inst);
-        let fail_msg = format!("Constraint failed for instance '{}'", inst.name.node);
+        let fail_msg = with_label(
+            format!("Constraint failed for instance '{}'", inst.name.node),
+            &constraint.label,
+        );
         report_constraint_result(
-            eval_constraint(&constraint.node, &env, ctx),
-            &constraint.span,
+            eval_constraint(&constraint.expr.node, &env, ctx),
+            &constraint.expr.span,
             &inst.name.span,
             &fail_msg,
             &type_fields,
@@ -104,12 +107,15 @@ fn validate_nested_constraints(
                             let env = build_env_from_fields(fields);
 
                             for constraint in &constraints {
-                                let fail_msg = format!(
-                                    "Constraint failed for inline {} at {}[{}]",
-                                    meta_decl.node.name.node, parent_path, i
+                                let fail_msg = with_label(
+                                    format!(
+                                        "Constraint failed for inline {} at {}[{}]",
+                                        meta_decl.node.name.node, parent_path, i
+                                    ),
+                                    &constraint.label,
                                 );
                                 report_constraint_result(
-                                    eval_constraint(&constraint.node, &env, ctx),
+                                    eval_constraint(&constraint.expr.node, &env, ctx),
                                     &elem.span,
                                     &elem.span,
                                     &fail_msg,
@@ -164,13 +170,16 @@ fn validate_nested_constraints(
                     let env = build_env_from_fields(val_fields);
 
                     for constraint in &constraints {
-                        let fail_msg = format!(
-                            "Constraint failed for inline {} at {}",
-                            type_name, parent_path
+                        let fail_msg = with_label(
+                            format!(
+                                "Constraint failed for inline {} at {}",
+                                type_name, parent_path
+                            ),
+                            &constraint.label,
                         );
                         report_constraint_result(
-                            eval_constraint(&constraint.node, &env, ctx),
-                            &constraint.span,
+                            eval_constraint(&constraint.expr.node, &env, ctx),
+                            &constraint.expr.span,
                             &value.span,
                             &fail_msg,
                             &type_fields,
@@ -194,6 +203,13 @@ fn validate_nested_constraints(
     }
 }
 
+fn with_label(msg: String, label: &Option<String>) -> String {
+    match label {
+        Some(l) => format!("{}: {}", msg, l),
+        None => msg,
+    }
+}
+
 fn build_env_from_fields(fields: &[S<InstanceField>]) -> HashMap<String, EvalValue> {
     let mut env = HashMap::new();
     for field in fields {
@@ -204,15 +220,30 @@ fn build_env_from_fields(fields: &[S<InstanceField>]) -> HashMap<String, EvalVal
     env
 }
 
-fn find_constraints_in_type(ty: &S<TypeExpr>) -> Vec<S<ConstraintExpr>> {
+/// A constraint and its optional label: the `@doc` written directly before it.
+struct LabeledConstraint {
+    label: Option<String>,
+    expr: S<ConstraintExpr>,
+}
+
+fn find_constraints_in_type(ty: &S<TypeExpr>) -> Vec<LabeledConstraint> {
     let mut constraints = Vec::new();
 
     match &ty.node {
         TypeExpr::Struct(StructKind::Closed(fields) | StructKind::Open(fields)) => {
             for field in fields {
+                let mut previous_doc: Option<&String> = None;
                 for ann in &field.node.annotations {
-                    if let Annotation::Constraint(c) = &ann.node {
-                        constraints.push(c.clone());
+                    match &ann.node {
+                        Annotation::Constraint(c) => {
+                            constraints.push(LabeledConstraint {
+                                label: previous_doc.cloned(),
+                                expr: c.clone(),
+                            });
+                            previous_doc = None;
+                        }
+                        Annotation::Doc(d) => previous_doc = Some(d),
+                        _ => previous_doc = None,
                     }
                 }
             }
@@ -569,13 +600,29 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Or(left, right) => {
-            let l = eval_constraint(&left.node, env, ctx)?;
+            let (l, left_trace) = match eval_constraint(&left.node, env, ctx) {
+                Err(ConstraintError::Failed(trace)) => (EvalValue::Bool(false), Some(trace)),
+                other => (other?, None),
+            };
             match l {
                 EvalValue::Bool(true) => Ok(EvalValue::Bool(true)),
                 EvalValue::Bool(false) => {
-                    let r = eval_constraint(&right.node, env, ctx)?;
+                    let r = match eval_constraint(&right.node, env, ctx) {
+                        Err(ConstraintError::Failed(trace)) => {
+                            let merged = match left_trace {
+                                Some(lt) => lt.merge(trace),
+                                None => trace,
+                            };
+                            return Err(ConstraintError::Failed(merged));
+                        }
+                        other => other?,
+                    };
                     match r {
-                        EvalValue::Bool(b) => Ok(EvalValue::Bool(b)),
+                        EvalValue::Bool(true) => Ok(EvalValue::Bool(true)),
+                        EvalValue::Bool(false) => match left_trace {
+                            Some(lt) => Err(ConstraintError::Failed(lt)),
+                            None => Ok(EvalValue::Bool(false)),
+                        },
                         _ => Err(ConstraintError::Eval(
                             "|| requires boolean operands".to_string(),
                         )),
@@ -588,7 +635,10 @@ fn eval_constraint(
         }
 
         ConstraintExpr::Not(inner) => {
-            let v = eval_constraint(&inner.node, env, ctx)?;
+            let v = match eval_constraint(&inner.node, env, ctx) {
+                Err(ConstraintError::Failed(_)) => EvalValue::Bool(false),
+                other => other?,
+            };
             match v {
                 EvalValue::Bool(b) => Ok(EvalValue::Bool(!b)),
                 _ => Err(ConstraintError::Eval(
@@ -680,6 +730,92 @@ fn eval_constraint(
             Ok(EvalValue::Bool(env.contains_key(field_name.as_str())))
         }
 
+        ConstraintExpr::Instances(type_name) => {
+            if ctx.env.get_meta(type_name).is_none() {
+                return Err(ConstraintError::Eval(format!(
+                    "instances: unknown meta '{}'",
+                    type_name
+                )));
+            }
+            let mut names: Vec<&String> = ctx
+                .env
+                .instances
+                .iter()
+                .filter(|(_, inst)| {
+                    meta_is_or_variant_of(&inst.node.type_name.node, type_name, ctx)
+                })
+                .map(|(name, _)| name)
+                .collect();
+            names.sort();
+            Ok(EvalValue::List(
+                names
+                    .into_iter()
+                    .map(|n| EvalValue::BindingRef(n.clone()))
+                    .collect(),
+            ))
+        }
+
+        ConstraintExpr::Reachable(graph_expr, node_expr, stop) => {
+            let graph = eval_constraint(&graph_expr.node, env, ctx)?;
+            let start = eval_constraint(&node_expr.node, env, ctx)?;
+            let EvalValue::List(edges) = graph else {
+                return Err(ConstraintError::Eval(
+                    "reachable: graph must be a list of {from, to} entries".to_string(),
+                ));
+            };
+            // adjacency: from -> [to...]
+            let mut adjacency: Vec<(EvalValue, Vec<EvalValue>)> = Vec::new();
+            for edge in &edges {
+                let from = struct_field(edge, "from", ctx);
+                let to = struct_field(edge, "to", ctx);
+                match (from, to) {
+                    (Some(from), Some(EvalValue::List(to))) => adjacency.push((from, to)),
+                    (Some(from), Some(single)) => adjacency.push((from, vec![single])),
+                    _ => {
+                        return Err(ConstraintError::Eval(
+                            "reachable: each graph entry needs `from` and `to`".to_string(),
+                        ))
+                    }
+                }
+            }
+            // Does the walk stop at `node`? A failed check counts as "no".
+            let stops_at = |node: &EvalValue| -> Result<bool, ConstraintError> {
+                let Some((var, body)) = stop else {
+                    return Ok(false);
+                };
+                let mut inner_env = env.clone();
+                inner_env.insert(var.clone(), node.clone());
+                match eval_constraint(&body.node, &inner_env, ctx) {
+                    Ok(EvalValue::Bool(b)) => Ok(b),
+                    Err(ConstraintError::Failed(_)) => Ok(false),
+                    Ok(_) => Err(ConstraintError::Eval(
+                        "reachable: stop condition must be boolean".to_string(),
+                    )),
+                    Err(e) => Err(e),
+                }
+            };
+            // walk one or more edges away from `start`; stop nodes are reached,
+            // but the walk doesn't continue through them
+            let mut reached: Vec<EvalValue> = Vec::new();
+            let mut frontier = vec![start];
+            while let Some(node) = frontier.pop() {
+                for (from, tos) in &adjacency {
+                    if !eval_values_equal(from, &node) {
+                        continue;
+                    }
+                    for to in tos {
+                        if !reached.iter().any(|r| eval_values_equal(r, to)) {
+                            reached.push(to.clone());
+                            if !stops_at(to)? {
+                                frontier.push(to.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(EvalValue::List(reached))
+        }
+
         ConstraintExpr::Lt(left, right) => eval_int_cmp(left, right, "<", env, ctx, |a, b| a < b),
         ConstraintExpr::Le(left, right) => eval_int_cmp(left, right, "<=", env, ctx, |a, b| a <= b),
         ConstraintExpr::Gt(left, right) => eval_int_cmp(left, right, ">", env, ctx, |a, b| a > b),
@@ -725,6 +861,48 @@ fn eval_int_cmp(
             "{} requires numeric operands",
             op
         ))),
+    }
+}
+
+/// True when `actual` is `expected`, or a (transitive) variant of the union `expected`.
+fn meta_is_or_variant_of(actual: &str, expected: &str, ctx: &ValidationContext) -> bool {
+    fn walk(actual: &str, ty: &TypeExpr, ctx: &ValidationContext, depth: usize) -> bool {
+        if depth > 32 {
+            return false;
+        }
+        match ty {
+            TypeExpr::Named(n) => {
+                n == actual
+                    || ctx
+                        .env
+                        .get_meta(n)
+                        .is_some_and(|d| walk(actual, &d.node.body.node, ctx, depth + 1))
+            }
+            TypeExpr::Union(variants) => variants
+                .iter()
+                .any(|v| walk(actual, &v.node, ctx, depth + 1)),
+            _ => false,
+        }
+    }
+    actual == expected
+        || ctx.env.get_meta(expected).is_some_and(|d| {
+            matches!(d.node.body.node, TypeExpr::Union(_))
+                && walk(actual, &d.node.body.node, ctx, 0)
+        })
+}
+
+/// Read field `name` of a struct value or of a referenced binding.
+fn struct_field(value: &EvalValue, name: &str, ctx: &ValidationContext) -> Option<EvalValue> {
+    match value {
+        EvalValue::Struct(map) => map.get(name).cloned(),
+        EvalValue::BindingRef(binding) => match &ctx.get_instance(binding)?.body.node {
+            Value::Struct(fields) => fields
+                .iter()
+                .find(|f| f.node.name.node == name)
+                .map(|f| value_to_eval_value(&f.node.value)),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -830,6 +1008,147 @@ mod tests {
 
     fn validate_constraints_src(src: &str) -> Vec<Diagnostic> {
         run_validators(src, &[validate_constraints])
+    }
+
+    fn ok(src: &str) {
+        let errors = validate_constraints_src(src);
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    fn fails(src: &str) -> Vec<Diagnostic> {
+        let errors = validate_constraints_src(src);
+        assert!(!errors.is_empty(), "expected a failure");
+        errors
+    }
+
+    const GRAPH_BASE: &str = r#"
+meta A = {name Concrete<String>, note Concrete<String>}
+meta B = {name Concrete<String>}
+meta Node = A | B
+a1 = A {name "a1", note "x"}
+a2 = A {name "a2"}
+b1 = B {name "b1"}
+"#;
+
+    #[test]
+    fn test_not_in_list_is_true_when_absent() {
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta T = {
+  @constraint !(probe in xs)
+  xs []&Node
+  probe &Node
+}
+t = T {xs [a1, a2], probe b1}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_or_falls_through_failed_left() {
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta T = {
+  @constraint probe in xs || count(xs) == 2
+  xs []&Node
+  probe &Node
+}
+t = T {xs [a1, a2], probe b1}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_instances_includes_union_variants() {
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta T = {
+  @constraint count(instances(A)) == 2 && count(instances(Node)) == 3
+  x Int
+}
+t = T {x Int}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_reachable_follows_edges_and_cycles() {
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta Edge = {from! &Node, to! []&Node}
+meta T = {
+  @constraint all(nodes, n => n in reachable(edges, start))
+  @constraint !(start in reachable(edges, sink))
+  edges []Edge
+  nodes []&Node
+  start &Node
+  sink &Node
+}
+t = T {
+  edges [{from a1, to [a2]}, {from a2, to [b1, a1]}]
+  nodes [a1, a2, b1]
+  start a1
+  sink b1
+}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_reachable_with_stop_condition() {
+        // a1 -> a2 -> b1 and a1 -> b1: stopping at a2 still reaches b1 directly;
+        // with only the a1 -> a2 -> b1 path, stopping at a2 cuts b1 off.
+        ok(&format!(
+            "{}{}",
+            GRAPH_BASE,
+            r#"
+meta Edge = {from! &Node, to! []&Node}
+meta T = {
+  @constraint sink in reachable(direct, start, n => n == cut)
+  @constraint !(sink in reachable(chain, start, n => n == cut))
+  @constraint cut in reachable(chain, start, n => n == cut)
+  direct []Edge
+  chain []Edge
+  start &Node
+  cut &Node
+  sink &Node
+}
+t = T {
+  direct [{from a1, to [a2, b1]}, {from a2, to [b1]}]
+  chain [{from a1, to [a2]}, {from a2, to [b1]}]
+  start a1
+  cut a2
+  sink b1
+}
+"#
+        ));
+    }
+
+    #[test]
+    fn test_doc_labels_constraint_failure() {
+        let errors = fails(
+            r#"
+meta T = {
+  @doc "R1: x must be positive"
+  @constraint x > 0
+  x! Concrete<Int>
+}
+t = T {x 0}
+"#,
+        );
+        assert!(
+            errors[0].message.contains("R1: x must be positive"),
+            "{}",
+            errors[0].message
+        );
     }
 
     #[test]

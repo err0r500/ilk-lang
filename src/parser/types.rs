@@ -199,6 +199,32 @@ fn constraint_expr<'a>(
                 .then_ignore(just(')'))
                 .map(|name| ConstraintExpr::IsPresent(name.node))
                 .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("instances(")
+                .ignore_then(ident())
+                .then_ignore(just(')'))
+                .map(|name| ConstraintExpr::Instances(name.node))
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
+            just("reachable(")
+                .ignore_then(expr.clone())
+                .then_ignore(ws().then(just(',')).then(ws()))
+                .then(expr.clone())
+                .then(
+                    ws().then(just(','))
+                        .then(ws())
+                        .ignore_then(ident())
+                        .then_ignore(ws().then(just("=>")).then(ws()))
+                        .then(expr.clone())
+                        .or_not(),
+                )
+                .then_ignore(just(')'))
+                .map(|((graph, node), stop)| {
+                    ConstraintExpr::Reachable(
+                        Box::new(graph),
+                        Box::new(node),
+                        stop.map(|(var, body)| (var.node, Box::new(body))),
+                    )
+                })
+                .map_with(|c, e| Spanned::from_simple(c, e.span())),
             just("isType(")
                 .ignore_then(expr.clone())
                 .then_ignore(ws().then(just(',')).then(ws()))

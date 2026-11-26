@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::error::{Diagnostic, DiagnosticCode};
+use crate::resolve::TypeEnv;
 use crate::span::S;
 use crate::validate::structural::{get_field_type_from_type_expr, ValidationContext};
 
@@ -147,7 +148,7 @@ fn validate_ref_instance_fields(
     errors: &mut Vec<Diagnostic>,
 ) {
     if let Some(ref_inst) = ctx.get_instance(ref_name) {
-        let ref_ctx = ctx.for_instance(ref_name);
+        let ref_ctx = ctx.for_instance(ref_name).excluding_source(ref_name);
         if let Value::Struct(ref_fields) = &ref_inst.body.node {
             for ref_field in ref_fields {
                 if !skip.is_empty() && skip.contains(ref_field.node.name.node.as_str()) {
@@ -249,16 +250,39 @@ fn validate_list_elements(
     let no_skip = std::collections::HashSet::new();
     for elem in elements {
         match &elem.node {
-            ListElement::Refinement(_name, ref_fields) => {
+            ListElement::Refinement(name, ref_fields) => {
+                let ref_ctx = ValidationContext::new(ctx.env, ctx.path).excluding_source(name);
                 for ref_field in ref_fields {
                     validate_refinement_field(
-                        ctx,
+                        &ref_ctx,
                         ref_field,
                         sources,
                         parent_fields,
                         elem_type,
                         errors,
                     );
+                }
+                // Fields the refinement doesn't mention fall back to the binding's own
+                // declaration and must be sourced too.
+                if let Some(Value::Struct(binding_fields)) =
+                    ctx.get_instance(name).map(|inst| &inst.body.node)
+                {
+                    let binding_ctx = ctx.for_instance(name).excluding_source(name);
+                    let mut unrefined_errors = Vec::new();
+                    validate_unrefined_fields(
+                        &binding_ctx,
+                        binding_fields,
+                        ref_fields,
+                        sources,
+                        parent_fields,
+                        elem_type,
+                        &mut unrefined_errors,
+                    );
+                    for mut err in unrefined_errors {
+                        err.file = ctx.path.to_path_buf();
+                        err.span = elem.span.clone();
+                        errors.push(err);
+                    }
                 }
             }
             ListElement::BindingRef(name) => {
@@ -300,6 +324,44 @@ fn validate_list_elements(
                 }
                 _ => {}
             },
+        }
+    }
+}
+
+/// Validate the fields of a binding that a refinement leaves untouched. Nested
+/// structs present on both sides (e.g. an event's `fields`) are merged: only the
+/// sub-fields the refinement doesn't mention are checked here.
+fn validate_unrefined_fields(
+    ctx: &ValidationContext,
+    binding_fields: &[S<InstanceField>],
+    refined_fields: &[S<InstanceField>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    for field in binding_fields {
+        let name = &field.node.name.node;
+        match refined_fields.iter().find(|r| &r.node.name.node == name) {
+            None => {
+                validate_refinement_field(ctx, field, sources, parent_fields, parent_type, errors)
+            }
+            Some(refined) => {
+                if let (Value::Struct(binding_sub), Value::Struct(refined_sub)) =
+                    (&field.node.value.node, &refined.node.value.node)
+                {
+                    let nested_type = resolve_nested_type(ctx, parent_type, name);
+                    validate_unrefined_fields(
+                        ctx,
+                        binding_sub,
+                        refined_sub,
+                        sources,
+                        parent_fields,
+                        nested_type,
+                        errors,
+                    );
+                }
+            }
         }
     }
 }
@@ -496,6 +558,7 @@ fn validate_refinement_field(
             }
 
             let found = check_implicit_source(ctx, field, sources, parent_fields, errors);
+
             if !found && !is_concrete_value(&field.node.value) {
                 errors.push(
                     Diagnostic::error(
@@ -640,70 +703,107 @@ fn source_allows_path(sources: &[S<SourcePath>], path: &[String]) -> bool {
     })
 }
 
-fn validate_source_path(
-    ctx: &ValidationContext,
-    path: &[String],
-    field: &S<InstanceField>,
-    parent_fields: &[S<InstanceField>],
-    errors: &mut Vec<Diagnostic>,
-) {
-    let mut current_fields = parent_fields;
-    let mut source_field: Option<&S<InstanceField>> = None;
-    let mut source_optional = false;
+/// Field sets reached by walking `parts` from `parent_fields`.
+///
+/// Struct values are entered, binding references are dereferenced, and lists
+/// fan out to every element. `collective` is true when the walk crossed a list:
+/// the path then denotes "any of several elements" rather than one value.
+struct ResolvedSource<'a> {
+    field_sets: Vec<&'a [S<InstanceField>]>,
+    collective: bool,
+}
 
-    for (i, segment) in path.iter().enumerate() {
-        if let Some(f) = current_fields.iter().find(|f| &f.node.name.node == segment) {
-            if f.node.optional {
-                source_optional = true;
+fn enter_value<'a>(
+    env: &'a TypeEnv,
+    exclude: Option<&str>,
+    value: &'a Value,
+    out: &mut Vec<&'a [S<InstanceField>]>,
+    collective: &mut bool,
+) {
+    match value {
+        Value::Struct(fields) => out.push(fields.as_slice()),
+        Value::BindingRef(name) | Value::Refinement(name, _) => {
+            if exclude == Some(name.as_str()) {
+                return;
             }
-            if i < path.len() - 1 {
-                let nested = match &f.node.value.node {
-                    Value::Struct(fields) => Some(fields.as_slice()),
-                    Value::BindingRef(name) | Value::Refinement(name, _) => ctx
-                        .get_instance(name)
-                        .and_then(|inst| match &inst.body.node {
-                            Value::Struct(fields) => Some(fields.as_slice()),
-                            _ => None,
-                        }),
-                    _ => None,
-                };
-                match nested {
-                    Some(fields) => current_fields = fields,
-                    None => {
-                        errors.push(
-                            Diagnostic::error(
-                                field.span.clone(),
-                                format!("Source path '{}' not found", path.join(".")),
-                                ctx.path,
-                            )
-                            .with_code(DiagnosticCode::SourcePathNotFound),
-                        );
-                        return;
+            if let Some(inst) = env.get_instance(name) {
+                if let Value::Struct(fields) = &inst.node.body.node {
+                    out.push(fields.as_slice());
+                }
+            }
+        }
+        Value::Variant(_, body) => enter_value(env, exclude, &body.node, out, collective),
+        Value::List(elements) => {
+            *collective = true;
+            for elem in elements {
+                match &elem.node {
+                    ListElement::Value(v) => enter_value(env, exclude, v, out, collective),
+                    ListElement::BindingRef(name) | ListElement::Refinement(name, _) => {
+                        if exclude == Some(name.as_str()) {
+                            continue;
+                        }
+                        if let Some(inst) = env.get_instance(name) {
+                            if let Value::Struct(fields) = &inst.node.body.node {
+                                out.push(fields.as_slice());
+                            }
+                        }
                     }
                 }
-            } else {
-                source_field = Some(f);
             }
-        } else {
-            errors.push(
-                Diagnostic::error(
-                    field.span.clone(),
-                    format!("Source path '{}' not found", path.join(".")),
-                    ctx.path,
-                )
-                .with_code(DiagnosticCode::SourcePathNotFound),
-            );
-            return;
         }
+        _ => {}
     }
+}
 
-    if !field.node.optional && source_optional {
+fn resolve_source<'a>(
+    env: &'a TypeEnv,
+    exclude: Option<&str>,
+    parent_fields: &'a [S<InstanceField>],
+    parts: &[&str],
+) -> ResolvedSource<'a> {
+    let mut field_sets: Vec<&'a [S<InstanceField>]> = vec![parent_fields];
+    let mut collective = false;
+    for part in parts {
+        let mut next = Vec::new();
+        for set in &field_sets {
+            if let Some(f) = set.iter().find(|f| f.node.name.node == *part) {
+                enter_value(env, exclude, &f.node.value.node, &mut next, &mut collective);
+            }
+        }
+        field_sets = next;
+    }
+    ResolvedSource {
+        field_sets,
+        collective,
+    }
+}
+
+/// Candidate source fields named `name` in a resolved source.
+fn find_candidates<'a>(resolved: &ResolvedSource<'a>, name: &str) -> Vec<&'a S<InstanceField>> {
+    resolved
+        .field_sets
+        .iter()
+        .filter_map(|set| set.iter().find(|f| f.node.name.node == name))
+        .collect()
+}
+
+/// Check optionality and type compatibility of `field` against its source
+/// candidates (several when the source is collective: any one compatible
+/// candidate is enough).
+fn check_candidates(
+    ctx: &ValidationContext,
+    field: &S<InstanceField>,
+    candidates: &[&S<InstanceField>],
+    label: &str,
+    errors: &mut Vec<Diagnostic>,
+) {
+    if !field.node.optional && candidates.iter().all(|c| c.node.optional) {
         errors.push(
             Diagnostic::error(
                 field.span.clone(),
                 format!(
                     "Mandatory field cannot depend on optional source '{}'",
-                    path.join(".")
+                    label
                 ),
                 ctx.path,
             )
@@ -711,27 +811,58 @@ fn validate_source_path(
         );
     }
 
-    if let Some(src) = source_field {
-        let src_type = get_value_type(&src.node.value.node);
-        let dst_type = get_value_type(&field.node.value.node);
-        if let (Some(s), Some(d)) = (src_type, dst_type) {
-            if s != d {
-                errors.push(
-                    Diagnostic::error(
-                        field.span.clone(),
-                        format!(
-                            "Type mismatch: source '{}' is {} but field is {}",
-                            path.join("."),
-                            s,
-                            d
-                        ),
-                        ctx.path,
-                    )
-                    .with_code(DiagnosticCode::SourceTypeMismatch),
-                );
-            }
-        }
+    let Some(dst) = get_value_type(&field.node.value.node) else {
+        return;
+    };
+    let src_types: Vec<String> = candidates
+        .iter()
+        .filter_map(|c| get_value_type(&c.node.value.node))
+        .collect();
+    if !src_types.is_empty() && !src_types.contains(&dst) {
+        errors.push(
+            Diagnostic::error(
+                field.span.clone(),
+                format!(
+                    "Type mismatch: source '{}' is {} but field is {}",
+                    label, src_types[0], dst
+                ),
+                ctx.path,
+            )
+            .with_code(DiagnosticCode::SourceTypeMismatch),
+        );
     }
+}
+
+fn validate_source_path(
+    ctx: &ValidationContext,
+    path: &[String],
+    field: &S<InstanceField>,
+    parent_fields: &[S<InstanceField>],
+    errors: &mut Vec<Diagnostic>,
+) {
+    let parts: Vec<&str> = path.iter().map(|s| s.as_str()).collect();
+    let (last, prefix) = parts
+        .split_last()
+        .expect("source path has at least one segment");
+    let resolved = resolve_source(
+        ctx.env,
+        ctx.exclude_source.as_deref(),
+        parent_fields,
+        prefix,
+    );
+    let candidates = find_candidates(&resolved, last);
+    if candidates.is_empty() {
+        errors.push(
+            Diagnostic::error(
+                field.span.clone(),
+                format!("Source path '{}' not found", path.join(".")),
+                ctx.path,
+            )
+            .with_code(DiagnosticCode::SourcePathNotFound),
+        );
+        return;
+    }
+    check_candidates(ctx, field, &candidates, &path.join("."), errors);
 }
 
 fn get_value_type(value: &Value) -> Option<String> {
@@ -747,76 +878,50 @@ fn check_implicit_source(
 ) -> bool {
     let field_name = &field.node.name.node;
 
-    let matches: Vec<(&str, &S<InstanceField>)> = sources
-        .iter()
-        .filter_map(|source| {
-            let root = source.node.root_name();
-            let source_path_parts: Vec<&str> = match &source.node {
-                SourcePath::Simple(name) => vec![name.as_str()],
-                SourcePath::Dotted(parts) => parts.iter().map(|s| s.as_str()).collect(),
-            };
-            let mut current_fields: &[S<InstanceField>] = parent_fields;
-            for part in &source_path_parts {
-                let f = current_fields.iter().find(|f| f.node.name.node == *part)?;
-                match &f.node.value.node {
-                    Value::Struct(fields) => current_fields = fields,
-                    Value::BindingRef(name) | Value::Refinement(name, _) => {
-                        let inst = ctx.get_instance(name)?;
-                        match &inst.body.node {
-                            Value::Struct(fields) => current_fields = fields,
-                            _ => return None,
-                        }
-                    }
-                    _ => return None,
-                }
-            }
-            let src_field = current_fields
-                .iter()
-                .find(|f| &f.node.name.node == field_name)?;
-            Some((root, src_field))
-        })
-        .collect();
+    // (source label, collective, candidates)
+    let mut matches: Vec<(String, bool, Vec<&S<InstanceField>>)> = Vec::new();
+    for source in sources {
+        let parts: Vec<&str> = match &source.node {
+            SourcePath::Simple(name) => vec![name.as_str()],
+            SourcePath::Dotted(parts) => parts.iter().map(|s| s.as_str()).collect(),
+        };
+        let resolved = resolve_source(
+            ctx.env,
+            ctx.exclude_source.as_deref(),
+            parent_fields,
+            &parts,
+        );
+        let candidates = find_candidates(&resolved, field_name);
+        if !candidates.is_empty() {
+            matches.push((parts.join("."), resolved.collective, candidates));
+        }
+    }
 
-    match matches.len() {
+    // Direct sources take precedence; collective sources (paths crossing a
+    // list, e.g. `query.eventTypes.fields`) are only consulted when no direct
+    // source has the field.
+    let direct: Vec<_> = matches.iter().filter(|m| !m.1).collect();
+    let tier = if direct.is_empty() {
+        matches.iter().collect::<Vec<_>>()
+    } else {
+        direct
+    };
+
+    match tier.len() {
         0 => false,
         1 => {
-            let (root, src_field) = matches[0];
-
-            if !field.node.optional && src_field.node.optional {
-                errors.push(
-                    Diagnostic::error(
-                        field.span.clone(),
-                        format!(
-                            "Mandatory field cannot depend on optional source '{}.{}'",
-                            root, field_name
-                        ),
-                        ctx.path,
-                    )
-                    .with_code(DiagnosticCode::OptionalSourceForMandatoryField),
-                );
-            }
-
-            let src_type = get_value_type(&src_field.node.value.node);
-            let dst_type = get_value_type(&field.node.value.node);
-            if let (Some(s), Some(d)) = (src_type, dst_type) {
-                if s != d {
-                    errors.push(
-                        Diagnostic::error(
-                            field.span.clone(),
-                            format!(
-                                "Type mismatch: source '{}.{}' is {} but field is {}",
-                                root, field_name, s, d
-                            ),
-                            ctx.path,
-                        )
-                        .with_code(DiagnosticCode::SourceTypeMismatch),
-                    );
-                }
-            }
+            let (label, _, candidates) = tier[0];
+            check_candidates(
+                ctx,
+                field,
+                candidates,
+                &format!("{}.{}", label, field_name),
+                errors,
+            );
             true
         }
         _ => {
-            let sources_list: Vec<_> = matches.iter().map(|(r, _)| *r).collect();
+            let sources_list: Vec<_> = tier.iter().map(|(r, _, _)| r.as_str()).collect();
             errors.push(
                 Diagnostic::error(
                     field.span.clone(),
@@ -849,6 +954,126 @@ mod tests {
 
     fn validate_source_src(src: &str) -> Vec<Diagnostic> {
         run_validators(src, &[validate_structural, validate_source])
+    }
+
+    const COLLECTIVE_BASE: &str = r#"
+meta Ev = {
+  type Concrete<String>
+  fields {...}
+}
+meta View = {
+  reads []&Ev
+  @source [reads.fields]
+  model {...}
+}
+meta Cmd = {
+  fields {...}
+  reads []&Ev
+  @source [fields, reads.fields]
+  emits []Ev
+}
+created = Ev { type "Created", fields {cartId Uuid, shopperId Uuid} }
+added = Ev { type "Added", fields {cartId Uuid, price Int, lines []{sku Uuid, qty Int}} }
+registered = Ev { type "Registered", fields {cartId Uuid, shopperId Uuid} }
+"#;
+
+    fn collective(src: &str) -> Vec<Diagnostic> {
+        validate_source_src(&format!("{}{}", COLLECTIVE_BASE, src))
+    }
+
+    #[test]
+    fn test_collective_source_implicit_match() {
+        let errors = collective(
+            "v = View { reads [created, added], model {cartId Uuid, shopperId Uuid, price Int} }",
+        );
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_collective_source_unknown_field() {
+        let errors = collective("v = View { reads [created], model {price Int} }");
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert_eq!(errors[0].code, DiagnosticCode::NoSourceFound);
+    }
+
+    #[test]
+    fn test_collective_source_type_mismatch() {
+        let errors = collective("v = View { reads [added], model {price String} }");
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert_eq!(errors[0].code, DiagnosticCode::SourceTypeMismatch);
+    }
+
+    #[test]
+    fn test_collective_source_explicit_mapping() {
+        let errors =
+            collective("v = View { reads [created], model {owner Uuid = reads.fields.shopperId} }");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_collective_source_explicit_mapping_not_found() {
+        let errors =
+            collective("v = View { reads [created], model {owner Uuid = reads.fields.nope} }");
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert_eq!(errors[0].code, DiagnosticCode::SourcePathNotFound);
+    }
+
+    #[test]
+    fn test_direct_source_wins_over_collective() {
+        // cartId is in both `fields` and the read events: the direct source wins,
+        // no ambiguity. shopperId only comes from the read events.
+        let errors =
+            collective("c = Cmd { fields {cartId Uuid}, reads [registered], emits [created] }");
+        assert!(errors.is_empty(), "{:?}", errors);
+    }
+
+    #[test]
+    fn test_event_cannot_source_itself() {
+        // `added` is both read and emitted: its `price` can't come from earlier `added` events.
+        let errors = collective(
+            "c = Cmd { fields {cartId Uuid, lines []Int}, reads [added], emits [added] }",
+        );
+        assert!(
+            errors.iter().any(|e| e.message.contains("'price'")),
+            "{:?}",
+            errors
+        );
+        // but another read event may provide an attribute
+        let ok = collective(
+            "c = Cmd { fields {cartId Uuid}, reads [created, registered], emits [created] }",
+        );
+        assert!(ok.is_empty(), "{:?}", ok);
+    }
+
+    #[test]
+    fn test_refinement_does_not_hide_unrefined_fields() {
+        let src = r#"
+meta Ev = { type Concrete<String>
+  fields {...} }
+meta Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Ev
+}
+e = Ev { type "E", fields {a Int, unsourced Int} }
+c = Cmd { fields {a Int}, emits [e & {fields {a Int}}] }
+"#;
+        let errors = validate_source_src(src);
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert!(errors[0].message.contains("'unsourced'"), "{:?}", errors);
+        // refining the field with an origin satisfies it
+        let ok = validate_source_src(&src.replace(
+            "emits [e & {fields {a Int}}]",
+            "emits [e & {fields {unsourced Int*}}]",
+        ));
+        assert!(ok.is_empty(), "{:?}", ok);
+    }
+
+    #[test]
+    fn test_collective_fallback_still_requires_a_source() {
+        let errors = collective("c = Cmd { fields {cartId Uuid}, reads [], emits [created] }");
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert_eq!(errors[0].code, DiagnosticCode::NoSourceFound);
     }
 
     #[test]

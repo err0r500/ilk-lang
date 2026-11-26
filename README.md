@@ -120,7 +120,7 @@ meta Tag = {_ String} | Concrete<String>   // mixed
 | `@main` | Entry point — compiler validates from here |
 | `@source [fields]` | Data provenance: values must trace back to *fields* |
 | `@constraint expr` | Boolean predicate validated at compile time |
-| `@doc "…"` | Implementation hint, preserved in AST |
+| `@doc "…"` | Implementation hint, preserved in AST. Right before an `@constraint`, it labels that constraint's failure message |
 
 
 ## Run the CLI

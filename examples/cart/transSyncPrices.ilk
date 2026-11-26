@@ -1,0 +1,37 @@
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+
+syncPrices = TranslationSlice {
+    name "SyncPrices"
+    description "The product catalog publishes every price change; we record it as PriceChanged."
+
+    from productCatalog
+    channel "topic catalog.prices"
+
+    message {
+        sku Uuid
+        previousPrice Money
+        price Money
+    }
+
+    command {
+        fields {
+            sku Uuid
+            oldPrice Money = message.previousPrice
+            newPrice Money = message.price
+        }
+
+        query []
+
+        emits [priceChanged]
+    }
+
+    requires []
+
+    invariants []
+
+    scenarios []
+}

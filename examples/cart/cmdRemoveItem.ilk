@@ -7,6 +7,8 @@ import "./actors.ilk"
 removeItem = ChangeSlice {
     name "RemoveItem"
 
+    description "The shopper removes one item from their cart. Removing an already removed item is a no-op."
+
     actor userActor
 
     endpoint {
@@ -38,6 +40,14 @@ removeItem = ChangeSlice {
         emits [itemRemoved]
     }
 
+    // the item must have been added: only ItemAdded carries its sku
+    requires ["sku"]
+
+    invariants [{
+        rule "an item can only be removed from its own cart"
+        violatedBy ["Err: wrong cart"]
+    }]
+
     scenarios [
         {
             name "OK: happy case"
@@ -66,6 +76,12 @@ removeItem = ChangeSlice {
             ]
             when {cartId "abc", itemId "item1"}
             then {error "the item doesn't belong to this cart"}
+        }
+        {
+            name "Err: item was never added"
+            given [cartCreated & {fields {cartId "abc"}}]
+            when {cartId "abc", itemId "item1"}
+            then {error "item not found"}
         }
     ]
 }

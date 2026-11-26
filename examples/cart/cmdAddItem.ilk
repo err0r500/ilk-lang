@@ -7,6 +7,10 @@ import "./actors.ilk"
 addItem = ChangeSlice {
     name "AddItem"
 
+    description "The shopper adds a product to their cart.
+The cart is opened automatically on the first item.
+A cart holds at most 3 items, and out-of-stock products can't be added."
+
     actor userActor
 
     endpoint {
@@ -18,7 +22,7 @@ addItem = ChangeSlice {
 
         body {
             sku Uuid
-            price Int
+            price Money
             quantity Int
 
             description String
@@ -35,7 +39,7 @@ addItem = ChangeSlice {
             cartId Uuid
             sku Uuid
 
-            price Int
+            price Money
             quantity Int
             description String
             imageURL String
@@ -64,6 +68,19 @@ addItem = ChangeSlice {
             itemAdded
         ]
     }
+
+    requires []
+
+    invariants [
+        {
+            rule "a cart holds at most 3 items"
+            violatedBy ["Err: max 3 items per cart"]
+        }
+        {
+            rule "only products in stock can be added"
+            violatedBy ["Err: can't add item if empty inventory"]
+        }
+    ]
 
     scenarios [
         {
@@ -117,7 +134,7 @@ addItem = ChangeSlice {
                 }}
             ]
             when {}
-            then {error "woops"}
+            then {error "product out of stock"}
         }
     ]
 }

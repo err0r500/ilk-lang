@@ -230,6 +230,18 @@ module.exports = grammar({
                 seq("templateVars", "(", $._constraint_expr, ")"),
                 // keys(struct)
                 seq("keys", "(", $._constraint_expr, ")"),
+                // isPresent(field)
+                seq("isPresent", "(", $.identifier, ")"),
+                // isType(expr, TypeName)
+                seq("isType", "(", $._constraint_expr, ",", $.identifier, ")"),
+                // instances(MetaName)
+                seq("instances", "(", $.identifier, ")"),
+                // reachable(graph, node) / reachable(graph, node, n => stop)
+                seq(
+                    "reachable", "(", $._constraint_expr, ",", $._constraint_expr,
+                    optional(seq(",", $.identifier, "=>", $._constraint_expr)),
+                    ")",
+                ),
             ),
 
         constraint_field_access: ($) =>

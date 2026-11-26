@@ -1,0 +1,93 @@
+// Two ways in: log in first, or browse the catalog anonymously.
+// The confirmation email needs the shopper's userEmail, which only the
+// login provides, so the anonymous path must be rejected by R3b.
+import "../../../examples/cart/types.ilk"
+
+shopperIdTag = Tag {shopperId Uuid}
+cartIdTag = Tag {cartId Uuid}
+shopper = Actor {name "shopper"}
+mailer = Actor {name "mailer"}
+
+userLoggedIn = TaggedEvent {
+    type "UserLoggedIn"
+    fields {shopperId Uuid, userEmail String}
+    tags [shopperIdTag]
+}
+itemAddedToCart = TaggedEvent {
+    type "ItemAddedToCart"
+    fields {cartId Uuid, shopperId Uuid, sku Uuid}
+    tags [cartIdTag, shopperIdTag]
+}
+cartConfirmationEmailSent = TaggedEvent {
+    type "CartConfirmationEmailSent"
+    fields {cartId Uuid, userEmail String}
+    tags [cartIdTag]
+}
+
+logIn = ChangeSlice {
+    name "LogIn"
+    actor shopper
+    endpoint {method POST, path "/login", body {shopperId Uuid, userEmail String}, responses []}
+    command {
+        fields {shopperId Uuid, userEmail String}
+        query []
+        emits [userLoggedIn]
+    }
+    requires []
+    invariants []
+    scenarios [{name "OK", given [], when {}, then [userLoggedIn]}]
+}
+
+browseCatalog = ViewSlice {
+    name "BrowseCatalog"
+    actor shopper
+    endpoint {method GET, path "/catalog", responses []}
+    query [{eventTypes [itemAddedToCart]}]
+    readModel {sku Uuid}
+}
+
+addToCart = ChangeSlice {
+    name "AddToCart"
+    actor shopper
+    endpoint {method POST, path "/carts/{cartId}", params {cartId Uuid}, body {sku Uuid}, auth {shopperId Uuid}, responses []}
+    command {
+        fields {cartId Uuid, sku Uuid, shopperId Uuid}
+        query []
+        emits [itemAddedToCart]
+    }
+    requires []
+    invariants []
+    scenarios [{name "OK", given [], when {}, then [itemAddedToCart]}]
+}
+
+sendCartConfirmationEmail = AutomationSlice {
+    name "SendCartConfirmationEmail"
+    actor mailer
+    trigger itemAddedToCart
+    command {
+        fields {cartId Uuid, shopperId Uuid}
+        // the email comes from the shopper's login
+        query [{eventTypes [userLoggedIn], tags [shopperIdTag]}]
+        emits [cartConfirmationEmailSent]
+    }
+    requires ["userEmail"]
+    invariants []
+    scenarios [
+        {name "OK", given [userLoggedIn], when itemAddedToCart, then [cartConfirmationEmailSent]}
+        {name "Err: no email known", given [], when itemAddedToCart, then {error "no email for this shopper"}}
+    ]
+}
+
+@main
+board = Board {
+    flows [
+        {from logIn, to [browseCatalog]}
+        {from browseCatalog, to [addToCart]}
+        {from addToCart, to [sendCartConfirmationEmail, browseCatalog]}
+    ]
+    // two ways in: log in first, or browse anonymously
+    starts [logIn, browseCatalog]
+    unconsumedEvents [{event cartConfirmationEmailSent, reason "audit"}]
+    closedStreams []
+    openEndedStreams [shopperIdTag, cartIdTag]
+}

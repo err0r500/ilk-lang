@@ -6,13 +6,14 @@ import "./actors.ilk"
 
 changedPrices = ViewSlice {
     name "ChangedPrices"
+    description "The shopper sees how the price of a product evolved."
 
     actor userActor
 
     endpoint {
         method GET
-        path "/prices/products/{productId}"
-        params {productId Uuid}
+        path "/prices/products/{sku}"
+        params {sku Uuid}
         responses []
     }
 
@@ -24,10 +25,10 @@ changedPrices = ViewSlice {
     ]
 
     readModel {
-        products [{
-            productId Uuid
-            oldPrice Int
-            newPrice Int
+        changes [{
+            sku Uuid
+            oldPrice Money
+            newPrice Money
         }]
     }
 
