@@ -573,7 +573,7 @@ userIdTag = Tag {userId String} // inline comment
 | `Uuid` | UUID value |
 | `Date` | Calendar date |
 | `Timestamp` | Point in time |
-| `Money` | Monetary amount |
+| `Money` | Monetary amount. Literal values are plain numbers (`10`, `9.99`) |
 
 `*` can be used as a field meta (any concrete meta or value is accepted) or in struct
 cardinality notation like `{_}` (shorthand for `{_ *}`).
@@ -879,6 +879,28 @@ body {...}
 Source paths are resolved from the enclosing meta root, not relative to the annotation's
 position.
 
+**Paths through lists and references:** a path segment that holds a binding reference
+is dereferenced, and a segment that holds a list fans out to every element. So
+`@source [query.eventTypes.fields]` means "the `fields` of any event referenced by any
+query item":
+
+```ilk
+meta View = {
+    reads []&Event
+    @source [reads.fields]    // any field of any read event
+    readModel {...}
+}
+```
+
+A source that crosses a list is **collective**. In implicit matching, collective sources
+are only consulted when no direct source has the field. This lets a command source its
+emitted attributes from its payload first, and from the events it read otherwise
+(`@source [fields, query.eventTypes.fields]`), without ambiguity errors.
+
+A binding is never a source for its own fields: when an event appears both in what a
+command reads and in what it emits, its attributes can't be sourced from earlier
+occurrences of itself.
+
 The validator resolves each field in an instance struct in priority order:
 
 1. `Concrete<T>` value or type-fixed literal — exempt (author-chosen, not runtime data)
@@ -892,6 +914,9 @@ of the listed sources, validation fails (`Ambiguous source`) and an explicit
 `No source found`.
 
 **On a list declaration** — each element's fields are checked against the sources.
+
+**On a typed list of structs** (`items []{ sku Uuid, qty Int }`) — if no source has a
+field of the same name, each element field is checked against the sources on its own.
 
 **On a plain struct field** — the field's own struct element is checked directly: every
 sub-field of that struct must be traceable to the named sources.
@@ -1203,7 +1228,10 @@ A minimal expression language for `@constraint` predicates.
 | `templateVars(str)` | Extracts `{var}` placeholders from a string template as a set of names |
 | `keys(struct)` | Returns the set of field names in a struct |
 | `isPresent(field)` | True if the optional field is present in the current instance |
-| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list) |
+| `isType(expr, TypeName)` | True if `expr`'s value has the shape of `TypeName` — a base type or a named meta, resolved to its kind (string / int / float / bool / struct / list). When `expr` is a **reference to a binding**, the binding's meta must be `TypeName` or one of its union variants |
+| `isPresent(x.field)` | True if `field` is present on `x` (a struct value or a referenced binding) |
+| `instances(TypeName)` | All bindings whose meta is `TypeName` or one of its union variants, whether or not they are referenced. Lets a constraint say "every event…" without relying on a hand-maintained list |
+| `reachable(graph, node)` | Every node reachable from `node` in one or more steps. `graph` is a list of entries with a `from` node and a `to` list of nodes. Cycles are fine; `node` is in the result only if a cycle leads back to it |
 
 ### Operators
 
@@ -1213,7 +1241,7 @@ A minimal expression language for `@constraint` predicates.
 | `\|\|` | Logical or |
 | `!` | Logical not |
 | `==`, `!=` | Equality, inequality. Structs and lists compare deeply (lists are order-sensitive) |
-| `in` | Set membership (`x in set`) |
+| `in` | Membership: a key in a set (`k in keys(s)`) or any value in a list (`e in emits`, `"x" in names`) |
 | `<`, `<=`, `>`, `>=` | Numeric comparison (Int and Float operands may be mixed) |
 
 Examples:
@@ -1222,6 +1250,27 @@ Examples:
 @constraint unique(eventTypes, e => e.name)
 @constraint count(eventTypes) >= 1
 @constraint count(tags) <= 5
+```
+
+A failed sub-check counts as `false` for `!` and `||`: `!(e in given)` is true when `e`
+is absent, and `a in xs || b` evaluates `b` when `a` is missing.
+
+**Labels:** a `@doc` written directly before an `@constraint` becomes its label, shown
+when the constraint fails, together with the `where:` bindings:
+
+```ilk
+meta ChangeSlice = {
+    @doc "R7: each invariant is violated by at least one rejecting scenario"
+    @constraint all(invariants, i => exists(scenarios, s => isPresent(s.violates) && s.violates == i))
+    invariants! []Concrete<String>
+    ...
+}
+```
+
+```
+Error: Constraint failed for instance 'removeItem': R7: each invariant is violated by at least one rejecting scenario
+  where:
+    i = an item can only be removed from its own cart
 ```
 
 User-defined predicates are not currently supported.

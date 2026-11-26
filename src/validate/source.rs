@@ -262,6 +262,28 @@ fn validate_list_elements(
                         errors,
                     );
                 }
+                // Fields the refinement doesn't mention fall back to the binding's own
+                // declaration and must be sourced too.
+                if let Some(Value::Struct(binding_fields)) =
+                    ctx.get_instance(name).map(|inst| &inst.body.node)
+                {
+                    let binding_ctx = ctx.for_instance(name).excluding_source(name);
+                    let mut unrefined_errors = Vec::new();
+                    validate_unrefined_fields(
+                        &binding_ctx,
+                        binding_fields,
+                        ref_fields,
+                        sources,
+                        parent_fields,
+                        elem_type,
+                        &mut unrefined_errors,
+                    );
+                    for mut err in unrefined_errors {
+                        err.file = ctx.path.to_path_buf();
+                        err.span = elem.span.clone();
+                        errors.push(err);
+                    }
+                }
             }
             ListElement::BindingRef(name) => {
                 validate_ref_instance_fields(
@@ -302,6 +324,44 @@ fn validate_list_elements(
                 }
                 _ => {}
             },
+        }
+    }
+}
+
+/// Validate the fields of a binding that a refinement leaves untouched. Nested
+/// structs present on both sides (e.g. an event's `fields`) are merged: only the
+/// sub-fields the refinement doesn't mention are checked here.
+fn validate_unrefined_fields(
+    ctx: &ValidationContext,
+    binding_fields: &[S<InstanceField>],
+    refined_fields: &[S<InstanceField>],
+    sources: &[S<SourcePath>],
+    parent_fields: &[S<InstanceField>],
+    parent_type: Option<&TypeExpr>,
+    errors: &mut Vec<Diagnostic>,
+) {
+    for field in binding_fields {
+        let name = &field.node.name.node;
+        match refined_fields.iter().find(|r| &r.node.name.node == name) {
+            None => {
+                validate_refinement_field(ctx, field, sources, parent_fields, parent_type, errors)
+            }
+            Some(refined) => {
+                if let (Value::Struct(binding_sub), Value::Struct(refined_sub)) =
+                    (&field.node.value.node, &refined.node.value.node)
+                {
+                    let nested_type = resolve_nested_type(ctx, parent_type, name);
+                    validate_unrefined_fields(
+                        ctx,
+                        binding_sub,
+                        refined_sub,
+                        sources,
+                        parent_fields,
+                        nested_type,
+                        errors,
+                    );
+                }
+            }
         }
     }
 }
@@ -1010,6 +1070,30 @@ registered = Ev { type "Registered", fields {cartId Uuid, shopperId Uuid} }
         let ok = collective(
             "c = Cmd { fields {cartId Uuid}, reads [created, registered], emits [created] }",
         );
+        assert!(ok.is_empty(), "{:?}", ok);
+    }
+
+    #[test]
+    fn test_refinement_does_not_hide_unrefined_fields() {
+        let src = r#"
+meta Ev = { type Concrete<String>
+  fields {...} }
+meta Cmd = {
+  fields {...}
+  @source [fields]
+  emits []Ev
+}
+e = Ev { type "E", fields {a Int, unsourced Int} }
+c = Cmd { fields {a Int}, emits [e & {fields {a Int}}] }
+"#;
+        let errors = validate_source_src(src);
+        assert_eq!(errors.len(), 1, "{:?}", errors);
+        assert!(errors[0].message.contains("'unsourced'"), "{:?}", errors);
+        // refining the field with an origin satisfies it
+        let ok = validate_source_src(&src.replace(
+            "emits [e & {fields {a Int}}]",
+            "emits [e & {fields {unsourced Int*}}]",
+        ));
         assert!(ok.is_empty(), "{:?}", ok);
     }
 

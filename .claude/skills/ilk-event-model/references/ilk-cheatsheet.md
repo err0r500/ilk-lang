@@ -54,8 +54,10 @@ HTTP methods are bare identifiers: `method POST`.
 - `command.fields` ← `@source [endpoint.params, endpoint.body, endpoint.auth]`: every field
   must be matched by name, explicitly mapped, or generated (`*`).
 - A field name present in more than one of params/body/auth → **ambiguous**; map it explicitly.
-- `command.emits` ← `@source [fields]`: **every field of every emitted event** must be
-  traceable to `command.fields` (by name, unless refined in the emits list).
+- `command.emits` ← `@source [fields, query.eventTypes.fields]` (R2): every field of every
+  emitted event comes from `command.fields` first, otherwise from an attribute of an event
+  the command reads (never from earlier occurrences of the emitted event itself), or is
+  generated (`Type*`). Fields a refinement in `emits` doesn't mention are checked too.
 - `command.query` ← `@source [fields]`: tag fields used in queries must be traceable to command fields.
 - Scenarios: every `given` event ∈ some `query[].eventTypes`; every key of `when` ∈
   `command.fields`; `then` is either `{error "..."}` or a list of events, each ∈ `emits`.
@@ -65,7 +67,10 @@ HTTP methods are bare identifiers: `method POST`.
   traceable to the endpoint, or explicitly mapped
   (`memberIdTag & {memberId Uuid = endpoint.auth.userId}`).
 - Scenarios: every `given` event ∈ some `query[].eventTypes`.
-- `readModel` is **not** provenance-checked. Check it yourself.
+- `readModel` ← `@source [query.eventTypes.fields]` (R1): every field is an attribute of a
+  queried event (by name, `= query.eventTypes.fields.x`), or derived with
+  `= compute(query.eventTypes.fields.a, ...)` plus an `@doc` giving the formula. Typed lists
+  of structs (`loans []{loanId Uuid, dueDate Date}`) are checked element by element.
 
 **AutomationSlice**
 - `command.fields` ← `@source [trigger.fields]`: every field comes from the trigger event
@@ -94,7 +99,25 @@ HTTP methods are bare identifiers: `method POST`.
   `description` to state the expected values.
 
 **Main**
-- Only one `@main` per file. Every slice must be imported into `main.ilk` before it can appear in a `flow`.
+- Only one `@main` per file. Every slice must be imported into `main.ilk`: the board
+  rules apply to every declared slice and event (`instances(...)`), listed or not.
+
+## Well-formedness rules (R1–R8) and their escape hatches
+
+| Rule | Checked where | Escape hatch (a decision, not a silencer) |
+|--|--|--|
+| R1 read-model fields are sourced | ViewSlice `readModel` | `= compute(...)` with `@doc` |
+| R2 emitted attributes have an origin | Command `emits` | `Type*` generator (ids, clocks, policy values) with `@doc` |
+| R3 preconditions are reachable: each `given` event and automation trigger is emitted by a slice that can precede it in `flows` | Board | add the producing slice and the edge |
+| R4 commands are triggered: entered from a ViewSlice in `flows` | Board | `entryScreen "landing page"` on the ChangeSlice |
+| R5 read models are consumed (shown to an actor, or an automation's `todo`) | Board | — |
+| R5 events are consumed (read by a query or a trigger) | Board | `unconsumed "terminal"` / `unconsumed "audit"` on the event |
+| R6 each `requires` event has a rejecting scenario where it's absent; it must also be queried | slice | `requires []` when nothing is required |
+| R7 each `invariants` entry is `violates`-d by a rejecting scenario | slice | `invariants []` |
+| R8 each stream (Tag) is closed by an event's `closes` | Board | list it in `openEndedStreams` |
+
+`requires`, `invariants` (state-change slices) and `flows`, `openEndedStreams` (Board) are
+**required**, so writing `[]` is itself an explicit statement.
 
 ## Compiler errors → likely fix
 
@@ -112,8 +135,12 @@ HTTP methods are bare identifiers: `method POST`.
 | `Undefined reference` / unknown binding | Missing import or typo | Add the `import`, fix the name |
 | `Reference type mismatch: x is type A, expected B` | Wrong kind of binding (for example an `Actor` given as `from`) | Reference a binding of meta `B` |
 | `Refinement on non-named type` | `event & {...}` inside `then` | Use the plain event name in `then` |
+| `Missing required field: requires` / `invariants` / `flows` / `openEndedStreams` | Undeclared | Declare it, even as `[]` |
+| `Constraint failed … R1`–`R8: …` | A well-formedness rule | The label names the rule; `where:` names the slice/event/tag. See the table above |
+| `No source found for field 'X'` in a `readModel` | No queried event has `X` (R1) | Rename to the event's name for that concept, query the event that carries it, or derive it with `compute()` |
 
-Constraint failures print a `where:` block with the bound variables, for example:
+Constraint failures print the rule's label (when it has one) and a `where:` block with
+the bound variables, for example:
 
 ```
 Error: Constraint failed for instance 'borrowBook'
@@ -121,6 +148,10 @@ Error: Constraint failed for instance 'borrowBook'
     s = {name: OK: borrow an available book, ..., then: [bookReturned], ...}
     event = bookReturned
     bookReturned in [bookBorrowed] = false      ← bookReturned isn't in emits
+
+Error: Constraint failed for instance 'board': R3: each automation trigger is produced by a slice that precedes the automation in flows
+  where:
+    a = issueLateFine                            ← no edge leads from the emitter of its trigger
 ```
 
 ## CLI

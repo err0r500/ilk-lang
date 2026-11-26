@@ -12,27 +12,44 @@
 
 | Kind | Items |
 |--|--|
-| Actors | member, lending policy (system) · external: payment provider |
-| Commands | BorrowBook · IssueLateFine (automatic, on BookReturned) · RecordFinePayment (from the provider's webhook) |
-| Events | BookAddedToCatalog (external to this spec), BookBorrowed, BookReturned, FineIssued, FinePaid |
+| Actors | member, lending policy (system) · external: library catalog, payment provider |
+| Commands | BorrowBook · ReturnBook (implied by "currently have") · IssueLateFine (automatic) · ImportCatalog, RecordFinePayment (from other systems) |
+| Events | BookAddedToCatalog, BookBorrowed, BookReturned, FineIssued, FinePaid |
 | Views | MyLoans (my current books + due dates) |
-| Rules | book must exist · one loan per book · max 3 loans per member · due = today + 21d · fine = 0.50 × days overdue, none if on time · a payment notification is applied once |
-| Identifiers / tags | bookId (rule: one loan per book), memberId (rule: max 3 per member) |
-| Assumptions | the member is the authenticated user; `BookReturned` exists because "currently have" implies returns |
-| Open questions | Who adds books to the catalog? How does a return happen? Are late returns penalized? |
+| Requires (R6) | BorrowBook: the book is in the catalog · ReturnBook: the loan exists · RecordFinePayment: the fine exists |
+| Invariants (R7) | one loan per book · max 3 loans per member · only the borrower returns a book |
+| Policies | due = today + 21d · fine = 0.50 × days overdue, none if on time · a payment notification is applied once |
+| Streams (R8) | loan: closed by BookReturned · book, member: open-ended |
+| Assumptions | the member is the authenticated user · books enter the catalog from a cataloguing system · `BookReturned` records `daysOverdue` |
+| Open questions | Can loans be renewed? What happens to unpaid fines (can the member still borrow)? |
 
-## Step 2: Slices
+## Step 2: Slices and flow graph
 
 | Chapter | Slice | Kind | Reads | Emits / Returns |
 |--|--|--|--|--|
+| Loans | ImportCatalog | translation | from library catalog | BookAddedToCatalog |
 | Loans | BorrowBook | change | BookAddedToCatalog, BookBorrowed, BookReturned | BookBorrowed |
 | Loans | ViewMyLoans | view | BookBorrowed, BookReturned | loans list |
+| Loans | ReturnBook | change | BookBorrowed, BookReturned | BookReturned |
 | Fines | IssueLateFine | automation | trigger BookReturned · FineIssued | FineIssued |
-| Fines | RecordFinePayment | translation | message from payment provider · FineIssued, FinePaid | FinePaid |
+| Fines | RecordFinePayment | translation | from payment provider · FineIssued, FinePaid | FinePaid |
 
-(A complete model would also have `ReturnBook` and `AddBookToCatalog`
-slices. They're left out here to keep the example short. The report must
-list them as missing.)
+```
+importCatalog ──▶ borrowBook ──▶ viewMyLoans ──▶ returnBook ──▶ issueLateFine ──▶ recordFinePayment ─┐
+                      ▲              │  ▲            │                                    ▲             │
+                      └──────────────┘  └────────────┘                                    └─────────────┘
+```
+
+Things the rules forced into the model:
+- **R3** made `ReturnBook` necessary: `IssueLateFine` is triggered by `BookReturned`,
+  so some slice that precedes it in `flows` must emit it. The same rule required a
+  producer for `BookAddedToCatalog` (`ImportCatalog`).
+- **R2** lets `ReturnBook` emit `bookId` without asking the client for it: it's an
+  attribute of the `BookBorrowed` event the command reads.
+- **R6** added the `Err: unknown …` scenarios, and **R8** the `loanIdTag` stream that
+  `BookReturned` closes.
+- The `recordFinePayment → recordFinePayment` self-loop says duplicates can arrive. That's
+  what lets the "duplicate notification" scenario's `FinePaid` precondition be reachable.
 
 ## Step 3: Files (all pass `ilk check main.ilk`)
 
@@ -45,6 +62,8 @@ import "./types.ilk"
 memberIdTag = Tag {memberId Uuid}
 
 bookIdTag = Tag {bookId Uuid}
+
+loanIdTag = Tag {loanId Uuid}
 ```
 
 ### actors.ilk
@@ -61,6 +80,11 @@ lendingPolicyActor = Actor {
     description "Background processor applying library policies"
 }
 
+libraryCatalog = ExternalSystem {
+    name "library catalog"
+    description "Cataloguing system where librarians register books"
+}
+
 paymentProvider = ExternalSystem {
     name "payment provider"
     description "Third-party card payment service"
@@ -74,7 +98,7 @@ import "./tags.ilk"
 
 bookAddedToCatalog = TaggedEvent {
     type "BookAddedToCatalog"
-    description "A librarian made a book available for lending."
+    description "A book became available for lending."
 
     fields {
         bookId Uuid
@@ -96,28 +120,24 @@ bookBorrowed = TaggedEvent {
         dueDate Date        // decision-time value, captured in the event
     }
 
-    tags [
-        bookIdTag
-        memberIdTag
-    ]
+    tags [bookIdTag, memberIdTag, loanIdTag]
 }
 
 bookReturned = TaggedEvent {
     type "BookReturned"
-    description "A member brought a borrowed book back."
+    description "A member brought a borrowed book back. The loan is over."
 
     fields {
         loanId Uuid
         bookId Uuid
         memberId Uuid
         returnedOn Date
-        daysOverdue Int
+        daysOverdue Int     // decision-time fact, so the fine automation needs nothing else
     }
 
-    tags [
-        bookIdTag
-        memberIdTag
-    ]
+    tags [bookIdTag, memberIdTag, loanIdTag]
+
+    closes [loanIdTag]
 }
 
 fineIssued = TaggedEvent {
@@ -149,6 +169,44 @@ finePaid = TaggedEvent {
 }
 ```
 
+### transImportCatalog.ilk
+```ilk
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+importCatalog = TranslationSlice {
+    name "ImportCatalog"
+    description "Spec: Members can borrow books from the catalog."
+
+    from libraryCatalog
+    channel "topic catalog.books"
+
+    message {
+        bookId Uuid
+        isbn String
+        title String
+    }
+
+    command {
+        fields {
+            bookId Uuid
+            isbn String
+            title String
+        }
+
+        query []
+
+        emits [bookAddedToCatalog]
+    }
+
+    requires []
+
+    invariants []
+}
+```
+
 ### cmdBorrowBook.ilk
 ```ilk
 import "./types.ilk"
@@ -159,11 +217,13 @@ import "./actors.ilk"
 borrowBook = ChangeSlice {
     name "BorrowBook"
 
-    description "Spec: A member can borrow an available book.
-A member can have at most 3 books at a time.
+    description "Spec: Members can borrow books from the catalog.
+A book can only be lent to one member at a time, and a member can have at most 3 books at once.
 Loans last 21 days."
 
     actor memberActor
+
+    entryScreen "book details page"
 
     endpoint {
         method POST
@@ -187,15 +247,15 @@ Loans last 21 days."
         }
 
         query [
-            {   // rule: book must exist
+            {   // the book must exist
                 eventTypes [bookAddedToCatalog]
                 tags [bookIdTag]
             }
-            {   // rule: one loan per book
+            {   // one loan per book
                 eventTypes [bookBorrowed, bookReturned]
                 tags [bookIdTag]
             }
-            {   // rule: max 3 loans per member
+            {   // max 3 loans per member
                 eventTypes [bookBorrowed, bookReturned]
                 tags [memberIdTag]
             }
@@ -204,10 +264,27 @@ Loans last 21 days."
         emits [bookBorrowed]
     }
 
+    requires [bookAddedToCatalog]
+
+    invariants [
+        "a book is lent to one member at a time"
+        "a member has at most 3 books at once"
+    ]
+
     scenarios [
         {
             name "OK: borrow an available book"
             given [bookAddedToCatalog & {fields {bookId "b1"}}]
+            when {bookId "b1", memberId "m1"}
+            then [bookBorrowed]
+        }
+        {
+            name "OK: a returned book can be borrowed again"
+            given [
+                bookAddedToCatalog & {fields {bookId "b1"}}
+                bookBorrowed & {fields {bookId "b1", memberId "m2"}}
+                bookReturned & {fields {bookId "b1", memberId "m2"}}
+            ]
             when {bookId "b1", memberId "m1"}
             then [bookBorrowed]
         }
@@ -219,12 +296,7 @@ Loans last 21 days."
             ]
             when {bookId "b1", memberId "m1"}
             then {error "book not available"}
-        }
-        {
-            name "Err: unknown book"
-            given []
-            when {bookId "b1"}
-            then {error "book not found"}
+            violates "a book is lent to one member at a time"
         }
         {
             name "Err: member already has 3 books"
@@ -236,6 +308,89 @@ Loans last 21 days."
             ]
             when {bookId "b4", memberId "m1"}
             then {error "loan limit reached"}
+            violates "a member has at most 3 books at once"
+        }
+        {
+            name "Err: unknown book"
+            given []
+            when {bookId "b1"}
+            then {error "book not found"}
+        }
+    ]
+}
+```
+
+### cmdReturnBook.ilk
+```ilk
+import "./types.ilk"
+import "./events.ilk"
+import "./tags.ilk"
+import "./actors.ilk"
+
+returnBook = ChangeSlice {
+    name "ReturnBook"
+    description "Spec: Members can see the books they currently have (which implies they can give them back)."
+
+    actor memberActor
+
+    endpoint {
+        method POST
+        path "/loans/{loanId}/return"
+        params {loanId Uuid}
+        auth {userId Uuid}
+        responses [{status 204}, {status 404}]
+    }
+
+    command {
+        fields {
+            loanId Uuid
+            memberId Uuid = endpoint.auth.userId
+            returnedOn Date*
+            @doc "days between returnedOn and the loan's dueDate (read from BookBorrowed), 0 if on time"
+            daysOverdue Int*
+        }
+
+        query [{
+            eventTypes [bookBorrowed, bookReturned]
+            tags [loanIdTag]
+        }]
+
+        // bookId isn't in the request: it comes from the BookBorrowed event read above
+        emits [bookReturned]
+    }
+
+    requires [bookBorrowed]
+
+    invariants ["only the borrower can return a book"]
+
+    scenarios [
+        {
+            name "OK: return a borrowed book"
+            given [bookBorrowed & {fields {loanId "l1", memberId "m1"}}]
+            when {loanId "l1", memberId "m1"}
+            then [bookReturned]
+        }
+        {
+            name "OK: returning twice changes nothing"
+            given [
+                bookBorrowed & {fields {loanId "l1", memberId "m1"}}
+                bookReturned & {fields {loanId "l1", memberId "m1"}}
+            ]
+            when {loanId "l1", memberId "m1"}
+            then []
+        }
+        {
+            name "Err: someone else's loan"
+            given [bookBorrowed & {fields {loanId "l1", memberId "m2"}}]
+            when {loanId "l1", memberId "m1"}
+            then {error "not your loan"}
+            violates "only the borrower can return a book"
+        }
+        {
+            name "Err: unknown loan"
+            given []
+            when {loanId "l1"}
+            then {error "loan not found"}
         }
     ]
 }
@@ -251,7 +406,7 @@ import "./actors.ilk"
 viewMyLoans = ViewSlice {
     name "ViewMyLoans"
 
-    description "Spec: A member can see the books they currently have and when each is due."
+    description "Spec: Members can see the books they currently have and when each is due."
 
     actor memberActor
 
@@ -269,7 +424,7 @@ viewMyLoans = ViewSlice {
         }
     ]
 
-    readModel {                 // manual check: loanId, bookId, dueDate ∈ BookBorrowed.fields ✓
+    readModel {                 // R1: every field is an attribute of BookBorrowed
         loans []{
             loanId Uuid
             bookId Uuid
@@ -325,9 +480,14 @@ issueLateFine = AutomationSlice {
         emits [fineIssued]
     }
 
+    requires []
+
+    invariants []
+
     scenarios [
         {
             name "OK: late return is fined"
+            description "4 days late: a fine of 2.00"
             given []
             when bookReturned & {fields {loanId "l1", daysOverdue 4}}
             then [fineIssued]
@@ -378,6 +538,10 @@ recordFinePayment = TranslationSlice {
         emits [finePaid]
     }
 
+    requires [fineIssued]
+
+    invariants []
+
     scenarios [
         {
             name "OK: payment for an open fine"
@@ -407,7 +571,9 @@ recordFinePayment = TranslationSlice {
 ### main.ilk
 ```ilk
 import "./types.ilk"
+import "./transImportCatalog.ilk"
 import "./cmdBorrowBook.ilk"
+import "./cmdReturnBook.ilk"
 import "./viewMyLoans.ilk"
 import "./autoIssueLateFine.ilk"
 import "./transFinePaid.ilk"
@@ -416,28 +582,41 @@ import "./transFinePaid.ilk"
 board = Board {
     name "Library"
     description "Book lending for a public library"
+
     contexts [{
         name "Lending"
         description "Members borrow and return books"
         chapters [
             {
                 name "Loans"
-                description "A member borrows a book and tracks it"
-                flow [borrowBook, viewMyLoans]
+                description "A member borrows books, tracks and returns them"
+                slices [importCatalog, borrowBook, viewMyLoans, returnBook]
             }
             {
                 name "Fines"
                 description "Late returns are fined and paid online"
-                flow [issueLateFine, recordFinePayment]
+                slices [issueLateFine, recordFinePayment]
             }
         ]
     }]
+
+    flows [
+        {from importCatalog, to [borrowBook]}
+        {from borrowBook, to [viewMyLoans]}
+        {from viewMyLoans, to [returnBook, borrowBook]}
+        {from returnBook, to [viewMyLoans, issueLateFine]}
+        {from issueLateFine, to [recordFinePayment]}
+        // the provider may notify the same payment again
+        {from recordFinePayment, to [recordFinePayment]}
+    ]
+
+    openEndedStreams [bookIdTag, memberIdTag]
 }
 ```
 
 ## Step 6: Report (shape)
 
-- Files: types, tags, actors, events, cmdBorrowBook, viewMyLoans, autoIssueLateFine, transFinePaid, main. `ilk check main.ilk` passes.
-- Missing slices: `AddBookToCatalog` (emits BookAddedToCatalog), `ReturnBook` (emits BookReturned).
-- Assumptions: member = authenticated user; returns exist; `BookReturned` carries `daysOverdue`, a decision-time fact recorded at return, so the fine can be computed from the trigger alone.
-- Open questions: penalties for late returns? Can a member renew a loan?
+- Files: types, tags, actors, events, transImportCatalog, cmdBorrowBook, cmdReturnBook, viewMyLoans, autoIssueLateFine, transFinePaid, main. `ilk check main.ilk` passes.
+- Assumptions: member = authenticated user; books come from a cataloguing system; `BookReturned` records `daysOverdue` so the fine can be computed from the trigger alone.
+- Declared exceptions: `entryScreen` on BorrowBook (book details page); open-ended streams: book, member.
+- Open questions: loan renewal? Do unpaid fines block borrowing?

@@ -39,7 +39,11 @@ going from UI or API down to storage.
    - View: `given` = past events, `query` = request input, `expect` = read-model state.
 7. **Check information completeness.** Every field must come from somewhere:
    endpoint → command fields → event fields → read-model fields. ilk enforces
-   the first two arrows. You check the last one by hand.
+   every arrow (R1, R2), plus "events read by a command" → its emitted events.
+8. **Draw the flow graph** (`flows`) and declare `requires` / `invariants`.
+   The board rules then check that preconditions can happen earlier (R3), that
+   commands are reachable from a screen (R4), that outputs are consumed (R5),
+   and that streams end (R8).
 
 ## Slices in ilk
 
@@ -73,12 +77,24 @@ endpoint (params/body/auth) ──@source──▶ command.fields ──@source�
 - `scenarios`: `given` events → `query` input → `expect` state. Use `@doc`
   on expected derived values to state the formula (`@doc "sum(items, i => i.price * i.quantity)"`).
 
-### Board / contexts / chapters
+### Board: grouping and the flow graph
 
-`main.ilk` holds a single `@main board = Board {...}`. Group slices into
-`contexts` (bounded contexts), and inside each context into `chapters` (one
-step of a user journey). Each chapter's `flow` lists slices in timeline order,
-alternating command → view the way a user would actually move through them.
+`main.ilk` holds a single `@main board = Board {...}`:
+
+- `contexts` → `chapters` → `slices`: grouping only (bounded context, then theme).
+- `flows`: the **graph of possible journeys**, as transitions
+  `{from slice, to [slices]}`. It may branch (a cart view leads to add, remove or
+  clear), merge, and loop (view cart → add item → view cart). Typical edges:
+  - view → command: the user acts from that screen (R4 needs one per command, or `entryScreen`)
+  - command → view: the user sees the result
+  - command → automation: the automation's trigger is emitted by that command (R3)
+  - translation → anything that needs the external facts it records
+  - a self-loop when the same thing may happen again (duplicate webhook)
+- `openEndedStreams`: tags whose stream never ends (R8), e.g. a member or a product.
+
+"Earlier" means reachable in `flows`. R3 checks that every `given` event of a
+state-change slice, and every automation trigger, is produced by some slice
+that can come before it.
 
 ## Scenario-writing rules
 

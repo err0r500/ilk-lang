@@ -1,17 +1,22 @@
 ---
 name: ilk-event-model
-description: Turn a human-written spec (prose requirements, user stories, business rules, workshop notes) into a compilable ilk event model, using Event Modeling and vertical slices (one command or one view per slice) with Given/When/Then scenarios. Use when asked to model, formalize, or "make compilable" a feature/domain spec in ilk, to write ChangeSlice/ViewSlice/TaggedEvent instances, or to extend an existing ilk board with new slices. Output is validated with `ilk check` until it passes.
+description: Turn a human-written spec (prose requirements, user stories, business rules, workshop notes) into a compilable, well-formed ilk event model, using Event Modeling, vertical slices (command, view, automation, translation), a flow graph between slices, and Given/When/Then scenarios. Use when asked to model, formalize, or "make compilable" a feature/domain spec in ilk, to write ChangeSlice/ViewSlice/TaggedEvent instances, or to extend an existing ilk board with new slices. Output is validated with `ilk check` until it passes.
 ---
 
 # ilk event model from a human spec
 
-You turn prose into a **compilable** ilk model: tagged events, vertical slices
-(change + view), scenarios, and a `@main` board. The model is done only when
+You turn prose into a **compilable** ilk model: tagged events, vertical slices,
+scenarios, and a `@main` board with the flow graph. The model is done only when
 `ilk check main.ilk` prints `Validation passed`.
 
-The blueprint is `examples/cart/` in the ilk-lang repo. Copy its *structure*;
-follow `references/event-schema-guidelines.md` where the cart's event schemas
-cut corners (listed there).
+Passing means the model is **well-formed** (rules R1–R8, listed at the top of
+`assets/types.ilk` and explained in `references/ilk-cheatsheet.md`): every field
+has a provenance, every precondition can happen earlier in the flow, every
+output is consumed, and every rule is tested. Each rule has an explicit escape
+hatch. Use one only as a *decision* you can justify, never to silence an error
+you don't understand. Silence is never accepted.
+
+The blueprint is `examples/cart/` in the ilk-lang repo. Copy its structure.
 
 ## Reference files — read before writing
 
@@ -42,7 +47,10 @@ Pull out the following and write it down in your reply or a scratch file:
 - **Commands**: intents, phrased imperatively (`BorrowBook`)
 - **Events**: facts, in the past tense (`BookBorrowed`)
 - **Views / read models**: what someone needs to *see* to decide or act
-- **Business rules**: each one becomes at least one `Err:` scenario
+- **Business rules**: split them into *requires* (an event that must exist:
+  "the book must be in the catalog") and *invariants* (a rule over history:
+  "at most 3 books"). Each becomes at least one `Err:` scenario
+  (R6/R7), and invariant scenarios carry `violates "<invariant>"`
 - **Identifiers**: the entities that consistency decisions depend on; these become tags
 - **Open questions / assumptions**: anything the spec doesn't settle
 
@@ -58,8 +66,14 @@ Order the events along the user journey. Then cut it into vertical slices:
 - **AutomationSlice**: trigger event → command → event(s), with no human. One trigger per slice.
 - **TranslationSlice**: external system message → command → our event(s). One message type per slice.
 
-Group the slices into **chapters** (one journey step each) inside a **context**
-(a bounded context). Details and patterns are in `references/event-modeling.md`.
+Then draw the **flow graph**: for each slice, which slices can come next
+(screen → command, command → view, event → automation…). It may branch and
+loop. Group slices into **chapters** (themes) inside **contexts** (bounded
+contexts); grouping carries no order. Details are in `references/event-modeling.md`.
+
+For each state-change slice, also decide:
+- `requires`: events that must exist for the command to succeed (the book must be in the catalog)
+- `invariants`: the business rules it enforces, in one short sentence each
 
 ### 3. Write the files, in this order
 
@@ -73,7 +87,7 @@ Group the slices into **chapters** (one journey step each) inside a **context**
   view<Name>.ilk   # one ViewSlice per file
   auto<Name>.ilk   # one AutomationSlice per file
   trans<Name>.ilk  # one TranslationSlice per file
-  main.ilk         # imports + @main Board listing every slice in its flow
+  main.ilk         # imports + @main Board: contexts/chapters, flows graph, openEndedStreams
 ```
 
 Every slice file starts with the same four imports (types, events, tags,
@@ -118,12 +132,11 @@ matches, adding an explicit `= path` mapping, or adding the missing query item.
 
 ### 5. Self-review (the compiler doesn't check these)
 
-- [ ] Every rule from step 1 has an `Err:` scenario, and every command has an `OK:` scenario.
+- [ ] Every command has an `OK:` scenario. (R6/R7 already guarantee an `Err:` per required event and invariant, if you declared them all.)
 - [ ] Every TranslationSlice has a duplicate-message scenario (`then []`).
 - [ ] Every sentence of the spec is quoted in at least one slice `description`. A sentence quoted nowhere is either an unmodelled requirement or an open question.
-- [ ] Every `readModel` field can be derived from fields of the events in that view's `query`. ilk does **not** check read-model provenance, so trace each field by hand.
-- [ ] Every event is emitted by some command. An event nobody emits is either an external input (add a note) or a missing slice.
-- [ ] Every event a view reads is emitted by some slice or marked as external.
+- [ ] Every escape hatch you used (`entryScreen`, `unconsumed`, `openEndedStreams`, a `Type*` generator) is a real decision. Mention each in the report.
+- [ ] Every event is emitted by some slice. An event nobody emits is a missing slice, usually a translation from another system.
 - [ ] Event schemas pass the checklist at the end of `references/event-schema-guidelines.md`.
 - [ ] Optionally normalize layout with `ilk format file.ilk > tmp && mv tmp file.ilk` (it prints to stdout).
 
@@ -134,4 +147,5 @@ Keep the report short:
 - a slice table: chapter / slice / kind / command or read model / events
 - the assumptions you made
 - open questions for the spec author
-- events no slice emits, and slices you expect but that the spec doesn't describe
+- the escape hatches used, with a reason each
+- slices you added that the spec only implies (the rules often force these: see the worked example)

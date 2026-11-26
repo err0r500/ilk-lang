@@ -15,7 +15,6 @@ anything else in the model.
    does the business care?". `Created` is fine when creation *is* the
    business fact (`CartCreated`).
 3. **Use one consistent casing**: binding `bookBorrowed`, `type "BookBorrowed"`.
-   (The cart example has `type "itemAdded"`. Don't copy that.)
 
 3b. **Describe each event in one sentence** (`description`): the business
     fact, in the past tense, in domain language. If you can't write that
@@ -28,9 +27,8 @@ anything else in the model.
    can't be found again.
 5. **One concept = one field name and one type, everywhere.** If the product id
    is `sku Uuid` in one event, it is `sku Uuid` in every event, command, tag,
-   and view. (The cart uses `sku` in `inventoryChanged` but `productId` in
-   `priceChanged`, which forces a tag refinement. Avoid that.) In ilk this
-   also makes implicit `@source` matching work without explicit mappings.
+   and view. In ilk this also makes implicit `@source` matching work without
+   explicit mappings, and lets R1/R2 find attributes across events.
 6. **Record facts, not derived state.** No totals, counters, `isAvailable`
    flags, or "new state" snapshots. Those belong in read models. Derive
    `totalPrice` in the view and document it with `@doc`.
@@ -56,7 +54,7 @@ anything else in the model.
 | Concept | Use | Avoid |
 |--|--|--|
 | Entity identifiers | `Uuid` | `String`, `Int` |
-| Monetary amounts | `Money` | `Int`, `Float` (the cart uses `Int`: don't copy that) |
+| Monetary amounts | `Money` (scenario literals: `10`, `9.99`) | `Int`, `Float` |
 | Calendar day (due date, birthday) | `Date` | `Timestamp`, `String` |
 | Instant something business-relevant happened | `Timestamp` | `String` |
 | Counts, quantities | `Int` | `Float` |
@@ -75,6 +73,12 @@ anything else in the model.
     or refine the tag: `productIdTag & {sku Uuid = fields.productId}`.
 14. **Use few tags, on purpose.** One per entity that bounds a rule. Over-tagging
     makes nothing more consistent. It only adds noise.
+14b. **Each tag is a stream with a lifecycle (R8).** Mark the event that ends it
+    with `closes [tag]` (`BookReturned` closes the loan, `CartSubmitted` the cart),
+    or list the tag in the board's `openEndedStreams` (a member, a product).
+14c. **An event nobody reads (R5)** is either a missing view/automation, or a
+    deliberate `unconsumed "terminal"` (end of a lifecycle, kept for history) or
+    `unconsumed "audit"` (kept for compliance).
 
 ## Evolution
 
@@ -94,4 +98,5 @@ anything else in the model.
 - [ ] No envelope metadata in `fields`
 - [ ] `Money` for amounts, `Uuid` for ids, `Date` vs `Timestamp` chosen deliberately
 - [ ] Every tag's field exists in the event with the same name and type
-- [ ] Every event is emitted by exactly one command (or marked external)
+- [ ] Every event is emitted by exactly one slice (external facts come from a TranslationSlice)
+- [ ] Every stream (tag) is closed by an event or declared open-ended
